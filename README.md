@@ -1,10 +1,12 @@
-# Nemori: Nature-Inspired Episodic Memory for AI
+# Nemori: Nature-Inspired Episodic Memory
 
 *Read this in other languages: [中文](README-zh.md)*
 
 ## Project Overview
 
-Nemori-AI empowers AI with human-like episodic memory. Nemori stores experiences as natural, event-centric traces, enabling precise recall when it matters. Vision: every piece of data remembered and retrieved as intuitively as human recollection.
+Nemori-AI empowers large language models with human-like episodic memory.
+Nemori stores experiences as natural, event-centric traces, enabling precise recall when it matters.
+**Vision:** every piece of data remembered and retrieved as intuitively as human recollection.
 
 While previous systems like Mem0, Supermemory, and ZEP have made remarkable attempts at AI memory, achieving advanced performance on benchmarks such as LoCoMo and LongMemEval, Nemori introduces an innovative and minimalist approach centered on aligning with human episodic memory patterns.
 
@@ -29,6 +31,14 @@ On the LongMemEval-s dataset, Nemori also achieves leading performance:
 When we humans recall past events, our minds often flash with related images, actions, or sounds. Our brains help us remember by essentially making us re-experience what happened at that time - this memory mechanism is called episodic memory.
 
 Nemori's design inspiration comes from human episodic memory. Nemori can autonomously reshape conversations between humans, between humans and AI agents, or between AI agents into episodes. Compared to raw conversations, episodes have more coherent causal relationships and temporal expression capabilities. More importantly, the expression of episodes aligns to some extent with the granularity of our human memory recall, meaning that as humans, we are likely to ask questions about episodes that are semantically closer to the episodes themselves rather than the original messages.
+
+### Granularity Alignment with LLM Training Distribution
+
+A key insight in our design is that episodic memory granularity alignment offers potential optimization benefits for large language models. Since LLM training datasets align with the textual distribution of the human world, aligning recall granularity simultaneously aligns with the "most probable event description granularity in the natural world."
+
+This alignment provides several advantages:
+- **Reduced Distributional Shift**: When stored episodes match typical event spans found in training corpora, recall prompts resemble the pre-training distribution, improving token prediction probabilities
+- **Enhanced Retrieval Precision**: Memory indices storing "human-scale" events operate on semantically less entangled units, increasing signal-to-noise ratio in retrieval
 
 ## Future Roadmap
 

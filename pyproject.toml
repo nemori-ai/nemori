@@ -1,0 +1,88 @@
+[project]
+name = "nemori"
+version = "0.1.0"
+description = "Episodic memory system for transforming raw user data into structured narrative episodes"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # LangChain core
+    "langchain-core",
+    
+    # LangChain LLM providers
+    "langchain-openai",
+    "langchain-anthropic", 
+    "langchain-google-genai",
+    
+    # Environment and configuration
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["nemori*"]
+exclude = ["tests*", "figures*", "playground*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "integration: marks tests as integration tests",
+    "slow: marks tests as slow",
+    "llm: marks tests that require LLM providers",
+    "unit: marks tests as unit tests",
+]
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
