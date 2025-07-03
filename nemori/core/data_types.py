@@ -133,7 +133,6 @@ class TypedEventData(ABC):
     def data_id(self) -> str:
         return self.raw_data.data_id
 
-
     @property
     def timestamp(self) -> datetime:
         return self.raw_data.temporal_info.timestamp

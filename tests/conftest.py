@@ -66,7 +66,12 @@ def sample_conversation_raw_data(sample_conversation_messages, sample_temporal_i
         content=sample_conversation_messages,
         source="travel_chat_app",
         temporal_info=sample_temporal_info,
-        metadata={"session_id": "session_456", "conversation_topic": "travel_planning", "user_location": "New York", "primary_participant": "user_123"},
+        metadata={
+            "session_id": "session_456",
+            "conversation_topic": "travel_planning",
+            "user_location": "New York",
+            "primary_participant": "user_123",
+        },
     )
 
 

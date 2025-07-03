@@ -256,9 +256,7 @@ class TestConversationData:
 
     def test_conversation_data_validation_wrong_content(self):
         """Test ConversationData validation with wrong content type."""
-        raw_data = RawEventData(
-            data_type=DataType.CONVERSATION, content="not a list"  # Should be a list
-        )
+        raw_data = RawEventData(data_type=DataType.CONVERSATION, content="not a list")  # Should be a list
 
         with pytest.raises(ValueError, match="Conversation content must be a list of messages"):
             ConversationData(raw_data)
@@ -341,7 +339,10 @@ class TestConversationData:
 
     def test_get_conversation_text_fallback_to_user_id(self):
         """Test get_conversation_text with missing user_name."""
-        messages = [{"speaker_id": "user_123", "content": "Hello!"}, {"speaker_id": "assistant_ai", "content": "Hi there!"}]
+        messages = [
+            {"speaker_id": "user_123", "content": "Hello!"},
+            {"speaker_id": "assistant_ai", "content": "Hi there!"},
+        ]
 
         raw_data = RawEventData(data_type=DataType.CONVERSATION, content=messages)
 
@@ -368,9 +369,7 @@ class TestCreateTypedData:
 
     def test_create_unsupported_data_type(self):
         """Test creating typed data for unsupported type."""
-        raw_data = RawEventData(
-            data_type=DataType.ACTIVITY, content={"activity": "browsing"}  # Not yet implemented
-        )
+        raw_data = RawEventData(data_type=DataType.ACTIVITY, content={"activity": "browsing"})  # Not yet implemented
 
         typed_data = create_typed_data(raw_data)
 

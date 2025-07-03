@@ -365,15 +365,15 @@ class TestBatchEpisodeBuilder:
 
         data_items = [
             RawEventData(
-                    data_type=DataType.CONVERSATION,
+                data_type=DataType.CONVERSATION,
                 content=[{"speaker_id": "user_123", "content": "Hello 1"}],
             ),
             RawEventData(
-                    data_type=DataType.CONVERSATION,
+                data_type=DataType.CONVERSATION,
                 content=[{"speaker_id": "user_123", "content": "Hello 2"}],
             ),
             RawEventData(
-                    data_type=DataType.ACTIVITY,  # No builder available
+                data_type=DataType.ACTIVITY,  # No builder available
                 content={"activity": "browsing"},
             ),
         ]
@@ -392,12 +392,12 @@ class TestBatchEpisodeBuilder:
 
         data_items = [
             RawEventData(
-                    data_type=DataType.CONVERSATION,
+                data_type=DataType.CONVERSATION,
                 content=[{"speaker_id": "user_123", "content": "Part 1"}],
                 temporal_info=TemporalInfo(timestamp=datetime(2024, 1, 15, 10, 30, 0)),
             ),
             RawEventData(
-                    data_type=DataType.CONVERSATION,
+                data_type=DataType.CONVERSATION,
                 content=[{"speaker_id": "user_123", "content": "Part 2"}],
                 temporal_info=TemporalInfo(timestamp=datetime(2024, 1, 15, 10, 35, 0)),
             ),
