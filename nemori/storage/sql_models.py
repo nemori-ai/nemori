@@ -64,15 +64,6 @@ class EpisodeRawDataTable(SQLModel, table=True):
     raw_data_id: str = Field(primary_key=True, max_length=255)
 
 
-class EpisodeRelationshipTable(SQLModel, table=True):
-    """SQLModel for episode relationships."""
-
-    __tablename__ = "episode_relationships"
-
-    episode_id1: str = Field(primary_key=True, max_length=255)
-    episode_id2: str = Field(primary_key=True, max_length=255)
-
-
 class BaseSQLRepository:
     """Base class for SQL-based repositories with common security methods."""
 

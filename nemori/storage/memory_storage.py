@@ -322,7 +322,6 @@ class MemoryEpisodicMemoryRepository(EpisodicMemoryRepository):
         self._episodes_by_level: dict[EpisodeLevel, set[str]] = defaultdict(set)
         self._episode_to_raw_data: dict[str, set[str]] = defaultdict(set)
         self._raw_data_to_episodes: dict[str, set[str]] = defaultdict(set)
-        self._episode_relationships: dict[str, set[str]] = defaultdict(set)
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -370,9 +369,6 @@ class MemoryEpisodicMemoryRepository(EpisodicMemoryRepository):
             backup_data = {
                 "episodes": {ep_id: ep.to_dict() for ep_id, ep in self._episodes.items()},
                 "episode_to_raw_data": {ep_id: list(raw_ids) for ep_id, raw_ids in self._episode_to_raw_data.items()},
-                "episode_relationships": {
-                    ep_id: list(rel_ids) for ep_id, rel_ids in self._episode_relationships.items()
-                },
                 "timestamp": datetime.now().isoformat(),
             }
             with open(destination, "w", encoding="utf-8") as f:
@@ -394,7 +390,6 @@ class MemoryEpisodicMemoryRepository(EpisodicMemoryRepository):
             self._episodes_by_level.clear()
             self._episode_to_raw_data.clear()
             self._raw_data_to_episodes.clear()
-            self._episode_relationships.clear()
 
             # Restore episodes
             for _ep_id, ep_dict in backup_data["episodes"].items():
@@ -406,9 +401,6 @@ class MemoryEpisodicMemoryRepository(EpisodicMemoryRepository):
                 self._episode_to_raw_data[ep_id] = set(raw_ids)
                 for raw_id in raw_ids:
                     self._raw_data_to_episodes[raw_id].add(ep_id)
-
-            for ep_id, rel_ids in backup_data.get("episode_relationships", {}).items():
-                self._episode_relationships[ep_id] = set(rel_ids)
 
             return True
         except Exception:
@@ -699,27 +691,6 @@ class MemoryEpisodicMemoryRepository(EpisodicMemoryRepository):
         """Get raw data IDs that contributed to an episode."""
         return list(self._episode_to_raw_data.get(episode_id, set()))
 
-    async def link_related_episodes(self, episode_id1: str, episode_id2: str) -> bool:
-        """Create bidirectional relationship between episodes."""
-        if episode_id1 not in self._episodes or episode_id2 not in self._episodes:
-            return False
-
-        self._episode_relationships[episode_id1].add(episode_id2)
-        self._episode_relationships[episode_id2].add(episode_id1)
-
-        # Also update episode metadata
-        episode1 = self._episodes[episode_id1]
-        episode2 = self._episodes[episode_id2]
-        episode1.add_related_episode(episode_id2)
-        episode2.add_related_episode(episode_id1)
-
-        return True
-
-    async def get_related_episodes(self, episode_id: str) -> list[Episode]:
-        """Get episodes related to a specific episode."""
-        related_ids = self._episode_relationships.get(episode_id, set())
-        return [self._episodes[ep_id] for ep_id in related_ids if ep_id in self._episodes]
-
     async def delete_episode(self, episode_id: str) -> bool:
         """Delete an episode."""
         if episode_id not in self._episodes:
@@ -736,10 +707,6 @@ class MemoryEpisodicMemoryRepository(EpisodicMemoryRepository):
         for raw_data_id in self._episode_to_raw_data[episode_id]:
             self._raw_data_to_episodes[raw_data_id].discard(episode_id)
         del self._episode_to_raw_data[episode_id]
-
-        for related_id in self._episode_relationships[episode_id]:
-            self._episode_relationships[related_id].discard(episode_id)
-        del self._episode_relationships[episode_id]
 
         # Remove episode
         del self._episodes[episode_id]

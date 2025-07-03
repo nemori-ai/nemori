@@ -7,11 +7,11 @@ their lifecycle, from creation via builders to storage and indexing for retrieva
 
 from typing import Any
 
-from ..retrieval import RetrievalService
-from ..storage.repository import EpisodicMemoryRepository, RawDataRepository
-from .builders import EpisodeBuilderRegistry
-from .data_types import RawEventData
-from .episode import Episode
+from .core.builders import EpisodeBuilderRegistry
+from .core.data_types import RawEventData
+from .core.episode import Episode
+from .retrieval import RetrievalService
+from .storage.repository import EpisodicMemoryRepository, RawDataRepository
 
 
 class EpisodeManager:
@@ -46,7 +46,20 @@ class EpisodeManager:
         self.builder_registry = builder_registry
         self.retrieval_service = retrieval_service
 
-    async def process_raw_data(self, raw_data: RawEventData, owner_id: str, auto_index: bool = True) -> Episode | None:
+    async def ingest_event(self, raw_data: RawEventData, owner_id: str) -> None:
+        """
+        Ingest raw event data into storage without immediate processing.
+
+        Args:
+            raw_data: Raw event data to store
+            owner_id: Owner of the event data
+        """
+        raw_data.metadata["_owner_id"] = owner_id
+        await self.raw_data_repo.store_raw_data(raw_data)
+
+    async def process_raw_data_to_episode(
+        self, raw_data: RawEventData, owner_id: str, auto_index: bool = True
+    ) -> Episode | None:
         """
         Process raw data into an episode with full lifecycle management.
 
@@ -58,26 +71,23 @@ class EpisodeManager:
         Returns:
             Created episode or None if no suitable builder found
         """
-        # 1. Store raw data
-        await self.raw_data_repo.store_raw_data(raw_data)
-
-        # 2. Build episode using appropriate builder
-        episode = self.builder_registry.build_episode(raw_data, owner_id)
+        # 1. Build episode using appropriate builder
+        episode = await self.builder_registry.build_episode(raw_data, owner_id)
         if not episode:
             print(f"No builder available for data type: {raw_data.data_type}")
             return None
 
-        # 3. Store episode
+        # 2. Store episode
         episode_id = await self.episode_repo.store_episode(episode)
         print(f"Stored episode with ID: {episode_id}")
 
-        # 4. Link episode to raw data
+        # 3. Link episode to raw data
         await self.episode_repo.link_episode_to_raw_data(episode_id, [raw_data.data_id])
 
-        # 5. Mark raw data as processed
+        # 4. Mark raw data as processed
         await self.raw_data_repo.mark_as_processed(raw_data.data_id, "1.0")
 
-        # 6. Add to retrieval index if service is available
+        # 5. Add to retrieval index if service is available
         if auto_index and self.retrieval_service:
             try:
                 await self.retrieval_service.add_episode_to_all_providers(episode)
@@ -86,6 +96,24 @@ class EpisodeManager:
                 print(f"Failed to add episode to retrieval index: {e}")
 
         return episode
+
+    async def process_raw_data(self, raw_data: RawEventData, owner_id: str, auto_index: bool = True) -> Episode | None:
+        """
+        Process raw data into an episode with full lifecycle management (legacy method).
+
+        Args:
+            raw_data: Raw event data to process
+            owner_id: Owner of the episode
+            auto_index: Whether to automatically add to retrieval index
+
+        Returns:
+            Created episode or None if no suitable builder found
+        """
+        # 1. Store raw data first
+        await self.ingest_event(raw_data, owner_id)
+
+        # 2. Then process it into episode
+        return await self.process_raw_data_to_episode(raw_data, owner_id, auto_index)
 
     async def create_episode(self, episode: Episode, auto_index: bool = True) -> str:
         """
@@ -174,7 +202,7 @@ class EpisodeManager:
         if not self.retrieval_service:
             raise RuntimeError("No retrieval service configured")
 
-        from ..retrieval import RetrievalQuery, RetrievalStrategy
+        from .retrieval import RetrievalQuery, RetrievalStrategy
 
         # Create retrieval query with defaults
         query = RetrievalQuery(

@@ -16,7 +16,7 @@ class LLMProvider(Protocol):
     to be compatible with Nemori's episode builders.
     """
 
-    def generate(self, prompt: str, temperature: float | None = None) -> str:
+    async def generate(self, prompt: str, temperature: float | None = None) -> str:
         """
         Generate a response for the given prompt.
 
@@ -32,7 +32,7 @@ class LLMProvider(Protocol):
         """
         ...
 
-    def test_connection(self) -> bool:
+    async def test_connection(self) -> bool:
         """
         Test the connection to the LLM provider.
 

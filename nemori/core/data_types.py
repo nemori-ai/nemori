@@ -186,12 +186,17 @@ class ConversationData(TypedEventData):
                 messages.append(msg_data)
         return messages
 
-    def get_conversation_text(self) -> str:
+    def get_conversation_text(self, include_timestamps: bool = False) -> str:
         """Get the full conversation as formatted text."""
         lines = []
         for msg in self.messages:
             speaker = msg.user_name if msg.user_name else msg.speaker_id
-            lines.append(f"{speaker}: {msg.content}")
+            if include_timestamps and msg.timestamp:
+                time_str = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                lines.append(f"[{time_str}] {speaker}: {msg.content}")
+            else:
+                lines.append(f"{speaker}: {msg.content}")
+
         return "\n".join(lines)
 
 

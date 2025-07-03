@@ -47,7 +47,7 @@ class EpisodeBuilder(ABC):
         """Check if this builder can process the given data."""
         return data.data_type == self.supported_data_type
 
-    def build_episode(self, data: RawEventData, for_owner: str) -> Episode:
+    async def build_episode(self, data: RawEventData, for_owner: str) -> Episode:
         """
         Build an episode from raw event data for a specific owner.
 
@@ -64,7 +64,7 @@ class EpisodeBuilder(ABC):
         processed_data = self._preprocess_data(data)
 
         # Extract core content
-        title, content, summary = self._extract_content(processed_data)
+        title, content, summary = await self._extract_content(processed_data)
 
         # Generate metadata
         metadata = self._generate_metadata(processed_data)
@@ -93,7 +93,7 @@ class EpisodeBuilder(ABC):
         )
 
         # Post-process the episode
-        episode = self._postprocess_episode(episode, processed_data)
+        episode = await self._postprocess_episode(episode, processed_data)
 
         return episode
 
@@ -108,7 +108,7 @@ class EpisodeBuilder(ABC):
         return create_typed_data(data)
 
     @abstractmethod
-    def _extract_content(self, data: TypedEventData) -> tuple[str, str, str]:
+    async def _extract_content(self, data: TypedEventData) -> tuple[str, str, str]:
         """
         Extract title, content, and summary from the data.
 
@@ -168,7 +168,7 @@ class EpisodeBuilder(ABC):
         unique_words = list(set(words))
         return unique_words[:20]  # Limit to top 20 keywords
 
-    def _postprocess_episode(self, episode: Episode, data: TypedEventData) -> Episode:
+    async def _postprocess_episode(self, episode: Episode, data: TypedEventData) -> Episode:
         """
         Post-process the episode after creation.
 
@@ -193,7 +193,7 @@ class BatchEpisodeBuilder:
         """
         self.builders = builders
 
-    def build_episodes(self, data_items: list[RawEventData], for_owner: str) -> list[Episode]:
+    async def build_episodes(self, data_items: list[RawEventData], for_owner: str) -> list[Episode]:
         """Build episodes from a list of raw data items."""
         episodes = []
 
@@ -201,7 +201,7 @@ class BatchEpisodeBuilder:
             builder = self.builders.get(data.data_type)
             if builder:
                 try:
-                    episode = builder.build_episode(data, for_owner)
+                    episode = await builder.build_episode(data, for_owner)
                     episodes.append(episode)
                 except Exception as e:
                     print(f"Failed to build episode from {data.data_id}: {e}")
@@ -210,7 +210,7 @@ class BatchEpisodeBuilder:
 
         return episodes
 
-    def build_compound_episode(
+    async def build_compound_episode(
         self, data_items: list[RawEventData], for_owner: str, title: str, compound_type: EpisodeType = EpisodeType.MIXED
     ) -> Episode:
         """
@@ -226,7 +226,7 @@ class BatchEpisodeBuilder:
         base_data = data_items[0]
 
         # Build individual episodes first
-        individual_episodes = self.build_episodes(data_items, for_owner)
+        individual_episodes = await self.build_episodes(data_items, for_owner)
 
         # Combine content
         combined_content = "\n\n".join([ep.content for ep in individual_episodes])
@@ -299,11 +299,11 @@ class EpisodeBuilderRegistry:
         """Check if we have a builder for the given data type."""
         return data_type in self._builders
 
-    def build_episode(self, data: RawEventData, for_owner: str) -> Episode | None:
+    async def build_episode(self, data: RawEventData, for_owner: str) -> Episode | None:
         """Build an episode using the appropriate registered builder."""
         builder = self.get_builder(data.data_type)
         if builder:
-            return builder.build_episode(data, for_owner)
+            return await builder.build_episode(data, for_owner)
         return None
 
 

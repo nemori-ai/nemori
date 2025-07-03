@@ -397,33 +397,6 @@ class EpisodicMemoryRepository(StorageRepository):
         pass
 
     @abstractmethod
-    async def link_related_episodes(self, episode_id1: str, episode_id2: str) -> bool:
-        """
-        Create bidirectional relationship between episodes.
-
-        Args:
-            episode_id1: First episode identifier
-            episode_id2: Second episode identifier
-
-        Returns:
-            True if linking was successful, False otherwise
-        """
-        pass
-
-    @abstractmethod
-    async def get_related_episodes(self, episode_id: str) -> list[Episode]:
-        """
-        Get episodes related to a specific episode.
-
-        Args:
-            episode_id: The episode identifier
-
-        Returns:
-            List of related episodes
-        """
-        pass
-
-    @abstractmethod
     async def delete_episode(self, episode_id: str) -> bool:
         """
         Delete an episode.

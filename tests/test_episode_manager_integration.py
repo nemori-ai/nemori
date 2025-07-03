@@ -13,7 +13,7 @@ import pytest_asyncio
 from nemori.builders.conversation_builder import ConversationEpisodeBuilder
 from nemori.core.builders import EpisodeBuilderRegistry
 from nemori.core.data_types import ConversationMessage, DataType, RawEventData, TemporalInfo
-from nemori.core.episode_manager import EpisodeManager
+from nemori.episode_manager import EpisodeManager
 from nemori.retrieval import RetrievalConfig, RetrievalService, RetrievalStrategy
 from nemori.storage import MemoryEpisodicMemoryRepository, MemoryRawDataRepository, StorageConfig
 

@@ -23,7 +23,7 @@ class MockLLMProvider:
         self.responses = responses or {}
         self.calls = []
 
-    def generate(self, prompt: str, temperature: float = 0.3) -> str:
+    async def generate(self, prompt: str, temperature: float = 0.3) -> str:
         self.calls.append({"prompt": prompt, "temperature": temperature})
 
         # Return appropriate response based on prompt content
@@ -34,7 +34,7 @@ class MockLLMProvider:
                 "episode", '{"title": "Test Episode", "content": "Test content", "summary": "Test summary"}'
             )
 
-    def test_connection(self) -> bool:
+    async def test_connection(self) -> bool:
         return True
 
     def __repr__(self) -> str:
@@ -112,21 +112,23 @@ class TestConversationEpisodeBuilder:
         activity_data = RawEventData(data_type=DataType.ACTIVITY, content={"activity": "browsing"})
         assert builder.can_build(activity_data) is False
 
-    def test_build_episode_validation(self):
+    @pytest.mark.asyncio
+    async def test_build_episode_validation(self):
         """Test that build_episode validates data type."""
         builder = ConversationEpisodeBuilder()
 
         activity_data = RawEventData(data_type=DataType.ACTIVITY, content={"activity": "browsing"})
 
         with pytest.raises(ValueError, match="Builder for DataType.CONVERSATION cannot process DataType.ACTIVITY data"):
-            builder.build_episode(activity_data, for_owner="user_123")
+            await builder.build_episode(activity_data, for_owner="user_123")
 
-    def test_build_episode_without_llm(self):
+    @pytest.mark.asyncio
+    async def test_build_episode_without_llm(self):
         """Test building episode without LLM provider (fallback mode)."""
         builder = ConversationEpisodeBuilder()
         conversation_data = self.create_sample_conversation_data()
 
-        episode = builder.build_episode(conversation_data, for_owner="user_123")
+        episode = await builder.build_episode(conversation_data, for_owner="user_123")
 
         # Verify basic episode structure
         assert isinstance(episode, Episode)
@@ -147,7 +149,8 @@ class TestConversationEpisodeBuilder:
         assert episode.temporal_info.timestamp == datetime(2024, 1, 15, 10, 30, 0)
         assert episode.temporal_info.duration == 60.0
 
-    def test_build_episode_with_llm(self):
+    @pytest.mark.asyncio
+    async def test_build_episode_with_llm(self):
         """Test building episode with LLM provider."""
         mock_llm = MockLLMProvider(
             {
@@ -158,7 +161,7 @@ class TestConversationEpisodeBuilder:
         builder = ConversationEpisodeBuilder(llm_provider=mock_llm)
         conversation_data = self.create_sample_conversation_data()
 
-        episode = builder.build_episode(conversation_data, for_owner="user_123")
+        episode = await builder.build_episode(conversation_data, for_owner="user_123")
 
         # Verify LLM was called
         assert len(mock_llm.calls) == 1
@@ -169,14 +172,15 @@ class TestConversationEpisodeBuilder:
         assert "Alice discussed her upcoming trip to Japan" in episode.content
         assert episode.summary == "Travel planning conversation about Japan"
 
-    def test_build_episode_with_llm_failure_fallback(self):
+    @pytest.mark.asyncio
+    async def test_build_episode_with_llm_failure_fallback(self):
         """Test that LLM failure falls back to simple generation."""
         mock_llm = MockLLMProvider({"episode": "invalid json response"})
 
         builder = ConversationEpisodeBuilder(llm_provider=mock_llm)
         conversation_data = self.create_sample_conversation_data()
 
-        episode = builder.build_episode(conversation_data, for_owner="user_123")
+        episode = await builder.build_episode(conversation_data, for_owner="user_123")
 
         # Should still create an episode using fallback
         assert isinstance(episode, Episode)
@@ -309,7 +313,8 @@ class TestEpisodeBuilderRegistry:
         assert registry.can_process(DataType.CONVERSATION) is True
         assert registry.can_process(DataType.ACTIVITY) is False
 
-    def test_registry_build_episode(self):
+    @pytest.mark.asyncio
+    async def test_registry_build_episode(self):
         """Test building episode through registry."""
         registry = EpisodeBuilderRegistry()
         builder = ConversationEpisodeBuilder()
@@ -319,13 +324,13 @@ class TestEpisodeBuilderRegistry:
             data_type=DataType.CONVERSATION, content=[{"speaker_id": "user_123", "content": "Hello"}]
         )
 
-        episode = registry.build_episode(conversation_data, for_owner="user_123")
+        episode = await registry.build_episode(conversation_data, for_owner="user_123")
         assert isinstance(episode, Episode)
 
         # Test with unsupported data type
         activity_data = RawEventData(data_type=DataType.ACTIVITY, content={"activity": "browsing"})
 
-        result = registry.build_episode(activity_data, for_owner="user_123")
+        result = await registry.build_episode(activity_data, for_owner="user_123")
         assert result is None
 
     def test_registry_override_warning(self):
@@ -357,7 +362,8 @@ class TestEpisodeBuilderRegistry:
 class TestBatchEpisodeBuilder:
     """Test BatchEpisodeBuilder functionality."""
 
-    def test_batch_build_episodes(self):
+    @pytest.mark.asyncio
+    async def test_batch_build_episodes(self):
         """Test building multiple episodes."""
         conversation_builder = ConversationEpisodeBuilder()
         builders = {DataType.CONVERSATION: conversation_builder}
@@ -378,13 +384,14 @@ class TestBatchEpisodeBuilder:
             ),
         ]
 
-        episodes = batch_builder.build_episodes(data_items, for_owner="user_123")
+        episodes = await batch_builder.build_episodes(data_items, for_owner="user_123")
 
         # Should build 2 episodes (skipping the activity data)
         assert len(episodes) == 2
         assert all(isinstance(ep, Episode) for ep in episodes)
 
-    def test_batch_build_compound_episode(self):
+    @pytest.mark.asyncio
+    async def test_batch_build_compound_episode(self):
         """Test building compound episode from multiple data items."""
         conversation_builder = ConversationEpisodeBuilder()
         builders = {DataType.CONVERSATION: conversation_builder}
@@ -403,7 +410,7 @@ class TestBatchEpisodeBuilder:
             ),
         ]
 
-        compound_episode = batch_builder.build_compound_episode(
+        compound_episode = await batch_builder.build_compound_episode(
             data_items, for_owner="user_123", title="Combined Conversation", compound_type=EpisodeType.MIXED
         )
 
@@ -415,19 +422,21 @@ class TestBatchEpisodeBuilder:
         assert "Part 2" in compound_episode.content
         assert len(compound_episode.metadata.related_episode_ids) == 2
 
-    def test_batch_build_compound_episode_empty_data(self):
+    @pytest.mark.asyncio
+    async def test_batch_build_compound_episode_empty_data(self):
         """Test that compound episode creation fails with empty data."""
         batch_builder = BatchEpisodeBuilder({})
 
         with pytest.raises(ValueError, match="Cannot create compound episode from empty data list"):
-            batch_builder.build_compound_episode([], for_owner="user_123", title="Title")
+            await batch_builder.build_compound_episode([], for_owner="user_123", title="Title")
 
 
 # Integration tests
 class TestBuildersIntegration:
     """Integration tests for builders working together."""
 
-    def test_end_to_end_episode_building(self):
+    @pytest.mark.asyncio
+    async def test_end_to_end_episode_building(self):
         """Test complete episode building workflow."""
         # Create registry and register builder
         registry = EpisodeBuilderRegistry()
@@ -456,7 +465,7 @@ class TestBuildersIntegration:
         )
 
         # Build episode
-        episode = registry.build_episode(conversation_data, for_owner="user_123")
+        episode = await registry.build_episode(conversation_data, for_owner="user_123")
 
         # Verify complete episode
         assert isinstance(episode, Episode)

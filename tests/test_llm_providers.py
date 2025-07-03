@@ -49,30 +49,33 @@ class TestOpenAIProvider:
                 del os.environ["OPENAI_MODEL"]
 
     @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set")
-    def test_generate_simple(self):
+    @pytest.mark.asyncio
+    async def test_generate_simple(self):
         """Test simple text generation."""
         provider = OpenAIProvider()
-        response = provider.generate("Say hello in one word.")
+        response = await provider.generate("Say hello in one word.")
 
         assert isinstance(response, str)
         assert len(response.strip()) > 0
         print(f"OpenAI response: {response}")
 
     @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set")
-    def test_generate_with_temperature(self):
+    @pytest.mark.asyncio
+    async def test_generate_with_temperature(self):
         """Test generation with custom temperature."""
         provider = OpenAIProvider()
-        response = provider.generate("Say hello", temperature=0.1)
+        response = await provider.generate("Say hello", temperature=0.1)
 
         assert isinstance(response, str)
         assert len(response.strip()) > 0
         print(f"OpenAI response with temperature: {response}")
 
     @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set")
-    def test_connection(self):
+    @pytest.mark.asyncio
+    async def test_connection(self):
         """Test API connection."""
         provider = OpenAIProvider()
-        assert provider.test_connection() is True
+        assert await provider.test_connection() is True
 
 
 class TestAnthropicProvider:
@@ -109,30 +112,33 @@ class TestAnthropicProvider:
                 del os.environ["ANTHROPIC_MODEL"]
 
     @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set")
-    def test_generate_simple(self):
+    @pytest.mark.asyncio
+    async def test_generate_simple(self):
         """Test simple text generation."""
         provider = AnthropicProvider()
-        response = provider.generate("Say hello in one word.")
+        response = await provider.generate("Say hello in one word.")
 
         assert isinstance(response, str)
         assert len(response.strip()) > 0
         print(f"Anthropic response: {response}")
 
     @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set")
-    def test_generate_with_temperature(self):
+    @pytest.mark.asyncio
+    async def test_generate_with_temperature(self):
         """Test generation with custom temperature."""
         provider = AnthropicProvider()
-        response = provider.generate("Say hello", temperature=0.1)
+        response = await provider.generate("Say hello", temperature=0.1)
 
         assert isinstance(response, str)
         assert len(response.strip()) > 0
         print(f"Anthropic response with temperature: {response}")
 
     @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set")
-    def test_connection(self):
+    @pytest.mark.asyncio
+    async def test_connection(self):
         """Test API connection."""
         provider = AnthropicProvider()
-        assert provider.test_connection() is True
+        assert await provider.test_connection() is True
 
 
 class TestGeminiProvider:
@@ -169,37 +175,41 @@ class TestGeminiProvider:
                 del os.environ["GEMINI_MODEL"]
 
     @pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="GOOGLE_API_KEY not set")
-    def test_generate_simple(self):
+    @pytest.mark.asyncio
+    async def test_generate_simple(self):
         """Test simple text generation."""
         provider = GeminiProvider()
-        response = provider.generate("Say hello in one word.")
+        response = await provider.generate("Say hello in one word.")
 
         assert isinstance(response, str)
         assert len(response.strip()) > 0
         print(f"Gemini response: {response}")
 
     @pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="GOOGLE_API_KEY not set")
-    def test_generate_with_temperature(self):
+    @pytest.mark.asyncio
+    async def test_generate_with_temperature(self):
         """Test generation with custom temperature."""
         provider = GeminiProvider()
-        response = provider.generate("Say hello", temperature=0.1)
+        response = await provider.generate("Say hello", temperature=0.1)
 
         assert isinstance(response, str)
         assert len(response.strip()) > 0
         print(f"Gemini response with temperature: {response}")
 
     @pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="GOOGLE_API_KEY not set")
-    def test_connection(self):
+    @pytest.mark.asyncio
+    async def test_connection(self):
         """Test API connection."""
         provider = GeminiProvider()
-        assert provider.test_connection() is True
+        assert await provider.test_connection() is True
 
 
 class TestProviderIntegration:
     """Integration tests using providers with conversation builder."""
 
     @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set")
-    def test_openai_with_conversation_builder(self):
+    @pytest.mark.asyncio
+    async def test_openai_with_conversation_builder(self):
         """Test OpenAI provider with conversation builder."""
         from datetime import datetime
 
@@ -244,7 +254,7 @@ class TestProviderIntegration:
         builder = ConversationEpisodeBuilder(llm_provider=provider)
 
         # Build episode
-        episode = builder.build_episode(raw_data, for_owner="user1")
+        episode = await builder.build_episode(raw_data, for_owner="user1")
 
         assert episode.title is not None
         assert episode.content is not None
@@ -268,26 +278,31 @@ if __name__ == "__main__":
     # Run basic connectivity tests if API keys are available
     print("Testing LLM Providers...")
 
-    if os.getenv("OPENAI_API_KEY"):
-        print("Testing OpenAI connection...")
-        openai = OpenAIProvider()
-        if openai.test_connection():
-            print("✓ OpenAI connection successful")
-        else:
-            print("✗ OpenAI connection failed")
+    import asyncio
 
-    if os.getenv("ANTHROPIC_API_KEY"):
-        print("Testing Anthropic connection...")
-        anthropic = AnthropicProvider()
-        if anthropic.test_connection():
-            print("✓ Anthropic connection successful")
-        else:
-            print("✗ Anthropic connection failed")
+    async def test_connections():
+        if os.getenv("OPENAI_API_KEY"):
+            print("Testing OpenAI connection...")
+            openai = OpenAIProvider()
+            if await openai.test_connection():
+                print("✓ OpenAI connection successful")
+            else:
+                print("✗ OpenAI connection failed")
 
-    if os.getenv("GOOGLE_API_KEY"):
-        print("Testing Gemini connection...")
-        gemini = GeminiProvider()
-        if gemini.test_connection():
-            print("✓ Gemini connection successful")
-        else:
-            print("✗ Gemini connection failed")
+        if os.getenv("ANTHROPIC_API_KEY"):
+            print("Testing Anthropic connection...")
+            anthropic = AnthropicProvider()
+            if await anthropic.test_connection():
+                print("✓ Anthropic connection successful")
+            else:
+                print("✗ Anthropic connection failed")
+
+        if os.getenv("GOOGLE_API_KEY"):
+            print("Testing Gemini connection...")
+            gemini = GeminiProvider()
+            if await gemini.test_connection():
+                print("✓ Gemini connection successful")
+            else:
+                print("✗ Gemini connection failed")
+
+    asyncio.run(test_connections())

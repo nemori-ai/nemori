@@ -468,42 +468,6 @@ class TestDuckDBEpisodicMemoryRepository:
         assert len(episodes_for_raw) == 1
         assert episodes_for_raw[0].episode_id == episode_id
 
-    async def test_related_episodes(self, duckdb_episode_repo):
-        """Test episode relationship management."""
-        # Create two episodes
-        episode1 = Episode(
-            owner_id="test_user",
-            episode_type=EpisodeType.CONVERSATIONAL,
-            level=EpisodeLevel.ATOMIC,
-            title="Episode 1",
-            content="First episode",
-            temporal_info=TemporalInfo(timestamp=datetime.now()),
-        )
-        episode2 = Episode(
-            owner_id="test_user",
-            episode_type=EpisodeType.CONVERSATIONAL,
-            level=EpisodeLevel.ATOMIC,
-            title="Episode 2",
-            content="Second episode",
-            temporal_info=TemporalInfo(timestamp=datetime.now()),
-        )
-
-        episode1_id = await duckdb_episode_repo.store_episode(episode1)
-        episode2_id = await duckdb_episode_repo.store_episode(episode2)
-
-        # Link episodes
-        success = await duckdb_episode_repo.link_related_episodes(episode1_id, episode2_id)
-        assert success
-
-        # Verify relationship
-        related_to_1 = await duckdb_episode_repo.get_related_episodes(episode1_id)
-        assert len(related_to_1) == 1
-        assert related_to_1[0].episode_id == episode2_id
-
-        related_to_2 = await duckdb_episode_repo.get_related_episodes(episode2_id)
-        assert len(related_to_2) == 1
-        assert related_to_2[0].episode_id == episode1_id
-
     async def test_storage_stats(self, duckdb_episode_repo, sample_episode):
         """Test storage statistics."""
         await duckdb_episode_repo.store_episode(sample_episode)

@@ -49,7 +49,7 @@ class AnthropicProvider(LLMProvider):
             **kwargs,
         )
 
-    def generate(self, prompt: str, temperature: float | None = None) -> str:
+    async def generate(self, prompt: str, temperature: float | None = None) -> str:
         """
         Generate a response for the given prompt.
 
@@ -76,9 +76,9 @@ class AnthropicProvider(LLMProvider):
         else:
             llm_to_use = self.llm
 
-        # Generate response
+        # Generate response asynchronously
         message = HumanMessage(content=prompt)
-        response = llm_to_use.invoke([message])
+        response = await llm_to_use.ainvoke([message])
 
         return response.content
 
@@ -102,7 +102,7 @@ class AnthropicProvider(LLMProvider):
 
         return cls(model=env_model, **kwargs)
 
-    def test_connection(self) -> bool:
+    async def test_connection(self) -> bool:
         """
         Test the connection to Anthropic API.
 
@@ -110,7 +110,7 @@ class AnthropicProvider(LLMProvider):
             True if connection successful, False otherwise
         """
         try:
-            response = self.generate("Hello", temperature=0.1)
+            response = await self.generate("Hello", temperature=0.1)
             return bool(response and len(response.strip()) > 0)
         except Exception as e:
             print(f"Anthropic connection test failed: {e}")

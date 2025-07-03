@@ -56,7 +56,7 @@ class BM25RetrievalProvider(RetrievalProvider):
         elif self.storage_type == RetrievalStorageType.DISK:
             self.persistence_enabled = True
             # Get directory from storage_config, fallback to default
-            self.persistence_dir = Path(self.storage_config.get('directory', '.tmp'))
+            self.persistence_dir = Path(self.storage_config.get("directory", ".tmp"))
             self.persistence_dir.mkdir(parents=True, exist_ok=True)
         else:
             # For other storage types (duckdb, redis, etc.), disable local persistence
@@ -243,7 +243,7 @@ class BM25RetrievalProvider(RetrievalProvider):
                 "metadata": {
                     "total_episodes": len(index["episodes"]),
                     "total_tokens": sum(len(doc) for doc in index["corpus"]),
-                }
+                },
             }
 
             # Serialize episodes as dictionaries (not full objects to avoid circular refs)
@@ -264,7 +264,7 @@ class BM25RetrievalProvider(RetrievalProvider):
                 }
                 serializable_data["episodes"].append(episode_data)
 
-            with open(index_file, 'wb') as f:
+            with open(index_file, "wb") as f:
                 pickle.dump(serializable_data, f)
 
         except Exception as e:
@@ -280,7 +280,7 @@ class BM25RetrievalProvider(RetrievalProvider):
             if not index_file or not index_file.exists():
                 return False
 
-            with open(index_file, 'rb') as f:
+            with open(index_file, "rb") as f:
                 data = pickle.load(f)
 
             # Recreate the index structure

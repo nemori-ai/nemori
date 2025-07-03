@@ -149,14 +149,6 @@ raw_data_ids = await episode_repo.get_raw_data_for_episode(episode_id)
 episodes = await episode_repo.get_episodes_for_raw_data(raw_data_id)
 ```
 
-#### 情景间关联
-```python
-# 建立情景关联
-await episode_repo.link_related_episodes(episode_id1, episode_id2)
-
-# 查询相关情景
-related = await episode_repo.get_related_episodes(episode_id)
-```
 
 ### 访问追踪和重要性管理
 
@@ -187,7 +179,7 @@ await episode_repo.update_episode_importance(episode_id, 0.9)
 #### 特性
 - **快速访问**：内存操作，毫秒级响应
 - **完整功能**：支持所有抽象接口定义的功能
-- **数据一致性**：自动维护索引和关联关系
+- **数据一致性**：自动维护索引和数据关联
 - **备份恢复**：支持 JSON 格式的备份和恢复
 
 ### DuckDB 存储实现
@@ -293,7 +285,7 @@ Nemori 存储层的设计和实现完成了以下目标：
 
 ✅ **原始数据完整性**：支持多种数据类型的原始内容保存  
 ✅ **情景记忆管理**：完整的情景记忆生命周期管理  
-✅ **关联关系**：支持情景与原始数据、情景间的关联  
+✅ **关联关系**：支持情景与原始数据的关联  
 ✅ **灵活检索**：多种检索方式满足不同场景需求  
 ✅ **多种实现**：内存存储和 DuckDB 存储满足不同需求  
 ✅ **可扩展性**：抽象接口设计支持多种存储后端  

@@ -18,7 +18,6 @@ from .repository import EpisodicMemoryRepository, RawDataRepository
 from .sql_models import (
     BaseSQLRepository,
     EpisodeRawDataTable,
-    EpisodeRelationshipTable,
     EpisodeTable,
     RawDataTable,
 )
@@ -995,37 +994,6 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
             results = session.exec(stmt).all()
             return results
 
-    async def link_related_episodes(self, episode_id1: str, episode_id2: str) -> bool:
-        """Create bidirectional relationship between episodes."""
-        try:
-            episode_id1 = self.validate_id(episode_id1)
-            episode_id2 = self.validate_id(episode_id2)
-
-            with Session(self.engine) as session:
-                # Insert both directions
-                link_rows = [
-                    EpisodeRelationshipTable(episode_id1=episode_id1, episode_id2=episode_id2),
-                    EpisodeRelationshipTable(episode_id1=episode_id2, episode_id2=episode_id1),
-                ]
-                session.add_all(link_rows)
-                session.commit()
-                return True
-        except Exception:
-            return False
-
-    async def get_related_episodes(self, episode_id: str) -> list[Episode]:
-        """Get episodes related to a specific episode."""
-        episode_id = self.validate_id(episode_id)
-
-        with Session(self.engine) as session:
-            stmt = (
-                select(EpisodeTable)
-                .join(EpisodeRelationshipTable, EpisodeTable.episode_id == EpisodeRelationshipTable.episode_id2)
-                .where(EpisodeRelationshipTable.episode_id1 == episode_id)
-            )
-            results = session.exec(stmt).all()
-            return [self._row_to_episode(row) for row in results]
-
     async def delete_episode(self, episode_id: str) -> bool:
         """Delete an episode."""
         try:
@@ -1034,14 +1002,6 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
             with Session(self.engine) as session:
                 # Delete related data first
                 session.exec(delete(EpisodeRawDataTable).where(EpisodeRawDataTable.episode_id == episode_id))
-                session.exec(
-                    delete(EpisodeRelationshipTable).where(
-                        or_(
-                            EpisodeRelationshipTable.episode_id1 == episode_id,
-                            EpisodeRelationshipTable.episode_id2 == episode_id,
-                        )
-                    )
-                )
 
                 # Delete the episode
                 session.exec(delete(EpisodeTable).where(EpisodeTable.episode_id == episode_id))

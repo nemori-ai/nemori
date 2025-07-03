@@ -12,6 +12,7 @@ __description__ = "Nature-inspired Episodic Memory for AI"
 from .core.builders import EpisodeBuilder
 from .core.data_types import DataType, RawEventData
 from .core.episode import Episode, EpisodeMetadata
+from .episode_manager import EpisodeManager
 from .llm import AnthropicProvider, GeminiProvider, LLMProvider, OpenAIProvider
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "OpenAIProvider",
     "AnthropicProvider",
     "GeminiProvider",
+    "EpisodeManager",
 ]
