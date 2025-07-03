@@ -282,62 +282,6 @@ class EpisodicMemoryRepository(StorageRepository):
         pass
 
     @abstractmethod
-    async def search_episodes_by_text(
-        self, text: str, owner_id: str | None = None, limit: int | None = None
-    ) -> EpisodeSearchResult:
-        """
-        Search episodes by text content.
-
-        Args:
-            text: Text to search for
-            owner_id: Optional filter by owner
-            limit: Optional limit on results
-
-        Returns:
-            Search results containing matching episodes
-        """
-        pass
-
-    @abstractmethod
-    async def search_episodes_by_keywords(
-        self, keywords: list[str], owner_id: str | None = None, limit: int | None = None
-    ) -> EpisodeSearchResult:
-        """
-        Search episodes by keywords.
-
-        Args:
-            keywords: Keywords to search for
-            owner_id: Optional filter by owner
-            limit: Optional limit on results
-
-        Returns:
-            Search results containing matching episodes
-        """
-        pass
-
-    @abstractmethod
-    async def search_episodes_by_embedding(
-        self,
-        embedding: list[float],
-        owner_id: str | None = None,
-        limit: int | None = None,
-        threshold: float | None = None,
-    ) -> EpisodeSearchResult:
-        """
-        Search episodes by semantic similarity using embeddings.
-
-        Args:
-            embedding: Query embedding vector
-            owner_id: Optional filter by owner
-            limit: Optional limit on results
-            threshold: Optional similarity threshold
-
-        Returns:
-            Search results with relevance scores
-        """
-        pass
-
-    @abstractmethod
     async def get_episodes_by_owner(
         self, owner_id: str, limit: int | None = None, offset: int | None = None
     ) -> EpisodeSearchResult:

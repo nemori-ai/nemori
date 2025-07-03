@@ -258,7 +258,7 @@ class TestMemoryEpisodicMemoryRepository:
         await episode_repo.store_episode(sample_episode)
 
         # Search by text in title
-        results = await episode_repo.search_episodes_by_text("Test", owner_id="test_user")
+        results = await episode_repo.search_episodes(EpisodeQuery(text_search="Test", owner_ids=["test_user"]))
         assert results.count == 1
         assert results.episodes[0].title == sample_episode.title
 
@@ -267,7 +267,7 @@ class TestMemoryEpisodicMemoryRepository:
         await episode_repo.store_episode(sample_episode)
 
         # Search by keywords
-        results = await episode_repo.search_episodes_by_keywords(["conversation"], owner_id="test_user")
+        results = await episode_repo.search_episodes(EpisodeQuery(keywords=["conversation"], owner_ids=["test_user"]))
         assert results.count == 1
 
     async def test_get_episodes_by_owner(self, episode_repo, sample_episode):

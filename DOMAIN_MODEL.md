@@ -25,6 +25,20 @@ Nemori 的核心理念基于人类情景记忆的认知模式：
 
 ```mermaid
 graph TB
+    subgraph "应用层 Application Layer"
+        App[应用程序 Applications]
+        API[API 接口 API Interface]
+    end
+    
+    subgraph "集成层 Integration Layer"
+        EpisodeManager[情景管理器 Episode Manager]
+        LifecycleCoordinator[生命周期协调器 Lifecycle Coordinator]
+        AutoIndexing[自动索引 Auto Indexing]
+        
+        App --> EpisodeManager
+        API --> EpisodeManager
+    end
+    
     subgraph "数据摄入层 Data Ingestion Layer"
         RawData[原始数据 Raw Data]
         DataTypes[数据类型 Data Types]
@@ -54,15 +68,40 @@ graph TB
         Episode --> TemporalInfo
     end
     
-    subgraph "存储与检索层 Storage & Retrieval Layer"
-        EmbeddingVector[嵌入向量 Embedding Vector]
-        SearchKeywords[搜索关键词 Search Keywords]
-        ImportanceScore[重要性评分 Importance Score]
+    subgraph "存储层 Storage Layer"
+        RawDataRepo[原始数据仓库 Raw Data Repository]
+        EpisodeRepo[情景记忆仓库 Episode Repository]
+        StorageBackends[存储后端 Storage Backends]
         
-        Episode --> EmbeddingVector
-        Episode --> SearchKeywords
-        Episode --> ImportanceScore
+        Episode --> EpisodeRepo
+        RawData --> RawDataRepo
+        EpisodeRepo --> StorageBackends
+        RawDataRepo --> StorageBackends
     end
+    
+    subgraph "检索层 Retrieval Layer"
+        RetrievalService[检索服务 Retrieval Service]
+        BM25RetrievalProvider[BM25 检索提供者 BM25 Retrieval Provider]
+        EmbeddingProvider[嵌入检索提供者 Embedding Provider]
+        IndexManager[索引管理器 Index Manager]
+        
+        RetrievalService --> BM25RetrievalProvider
+        RetrievalService --> EmbeddingProvider
+        BM25RetrievalProvider --> IndexManager
+        EmbeddingProvider --> IndexManager
+    end
+    
+    %% 集成层连接
+    EpisodeManager --> Registry
+    EpisodeManager --> RawDataRepo
+    EpisodeManager --> EpisodeRepo
+    EpisodeManager --> RetrievalService
+    
+    %% 数据流
+    EpisodeManager -.-> TypedData
+    EpisodeManager -.-> Episode
+    EpisodeManager -.-> AutoIndexing
+    AutoIndexing -.-> RetrievalService
 ```
 
 ## 核心概念模型
@@ -197,7 +236,90 @@ class EpisodeBuilder(ABC):
 - **时间解析**：处理相对时间引用，转换为绝对时间
 - **降级处理**：在 LLM 不可用时提供基础功能
 
-### 4. 支撑服务层
+### 4. 集成协调层
+
+#### EpisodeManager（情景管理器）
+```python
+class EpisodeManager:
+    raw_data_repo: RawDataRepository       # 原始数据仓库
+    episode_repo: EpisodicMemoryRepository # 情景记忆仓库
+    builder_registry: EpisodeBuilderRegistry # 构建器注册表
+    retrieval_service: RetrievalService    # 检索服务
+    
+    async def process_raw_data(self, data: RawEventData, owner_id: str) -> Episode:
+        # 完整的数据处理流程
+        pass
+```
+
+**核心职责**：
+1. **生命周期协调**：管理情景记忆从创建到删除的完整流程
+2. **自动索引管理**：透明的检索索引同步和维护
+3. **跨层数据流**：协调构建层、存储层、检索层的数据交互
+4. **用户隔离**：严格的多用户数据安全保证
+5. **错误处理**：提供健壮的错误处理和恢复机制
+6. **系统监控**：统一的健康检查和性能监控
+
+**关键特性**：
+- 单一入口：所有情景记忆操作的统一接口
+- 自动化：透明的索引维护，无需手动管理
+- 一致性：确保跨层数据的一致性和完整性
+- 可靠性：组件故障不影响整体系统稳定性
+
+### 5. 检索服务层
+
+#### RetrievalService（检索服务）
+```python
+class RetrievalService:
+    episode_repo: EpisodicMemoryRepository     # 数据源仓库
+    providers: dict[RetrievalStrategy, RetrievalProvider] # 检索策略提供者
+    
+    async def search(self, query: RetrievalQuery) -> RetrievalResult:
+        # 统一的检索接口
+        pass
+    
+    def register_provider(self, strategy: RetrievalStrategy, config: RetrievalConfig):
+        # 注册检索策略
+        pass
+```
+
+**设计理念**：
+- **策略可插拔**：支持多种检索算法的动态配置
+- **用户隔离**：每个用户独立的检索索引空间
+- **性能优化**：高效的索引结构和查询算法
+- **可扩展性**：支持新检索策略的无缝集成
+
+#### RetrievalProvider（检索提供者）
+```python
+class RetrievalProvider(ABC):
+    @abstractmethod
+    async def add_episode(self, episode: Episode) -> None:
+        """添加情景到索引"""
+        pass
+    
+    @abstractmethod
+    async def search(self, query: RetrievalQuery) -> RetrievalResult:
+        """执行检索查询"""
+        pass
+    
+    @abstractmethod
+    async def remove_episode(self, episode_id: str) -> None:
+        """从索引移除情景"""
+        pass
+```
+
+**已实现策略**：
+- **BM25RetrievalProvider**：基于 BM25 算法的文本检索
+  - NLTK 专业文本预处理
+  - 多字段权重评分（标题、摘要、实体、主题、内容）
+  - 降级评分机制保证查询鲁棒性
+  - 用户独立索引管理
+
+**规划策略**：
+- **EmbeddingProvider**：基于向量嵌入的语义检索
+- **KeywordProvider**：关键词精确匹配检索
+- **HybridProvider**：多策略融合检索
+
+### 6. 支撑服务层
 
 #### LLMProvider（大语言模型提供者）
 ```python
@@ -223,42 +345,214 @@ class LLMProvider(Protocol):
 
 ## 数据流转模型
 
+### 完整数据处理流程
+
 ```mermaid
 sequenceDiagram
-    participant U as User Data
-    participant R as Raw Event Data
-    participant T as Typed Data
-    participant B as Episode Builder
+    participant A as Application
+    participant M as EpisodeManager
+    participant R as RawDataRepo
+    participant B as EpisodeBuilder
     participant L as LLM Provider
-    participant E as Episode
-    participant S as Storage
+    participant E as EpisodeRepo
+    participant RS as RetrievalService
+    participant BP as BM25RetrievalProvider
     
-    U->>R: 数据摄入
-    R->>T: 类型化包装
-    T->>B: 构建器处理
-    B->>L: LLM 增强（可选）
-    L->>B: 生成内容
-    B->>E: 创建情景
-    E->>S: 存储索引
+    A->>M: process_raw_data(raw_data, owner_id)
     
-    Note over B,L: 支持降级处理
-    Note over E,S: 支持语义检索
+    Note over M: 1. 存储原始数据
+    M->>R: store_raw_data(raw_data)
+    R->>M: data_id
+    
+    Note over M: 2. 构建情景记忆
+    M->>B: build_episode(raw_data, owner_id)
+    B->>L: LLM 增强处理（可选）
+    L->>B: 生成结构化内容
+    B->>M: return episode
+    
+    Note over M: 3. 存储情景记忆
+    M->>E: store_episode(episode)
+    E->>M: episode_id
+    
+    Note over M: 4. 建立数据关联
+    M->>E: link_episode_to_raw_data(episode_id, [data_id])
+    
+    Note over M: 5. 标记处理状态
+    M->>R: mark_as_processed(data_id, "1.0")
+    
+    Note over M: 6. 自动索引更新
+    M->>RS: add_episode_to_all_providers(episode)
+    RS->>BP: add_episode(episode)
+    BP->>BP: 文本预处理和索引构建
+    BP->>RS: success
+    RS->>M: success
+    
+    M->>A: return episode
+    
+    Note over A,BP: 自动化端到端流程
+```
+
+### 检索查询流程
+
+```mermaid
+sequenceDiagram
+    participant A as Application
+    participant M as EpisodeManager
+    participant RS as RetrievalService
+    participant BP as BM25RetrievalProvider
+    participant E as EpisodeRepo
+    
+    A->>M: search_episodes(query_text, owner_id)
+    
+    Note over M: 构建检索查询
+    M->>RS: search(RetrievalQuery)
+    
+    Note over RS: 路由到合适的提供者
+    RS->>BP: search(query)
+    
+    Note over BP: BM25 算法计算
+    BP->>BP: 文本预处理
+    BP->>BP: 倒排索引查询
+    BP->>BP: 相关性评分
+    BP->>BP: 用户数据过滤
+    
+    BP->>E: 获取完整情景数据
+    E->>BP: episodes with details
+    
+    BP->>RS: RetrievalResult with scores
+    RS->>M: search results
+    M->>A: episodes with relevance
+    
+    Note over A,E: 高效的检索链路
+```
+
+### 情景生命周期管理
+
+```mermaid
+sequenceDiagram
+    participant A as Application
+    participant M as EpisodeManager
+    participant E as EpisodeRepo
+    participant RS as RetrievalService
+    participant BP as BM25RetrievalProvider
+    
+    Note over A,BP: 创建情景
+    A->>M: create_episode(episode)
+    M->>E: store_episode(episode)
+    M->>RS: add_episode_to_all_providers(episode)
+    RS->>BP: add_episode(episode)
+    
+    Note over A,BP: 更新情景
+    A->>M: update_episode(episode_id, updated_episode)
+    M->>E: update_episode(episode_id, updated_episode)
+    M->>RS: update_episode_in_all_providers(updated_episode)
+    RS->>BP: update_episode(updated_episode)
+    
+    Note over A,BP: 删除情景
+    A->>M: delete_episode(episode_id)
+    M->>RS: remove_episode_from_all_providers(episode_id)
+    RS->>BP: remove_episode(episode_id)
+    M->>E: delete_episode(episode_id)
+    
+    Note over A,BP: 自动索引同步
 ```
 
 ## 记忆检索模型
 
-### 检索策略
+### 检索架构设计
 
-1. **关键词匹配**：基于生成的搜索关键词进行快速匹配
-2. **语义相似性**：利用嵌入向量进行语义搜索
-3. **时间过滤**：基于时间信息的过滤和排序
-4. **重要性加权**：结合访问频率和重要性评分
+#### 分层检索系统
+```
+应用层查询 → EpisodeManager → RetrievalService → 具体提供者 → 索引引擎
+```
 
-### 记忆更新机制
+#### 检索策略体系
+```python
+class RetrievalStrategy(Enum):
+    BM25 = "bm25"           # 基于 BM25 的文本相关性检索
+    EMBEDDING = "embedding"  # 基于向量嵌入的语义检索
+    KEYWORD = "keyword"      # 基于关键词的精确匹配
+    HYBRID = "hybrid"        # 多策略融合检索
+```
 
-- **访问追踪**：记录每次记忆访问，更新访问计数和时间
-- **重要性调整**：基于访问模式动态调整重要性评分
-- **关联建立**：支持情景间的关联关系建立
+### BM25 检索实现
+
+#### 算法特性
+- **TF-IDF 权重**：词频-逆文档频率统计
+- **文档长度归一化**：消除文档长度偏差
+- **多字段权重评分**：标题、摘要、实体、主题、内容的差异化权重
+- **用户数据隔离**：每用户独立索引空间
+
+#### 文本预处理流程
+1. **NLTK 分词**：专业级英文分词处理
+2. **停用词过滤**：移除高频低信息量词汇
+3. **词干提取**：Porter Stemmer 统一词形变化
+4. **倒排索引构建**：词项到文档的高效映射
+
+#### 相关性评分算法
+```
+BM25(q,d) = Σ IDF(qi) × (f(qi,d) × (k1 + 1)) / (f(qi,d) + k1 × (1 - b + b × |d|/avgdl))
+
+多字段加权：
+final_score = (title_score × 3.0 + summary_score × 2.0 + 
+               entity_score × 2.0 + topic_score × 2.0 + 
+               content_score × 1.0) / total_weight
+```
+
+### 高级检索功能
+
+#### 多条件组合查询
+```python
+query = RetrievalQuery(
+    text="机器学习项目",           # 文本查询
+    owner_id="user123",          # 用户隔离
+    episode_types=[EpisodeType.CONVERSATIONAL],  # 类型过滤
+    time_range_hours=48,         # 时间范围
+    min_importance=0.5,          # 重要性阈值
+    limit=20                     # 结果数量
+)
+```
+
+#### 智能查询路由
+- **策略选择**：根据查询类型自动选择最优检索策略
+- **结果融合**：多策略结果的智能合并和排序
+- **降级处理**：主策略失败时的备用方案
+
+### 索引管理机制
+
+#### 自动索引生命周期
+- **创建时索引**：新情景立即加入检索索引
+- **更新时重索引**：保持索引与数据的实时同步
+- **删除时清理**：避免索引中的孤儿数据
+- **批量重建**：支持从存量数据完整重建索引
+
+#### 增量更新策略
+- **实时同步**：情景变更立即反映到索引
+- **批量优化**：定期批量操作提高性能
+- **版本控制**：索引版本管理和回滚能力
+
+### 记忆访问和更新机制
+
+#### 智能访问追踪
+```python
+# 获取情景并追踪访问
+episode = await manager.get_episode(episode_id, mark_accessed=True)
+
+# 自动更新：
+# - recall_count 递增
+# - last_accessed 时间戳更新
+# - 存储层同步记录
+```
+
+#### 重要性动态调整
+- **访问频率权重**：高频访问的情景提升重要性
+- **时间衰减因子**：旧情景重要性自然衰减
+- **用户行为学习**：基于用户检索模式优化评分
+
+#### 关联关系发现
+- **语义关联**：基于内容相似性的自动关联
+- **时间关联**：时间相近情景的关联建立
+- **主题关联**：相同主题情景的聚类组织
 
 ## 扩展性设计
 
@@ -301,8 +595,128 @@ sequenceDiagram
 - 内存效率的数据结构
 - 可扩展的索引机制
 
+## 系统架构总览
+
+### 完整技术栈
+
+```
+┌─────────────────────────────────────────────┐
+│               应用层                         │
+│  - 业务逻辑                                  │
+│  - API 接口                                 │
+│  - 用户交互                                  │
+├─────────────────────────────────────────────┤
+│               集成层                         │
+│  - EpisodeManager (核心协调器)              │
+│  - 生命周期管理                              │
+│  - 自动化数据流                              │
+│  - 用户隔离和权限控制                        │
+├─────────────────────────────────────────────┤
+│  构建层    │    存储层    │    检索层        │
+│ ─────────  │  ─────────  │  ─────────      │
+│ Builders   │   Storage   │  Retrieval      │
+│ ·Registry  │  ·RawData   │  ·Service       │
+│ ·Conv.     │  ·Episodes  │  ·BM25          │
+│ ·LLM       │  ·Memory    │  ·Embedding     │
+│ ·Custom    │  ·DuckDB    │  ·Keyword       │
+│            │  ·Custom    │  ·Hybrid        │
+└─────────────────────────────────────────────┘
+```
+
+### 核心设计成就
+
+#### 1. 架构完整性
+- **六层架构**：从应用层到存储层的完整技术栈
+- **职责分离**：每层专注核心功能，界限清晰
+- **松耦合**：层间通过接口交互，支持独立演进
+- **高内聚**：层内组件紧密协作，功能完整
+
+#### 2. 自动化集成
+- **端到端流程**：从原始数据到可检索情景的全自动处理
+- **透明索引**：检索索引的自动维护和同步
+- **生命周期管理**：情景创建、更新、删除的一体化管理
+- **错误恢复**：组件故障的自动检测和恢复
+
+#### 3. 可扩展架构
+- **策略模式**：检索算法的可插拔设计
+- **工厂模式**：构建器的动态注册和发现
+- **仓库模式**：存储后端的抽象和实现分离
+- **观察者模式**：事件驱动的跨层通信
+
+#### 4. 性能优化
+- **分层缓存**：多级缓存提升访问性能
+- **增量更新**：避免全量重建的增量同步
+- **批量处理**：提高大数据量处理效率
+- **索引优化**：高效的倒排索引和相关性算法
+
+#### 5. 数据安全
+- **用户隔离**：严格的多用户数据分离
+- **访问控制**：基于所有权的权限验证
+- **数据完整性**：跨层数据一致性保证
+- **隐私保护**：用户数据的安全存储和传输
+
+### 技术创新点
+
+#### 1. 情景记忆对齐
+- **认知模型**：基于人类情景记忆的系统设计
+- **颗粒度对齐**：与人类记忆回忆粒度的精确匹配
+- **语义解耦**："人类尺度"事件的智能存储
+
+#### 2. 智能检索算法
+- **BM25 优化**：多字段权重的专业实现
+- **降级机制**：保证查询鲁棒性的备用评分
+- **用户隔离**：每用户独立索引空间
+
+#### 3. 集成层设计
+- **协调器模式**：统一的情景记忆生命周期管理
+- **自动化流程**：透明的跨层数据同步
+- **错误隔离**：组件故障不传播的设计
+
+#### 4. 构建器生态
+- **LLM 增强**：可选的大语言模型集成
+- **降级处理**：无 LLM 环境下的基础功能
+- **边界检测**：智能的情景边界识别
+
+### 未来发展方向
+
+#### 1. 多模态记忆
+- 图像情景记忆处理
+- 音频情景记忆分析  
+- 视频情景记忆提取
+- 传感器数据情景化
+
+#### 2. 高级检索策略
+- 深度学习嵌入检索
+- 混合检索策略融合
+- 个性化检索优化
+- 实时检索结果推荐
+
+#### 3. 分布式架构
+- 微服务化部署
+- 水平扩展支持
+- 分布式索引管理
+- 集群容错机制
+
+#### 4. 智能化演进
+- 自适应重要性学习
+- 动态关联关系发现
+- 用户行为模式识别
+- 情景记忆自动合成
+
 ## 总结
 
-Nemori 的领域模型设计体现了对人类情景记忆认知模式的深度理解和技术实现。通过分层的架构设计、灵活的数据处理流程和智能的记忆生成机制，Nemori 为大语言模型提供了一个强大的情景记忆系统。
+Nemori 的领域模型设计代表了对人类情景记忆认知模式的深度理解和创新技术实现。通过七层架构的精心设计、完整的自动化数据流程和先进的检索算法，Nemori 为大语言模型提供了一个强大、智能、可扩展的情景记忆系统。
 
-这个系统不仅在技术上实现了与人类记忆颗粒度的对齐，更在设计理念上体现了对未来 AI 记忆机制的前瞻性思考。通过持续的迭代和优化，Nemori 将继续向着更加智能、自然的 AI 记忆系统目标前进。
+### 核心价值实现
+
+✅ **认知对齐**：与人类记忆颗粒度的精确对齐  
+✅ **自动化**：端到端的无人工干预数据流  
+✅ **高性能**：工业级的检索算法和优化策略  
+✅ **可扩展**：支持多种数据类型和检索策略  
+✅ **安全性**：严格的用户数据隔离和权限控制  
+✅ **可靠性**：健壮的错误处理和恢复机制  
+✅ **易用性**：统一的 API 接口和简化的操作流程  
+
+这个系统不仅在技术上实现了与人类记忆颗粒度的深度对齐，更在架构设计上体现了对未来 AI 记忆机制的前瞻性思考。Nemori 将继续引领情景记忆系统的技术发展，为构建更加智能、自然的 AI 记忆能力奠定坚实基础。
+
+通过持续的技术创新和架构优化，Nemori 正在向着成为下一代 AI 系统标准记忆组件的目标稳步前进，为人工智能的记忆能力革命贡献核心技术力量。

@@ -174,8 +174,12 @@ cache.db*
 .env.*
 !.env.example
 
-# playground output
+# playground output or tmp files
 playground/output/
+playground/.tmp/
 
 # claude local settings
 .claude/
+
+# tmp
+.tmp/

@@ -16,6 +16,7 @@ import pytest_asyncio
 from nemori.core.data_types import DataType, RawEventData, TemporalInfo
 from nemori.core.episode import Episode, EpisodeLevel, EpisodeMetadata, EpisodeType
 from nemori.storage import (
+    EpisodeQuery,
     RawDataQuery,
     StorageConfig,
     TimeRange,
@@ -387,7 +388,7 @@ class TestDuckDBEpisodicMemoryRepository:
         await duckdb_episode_repo.store_episode(sample_episode)
 
         # Search by text in title
-        results = await duckdb_episode_repo.search_episodes_by_text("Test", owner_id="test_user")
+        results = await duckdb_episode_repo.search_episodes(EpisodeQuery(text_search="Test", owner_ids=["test_user"]))
         assert results.total_count == 1
         assert results.episodes[0].title == sample_episode.title
 
@@ -396,7 +397,9 @@ class TestDuckDBEpisodicMemoryRepository:
         await duckdb_episode_repo.store_episode(sample_episode)
 
         # Search by keywords
-        results = await duckdb_episode_repo.search_episodes_by_keywords(["conversation"], owner_id="test_user")
+        results = await duckdb_episode_repo.search_episodes(
+            EpisodeQuery(keywords=["conversation"], owner_ids=["test_user"])
+        )
         assert results.total_count == 1
 
     async def test_get_episodes_by_owner(self, duckdb_episode_repo, sample_episode):
@@ -608,7 +611,9 @@ class TestDuckDBIntegration:
             assert raw_search.total_count == 1
 
             # Search episodes
-            episode_search = await episode_repo.search_episodes_by_text("machine learning", owner_id="student_001")
+            episode_search = await episode_repo.search_episodes(
+                EpisodeQuery(text_search="machine learning", owner_ids=["student_001"])
+            )
             assert episode_search.total_count == 1
 
             # Step 6: Test relationships

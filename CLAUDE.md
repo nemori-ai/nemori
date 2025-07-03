@@ -3,6 +3,11 @@
 ## Project: Nemori
 Episodic memory system for transforming raw user data into structured narrative episodes.
 
+## Pre-Development Requirements
+- **Always read top-level documentation first** - Understand project architecture design principles and approach
+- Review README.md, architecture docs, and design patterns before making changes
+- Familiarize with the episodic memory system's core concepts and data flow
+
 ## Package Management
 - **Use `uv` for all package management operations**
 - Install dependencies: `uv sync`

@@ -626,41 +626,6 @@ class MemoryEpisodicMemoryRepository(EpisodicMemoryRepository):
             relevance_scores=paginated_scores,
         )
 
-    async def search_episodes_by_text(
-        self, text: str, owner_id: str | None = None, limit: int | None = None
-    ) -> EpisodeSearchResult:
-        """Search episodes by text content."""
-        query = EpisodeQuery(
-            text_search=text, owner_ids=[owner_id] if owner_id else None, limit=limit, sort_by=SortBy.RELEVANCE
-        )
-        return await self.search_episodes(query)
-
-    async def search_episodes_by_keywords(
-        self, keywords: list[str], owner_id: str | None = None, limit: int | None = None
-    ) -> EpisodeSearchResult:
-        """Search episodes by keywords."""
-        query = EpisodeQuery(
-            keywords=keywords, owner_ids=[owner_id] if owner_id else None, limit=limit, sort_by=SortBy.RELEVANCE
-        )
-        return await self.search_episodes(query)
-
-    async def search_episodes_by_embedding(
-        self,
-        embedding: list[float],
-        owner_id: str | None = None,
-        limit: int | None = None,
-        threshold: float | None = None,
-    ) -> EpisodeSearchResult:
-        """Search episodes by semantic similarity using embeddings."""
-        query = EpisodeQuery(
-            embedding_query=embedding,
-            similarity_threshold=threshold,
-            owner_ids=[owner_id] if owner_id else None,
-            limit=limit,
-            sort_by=SortBy.RELEVANCE,
-        )
-        return await self.search_episodes(query)
-
     async def get_episodes_by_owner(
         self, owner_id: str, limit: int | None = None, offset: int | None = None
     ) -> EpisodeSearchResult:
