@@ -22,8 +22,6 @@ Nemori 源自我们团队 Tanka.ai 项目中记忆系统的情景记忆索引模
 
 ![LoCoMo Benchmark Results](figures/locomo-scores.png)
 
-![LoCoMo Benchmark Details](figures/locomo-detail-scores.png)
-
 ## 复现方法（Reproduction Guide）
 
 要复现 Nemori 在 LoCoMo 基准测试上的实验结果，请参考 [evaluation/README.md](evaluation/README.md) 获取详细的评测环境搭建与运行步骤。

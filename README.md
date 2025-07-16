@@ -22,8 +22,6 @@ On the LoCoMo (Long-Context Conversation Modeling) dataset, Nemori demonstrates 
 
 ![LoCoMo Benchmark Results](figures/locomo-scores.png)
 
-![LoCoMo Benchmark Details](figures/locomo-detail-scores.png)
-
 ## Reproduction Guide
 
 To reproduce Nemori's experimental results on the LoCoMo benchmark, please refer to [evaluation/README.md](evaluation/README.md) for detailed evaluation environment setup and execution steps.
