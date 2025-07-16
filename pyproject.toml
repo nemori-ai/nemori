@@ -3,7 +3,7 @@ name = "nemori"
 version = "0.1.0"
 description = "Episodic memory system for transforming raw user data into structured narrative episodes"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     # LangChain core
     "langchain-core",

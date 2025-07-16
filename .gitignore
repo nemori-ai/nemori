@@ -183,3 +183,6 @@ playground/.tmp/
 
 # tmp
 .tmp/
+
+# eval workspace
+evaluation/memos/

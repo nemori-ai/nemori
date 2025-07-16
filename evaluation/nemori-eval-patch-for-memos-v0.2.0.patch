@@ -1,0 +1,1284 @@
+From e47f75e8dfdf2a66738a47db4427fd9e82817843 Mon Sep 17 00:00:00 2001
+From: Pandazki <onlrrr@gmail.com>
+Date: Wed, 16 Jul 2025 15:55:08 +0800
+Subject: [PATCH] feat(nemori): integrate Nemori framework into locomo
+ evaluation scripts
+
+- Added support for the Nemori memory framework across various scripts, including ingestion, evaluation, and search functionalities.
+- Updated argument parsers to include "nemori" as a choice for memory frameworks.
+- Implemented async processing for Nemori ingestion and search, enhancing performance and usability.
+- Introduced new prompts specific to the Nemori framework for improved context handling.
+- Created a dedicated Nemori evaluation package with core functionalities.
+---
+ evaluation/scripts/locomo/locomo_eval.py      |   4 +-
+ evaluation/scripts/locomo/locomo_ingestion.py |  60 +-
+ evaluation/scripts/locomo/locomo_metric.py    |   4 +-
+ evaluation/scripts/locomo/locomo_responses.py |  11 +-
+ evaluation/scripts/locomo/locomo_search.py    | 153 ++++-
+ .../scripts/locomo/nemori_eval/__init__.py    |  11 +
+ .../scripts/locomo/nemori_eval/experiment.py  | 574 ++++++++++++++++++
+ .../scripts/locomo/nemori_eval/search.py      | 237 ++++++++
+ evaluation/scripts/locomo/prompts.py          |  40 ++
+ 9 files changed, 1083 insertions(+), 11 deletions(-)
+ create mode 100644 evaluation/scripts/locomo/nemori_eval/__init__.py
+ create mode 100644 evaluation/scripts/locomo/nemori_eval/experiment.py
+ create mode 100644 evaluation/scripts/locomo/nemori_eval/search.py
+
+diff --git a/evaluation/scripts/locomo/locomo_eval.py b/evaluation/scripts/locomo/locomo_eval.py
+index b5b4784..bb6e063 100644
+--- a/evaluation/scripts/locomo/locomo_eval.py
++++ b/evaluation/scripts/locomo/locomo_eval.py
+@@ -363,8 +363,8 @@ if __name__ == "__main__":
+     parser.add_argument(
+         "--lib",
+         type=str,
+-        choices=["zep", "memos", "mem0", "mem0_graph", "langmem", "openai"],
+-        help="Specify the memory framework (zep or memos or mem0 or mem0_graph)",
++        choices=["zep", "memos", "mem0", "mem0_graph", "langmem", "openai", "nemori"],
++        help="Specify the memory framework (zep or memos or mem0 or mem0_graph or nemori)",
+     )
+     parser.add_argument(
+         "--version",
+diff --git a/evaluation/scripts/locomo/locomo_ingestion.py b/evaluation/scripts/locomo/locomo_ingestion.py
+index f383700..61b1f2e 100644
+--- a/evaluation/scripts/locomo/locomo_ingestion.py
++++ b/evaluation/scripts/locomo/locomo_ingestion.py
+@@ -1,4 +1,5 @@
+ import argparse
++import asyncio
+ import concurrent.futures
+ import json
+ import os
+@@ -19,6 +20,15 @@ from memos.mem_cube.general import GeneralMemCube
+ from memos.mem_os.main import MOS
+ 
+ 
++# Nemori evaluation imports
++try:
++    from nemori_eval import NemoriExperiment
++    NEMORI_AVAILABLE = True
++except ImportError:
++    NEMORI_AVAILABLE = False
++    print("⚠️ Nemori not available. Install nemori to use nemori functionality.")
++
++
+ custom_instructions = """
+ Generate personal memories that follow these guidelines:
+ 
+@@ -296,8 +306,54 @@ def process_user(conv_idx, frame, locomo_df, version, num_workers=1):
+         return f"Error processing user {conv_idx}: {e!s}"
+ 
+ 
++async def main_nemori(version="default"):
++    """Main function for Nemori processing."""
++    load_dotenv()
++    locomo_df = pd.read_json("data/locomo/locomo10.json")
++
++    print("🚀 Starting Nemori Ingestion")
++    print("=" * 50)
++
++    # Create Nemori experiment
++    experiment = NemoriExperiment(version=version, episode_mode="speaker")
++
++    try:
++        # Step 1: Setup LLM provider
++        llm_available = await experiment.setup_llm_provider()
++        if not llm_available:
++            print("⚠️ Continuing with fallback mode (no LLM)")
++
++        # Step 2: Load data
++        experiment.load_locomo_data(locomo_df)
++
++        # Step 3: Setup storage and retrieval
++        await experiment.setup_storage_and_retrieval()
++
++        # Step 4: Build episodes
++        await experiment.build_episodes()
++
++        print("\n🎉 Nemori Ingestion Complete")
++        print(f"✅ Successfully processed {len(experiment.conversations)} conversations")
++        print(f"✅ Created {len(experiment.episodes)} episodes")
++
++    except Exception as e:
++        print(f"❌ Nemori ingestion failed: {e}")
++        raise
++    finally:
++        await experiment.cleanup()
++
++
+ def main(frame, version="default", num_workers=4):
+     load_dotenv()
++
++    if frame == "nemori":
++        if not NEMORI_AVAILABLE:
++            print("❌ Nemori is not available. Please install nemori to use this framework.")
++            return
++        # Run async main for nemori
++        asyncio.run(main_nemori(version))
++        return
++
+     locomo_df = pd.read_json("data/locomo/locomo10.json")
+ 
+     num_users = 10
+@@ -340,8 +396,8 @@ if __name__ == "__main__":
+     parser.add_argument(
+         "--lib",
+         type=str,
+-        choices=["zep", "memos", "mem0", "mem0_graph"],
+-        help="Specify the memory framework (zep or memos or mem0 or mem0_graph)",
++        choices=["zep", "memos", "mem0", "mem0_graph", "nemori"],
++        help="Specify the memory framework (zep or memos or mem0 or mem0_graph or nemori)",
+     )
+     parser.add_argument(
+         "--version",
+diff --git a/evaluation/scripts/locomo/locomo_metric.py b/evaluation/scripts/locomo/locomo_metric.py
+index 9335ec5..a1001d7 100644
+--- a/evaluation/scripts/locomo/locomo_metric.py
++++ b/evaluation/scripts/locomo/locomo_metric.py
+@@ -9,8 +9,8 @@ parser = argparse.ArgumentParser()
+ parser.add_argument(
+     "--lib",
+     type=str,
+-    choices=["zep", "memos", "mem0", "mem0_graph", "langmem", "openai"],
+-    help="Specify the memory framework (zep or memos or mem0 or mem0_graph)",
++    choices=["zep", "memos", "mem0", "mem0_graph", "langmem", "openai", "nemori"],
++    help="Specify the memory framework (zep or memos or mem0 or mem0_graph or nemori)",
+ )
+ parser.add_argument(
+     "--version",
+diff --git a/evaluation/scripts/locomo/locomo_responses.py b/evaluation/scripts/locomo/locomo_responses.py
+index 5d0374c..ee5552a 100644
+--- a/evaluation/scripts/locomo/locomo_responses.py
++++ b/evaluation/scripts/locomo/locomo_responses.py
+@@ -9,7 +9,7 @@ import pandas as pd
+ 
+ from dotenv import load_dotenv
+ from openai import AsyncOpenAI
+-from prompts import ANSWER_PROMPT_MEM0, ANSWER_PROMPT_MEMOS, ANSWER_PROMPT_ZEP
++from prompts import ANSWER_PROMPT_MEM0, ANSWER_PROMPT_MEMOS, ANSWER_PROMPT_NEMORI, ANSWER_PROMPT_ZEP
+ from tqdm import tqdm
+ 
+ 
+@@ -29,6 +29,11 @@ async def locomo_response(frame, llm_client, context: str, question: str) -> str
+             context=context,
+             question=question,
+         )
++    elif frame == "nemori":
++        prompt = ANSWER_PROMPT_NEMORI.format(
++            context=context,
++            question=question,
++        )
+     response = await llm_client.chat.completions.create(
+         model=os.getenv("CHAT_MODEL"),
+         messages=[
+@@ -124,8 +129,8 @@ if __name__ == "__main__":
+     parser.add_argument(
+         "--lib",
+         type=str,
+-        choices=["zep", "memos", "mem0", "mem0_graph", "openai"],
+-        help="Specify the memory framework (zep or memos or mem0 or mem0_graph)",
++        choices=["zep", "memos", "mem0", "mem0_graph", "openai", "nemori"],
++        help="Specify the memory framework (zep or memos or mem0 or mem0_graph or nemori)",
+     )
+     parser.add_argument(
+         "--version",
+diff --git a/evaluation/scripts/locomo/locomo_search.py b/evaluation/scripts/locomo/locomo_search.py
+index 26e7dd4..e5d57b4 100644
+--- a/evaluation/scripts/locomo/locomo_search.py
++++ b/evaluation/scripts/locomo/locomo_search.py
+@@ -1,4 +1,5 @@
+ import argparse
++import asyncio
+ import json
+ import os
+ 
+@@ -18,6 +19,15 @@ from memos.configs.mem_os import MOSConfig
+ from memos.mem_os.main import MOS
+ 
+ 
++# Nemori evaluation imports
++try:
++    from nemori_eval import get_nemori_client, nemori_search
++    NEMORI_AVAILABLE = True
++except ImportError:
++    NEMORI_AVAILABLE = False
++    print("⚠️ Nemori not available. Install nemori to use nemori functionality.")
++
++
+ def get_client(frame: str, user_id: str | None = None, version: str = "default", top_k: int = 20):
+     if frame == "zep":
+         zep = Zep(api_key=os.getenv("ZEP_API_KEY"), base_url="https://api.getzep.com/api/v2")
+@@ -47,6 +57,8 @@ def get_client(frame: str, user_id: str | None = None, version: str = "default",
+         return mos
+ 
+ 
++
++
+ TEMPLATE_ZEP = """
+ FACTS and ENTITIES represent relevant context to the current conversation.
+ 
+@@ -102,6 +114,7 @@ TEMPLATE_MEMOS = """Memories for user {speaker_1}:
+ """
+ 
+ 
++
+ def mem0_search(client, query, speaker_a_user_id, speaker_b_user_id, top_k=20):
+     start = time()
+     search_speaker_a_results = client.search(
+@@ -297,6 +310,25 @@ def zep_search(client, query, group_id, top_k=20):
+     return context, duration_ms
+ 
+ 
++
++
++async def search_query_async(client, query, metadata, frame, reversed_client=None, top_k=20):
++    """Async version of search_query for nemori."""
++    speaker_a_user_id = metadata.get("speaker_a_user_id")
++    speaker_b_user_id = metadata.get("speaker_b_user_id")
++    
++    if frame == "nemori":
++        if not NEMORI_AVAILABLE:
++            raise ImportError("Nemori is not available. Please install nemori.")
++        context, duration_ms = await nemori_search(
++            client, query, speaker_a_user_id, speaker_b_user_id, top_k
++        )
++        return context, duration_ms
++    else:
++        # For non-async frameworks, call the sync version
++        return search_query(client, query, metadata, frame, reversed_client, top_k)
++
++
+ def search_query(client, query, metadata, frame, reversed_client=None, top_k=20):
+     conv_id = metadata.get("conv_id")
+     speaker_a = metadata.get("speaker_a")
+@@ -412,8 +444,125 @@ def process_user(group_idx, locomo_df, frame, version, top_k=20, num_workers=1):
+     return search_results
+ 
+ 
++async def process_user_nemori(group_idx, locomo_df, frame, version, top_k=20):
++    """Process user for Nemori framework."""
++    if not NEMORI_AVAILABLE:
++        raise ImportError("Nemori is not available. Please install nemori.")
++        
++    print(f"\n🚀 [NEMORI PROCESS] Starting processing for user {group_idx}")
++    
++    search_results = defaultdict(list)
++    qa_set = locomo_df["qa"].iloc[group_idx]
++    conversation = locomo_df["conversation"].iloc[group_idx]
++    speaker_a = conversation.get("speaker_a")
++    speaker_b = conversation.get("speaker_b")
++    speaker_a_user_id = f"{speaker_a.lower().replace(' ', '_')}_{group_idx}"
++    speaker_b_user_id = f"{speaker_b.lower().replace(' ', '_')}_{group_idx}"
++    conv_id = f"locomo_exp_user_{group_idx}"
++    
++    print(f"   👥 Original speakers: '{speaker_a}' & '{speaker_b}'")
++    print(f"   🆔 Generated IDs: '{speaker_a_user_id}' & '{speaker_b_user_id}'")
++    print(f"   📝 Conversation ID: '{conv_id}'")
++    print(f"   ❓ QA set size: {len(qa_set)}")
++    
++    existing_results, loaded = load_existing_results(frame, version, group_idx)
++    if loaded:
++        print(f"Loaded existing results for group {group_idx}")
++        return existing_results
++    
++    metadata = {
++        "speaker_a": speaker_a,
++        "speaker_b": speaker_b,
++        "speaker_a_user_id": speaker_a_user_id,
++        "speaker_b_user_id": speaker_b_user_id,
++        "conv_idx": group_idx,
++        "conv_id": conv_id,
++    }
++    
++    # Get nemori client
++    client = await get_nemori_client(conv_id, version)
++    
++    async def process_qa(qa):
++        query = qa.get("question")
++        if qa.get("category") == 5:
++            return None
++        
++        context, duration_ms = await search_query_async(
++            client, query, metadata, frame, top_k=top_k
++        )
++        
++        if not context:
++            print(f"No context found for query: {query}")
++            context = ""
++        return {"query": query, "context": context, "duration_ms": duration_ms}
++    
++    # Process QAs sequentially for nemori (since it's async)
++    for qa in tqdm(qa_set, desc=f"Processing user {group_idx}"):
++        result = await process_qa(qa)
++        if result:
++            context_preview = (
++                result["context"][:20] + "..." if result["context"] else "No context"
++            )
++            print(
++                {
++                    "query": result["query"],
++                    "context": context_preview,
++                    "duration_ms": result["duration_ms"],
++                }
++            )
++            search_results[conv_id].append(result)
++    
++    # Cleanup
++    try:
++        await client.close()
++    except Exception as e:
++        print(f"Warning: Error closing client: {e}")
++    
++    os.makedirs(f"results/locomo/{frame}-{version}/tmp/", exist_ok=True)
++    with open(
++        f"results/locomo/{frame}-{version}/tmp/{frame}_locomo_search_results_{group_idx}.json", "w"
++    ) as f:
++        json.dump(dict(search_results), f, indent=2)
++        print(f"Save search results {group_idx}")
++    
++    return search_results
++
++
++async def main_nemori(version="default", top_k=20):
++    """Main function for Nemori search."""
++    load_dotenv()
++    locomo_df = pd.read_json("data/locomo/locomo10.json")
++
++    num_conv = 10
++    frame = "nemori"
++    os.makedirs(f"results/locomo/{frame}-{version}/", exist_ok=True)
++    all_search_results = defaultdict(list)
++
++    for idx in range(num_conv):
++        try:
++            print(f"Processing user {idx}...")
++            user_results = await process_user_nemori(idx, locomo_df, frame, version, top_k)
++            for conv_id, results in user_results.items():
++                all_search_results[conv_id].extend(results)
++        except Exception as e:
++            print(f"User {idx} generated an exception: {e}")
++
++    with open(f"results/locomo/{frame}-{version}/{frame}_locomo_search_results.json", "w") as f:
++        json.dump(dict(all_search_results), f, indent=2)
++        print("Save all search results")
++
++
+ def main(frame, version="default", num_workers=1, top_k=20):
+     load_dotenv()
++    
++    if frame == "nemori":
++        if not NEMORI_AVAILABLE:
++            print("❌ Nemori is not available. Please install nemori to use this framework.")
++            return
++        # Run async main for nemori
++        asyncio.run(main_nemori(version, top_k))
++        return
++    
+     locomo_df = pd.read_json("data/locomo/locomo10.json")
+ 
+     num_users = 10
+@@ -439,8 +588,8 @@ if __name__ == "__main__":
+     parser.add_argument(
+         "--lib",
+         type=str,
+-        choices=["zep", "memos", "mem0", "mem0_graph", "langmem"],
+-        help="Specify the memory framework (zep or memos or mem0 or mem0_graph)",
++        choices=["zep", "memos", "mem0", "mem0_graph", "langmem", "nemori"],
++        help="Specify the memory framework (zep or memos or mem0 or mem0_graph or nemori)",
+     )
+     parser.add_argument(
+         "--version",
+diff --git a/evaluation/scripts/locomo/nemori_eval/__init__.py b/evaluation/scripts/locomo/nemori_eval/__init__.py
+new file mode 100644
+index 0000000..dac24f8
+--- /dev/null
++++ b/evaluation/scripts/locomo/nemori_eval/__init__.py
+@@ -0,0 +1,11 @@
++"""
++Nemori evaluation package for LoCoMo evaluation.
++
++This package contains the nemori-specific logic extracted from the wait_for_refactor folder.
++It provides evaluation-specific wrappers around the core nemori functionality.
++"""
++
++from .experiment import NemoriExperiment
++from .search import NemoriSearchClient, get_nemori_client, nemori_search
++
++__all__ = ["NemoriExperiment", "NemoriSearchClient", "get_nemori_client", "nemori_search"]
+\ No newline at end of file
+diff --git a/evaluation/scripts/locomo/nemori_eval/experiment.py b/evaluation/scripts/locomo/nemori_eval/experiment.py
+new file mode 100644
+index 0000000..dbeba4f
+--- /dev/null
++++ b/evaluation/scripts/locomo/nemori_eval/experiment.py
+@@ -0,0 +1,574 @@
++"""
++Nemori experiment implementation extracted from wait_for_refactor.
++
++This module contains the core NemoriExperiment class that handles ingestion
++and episodic memory building for the LoCoMo evaluation.
++"""
++
++import asyncio
++import os
++import time
++
++from datetime import datetime, timedelta
++from pathlib import Path
++
++from nemori.builders.conversation_builder import ConversationEpisodeBuilder
++from nemori.core.builders import EpisodeBuilderRegistry
++from nemori.core.data_types import ConversationData, DataType, RawEventData, TemporalInfo
++from nemori.episode_manager import EpisodeManager
++from nemori.llm.providers.openai_provider import OpenAIProvider
++from nemori.retrieval import (
++    RetrievalConfig,
++    RetrievalQuery,
++    RetrievalService,
++    RetrievalStorageType,
++    RetrievalStrategy,
++)
++from nemori.storage.duckdb_storage import (
++    DuckDBEpisodicMemoryRepository,
++    DuckDBRawDataRepository,
++)
++from nemori.storage.storage_types import StorageConfig
++
++
++class NemoriExperiment:
++    """Nemori experiment adapted from LoCoMoExperiment."""
++
++    def __init__(
++        self, version: str = "default", episode_mode: str = "speaker", max_concurrency: int = 3
++    ):
++        self.version = version
++        self.episode_mode = episode_mode
++        self.max_concurrency = max_concurrency
++
++        # Paths
++        self.db_dir = Path(f"results/locomo/nemori-{version}/storages")
++        self.db_dir.mkdir(parents=True, exist_ok=True)
++
++        # Components
++        self.raw_data_repo = None
++        self.episode_repo = None
++        self.retrieval_service = None
++        self.episode_manager = None
++        self.llm_provider = None
++
++        # Data
++        self.conversations = []
++        self.episodes = []
++
++    async def setup_llm_provider(self) -> bool:
++        """Setup OpenAI LLM provider if API key is available."""
++        print("\n🤖 Setting up LLM Provider")
++        print("=" * 50)
++
++        api_key = os.getenv("OPENAI_API_KEY")
++        if not api_key:
++            print("⚠️ OPENAI_API_KEY not found in environment")
++            return False
++
++        try:
++            self.llm_provider = OpenAIProvider(
++                model="gpt-4.1-mini-2025-04-14", temperature=0.1, max_tokens=16 * 1024
++            )
++
++            if await self.llm_provider.test_connection():
++                print("✅ OpenAI connection successful!")
++                print(f"🎯 Model: {self.llm_provider.model}")
++                return True
++            else:
++                print("❌ OpenAI connection failed!")
++                return False
++        except Exception as e:
++            print(f"❌ Error setting up OpenAI provider: {e}")
++            return False
++
++    async def setup_storage_and_retrieval(self):
++        """Setup DuckDB storage and BM25 retrieval service."""
++        print("\n🗄️ Setting up Storage and Retrieval")
++        print("=" * 50)
++
++        # Setup DuckDB storage
++        db_path = self.db_dir / "nemori_memory.duckdb"
++
++        # Remove existing database to start fresh
++        if db_path.exists():
++            db_path.unlink()
++            print("🧹 Cleaned existing database")
++
++        # Also clean any existing BM25 indices
++        for index_file in self.db_dir.glob("bm25_index_*.pkl"):
++            index_file.unlink()
++            print(f"🧹 Cleaned existing index: {index_file.name}")
++
++        # Create storage configurations
++        storage_config = StorageConfig(
++            backend_type="duckdb",
++            connection_string=str(db_path),
++            batch_size=100,
++            cache_size=1000,
++            enable_semantic_search=False,
++        )
++
++        # Initialize repositories
++        self.raw_data_repo = DuckDBRawDataRepository(storage_config)
++        self.episode_repo = DuckDBEpisodicMemoryRepository(storage_config)
++
++        await self.raw_data_repo.initialize()
++        await self.episode_repo.initialize()
++
++        print(f"✅ DuckDB storage initialized: {db_path}")
++
++        # Setup BM25 retrieval service
++        self.retrieval_service = RetrievalService(self.episode_repo)
++
++        # Create BM25 retrieval provider configuration with disk storage
++        retrieval_config = RetrievalConfig(
++            storage_type=RetrievalStorageType.DISK,
++            storage_config={"directory": str(self.db_dir)},
++        )
++
++        # Register the provider with the service
++        self.retrieval_service.register_provider(RetrievalStrategy.BM25, retrieval_config)
++
++        # Initialize the retrieval service
++        await self.retrieval_service.initialize()
++
++        print("✅ BM25 retrieval service configured")
++
++        # Setup episode manager
++        builder_registry = EpisodeBuilderRegistry()
++        if self.llm_provider:
++            conversation_builder = ConversationEpisodeBuilder(llm_provider=self.llm_provider)
++        else:
++            raise ValueError("LLM provider not found")
++
++        builder_registry.register(conversation_builder)
++
++        self.episode_manager = EpisodeManager(
++            raw_data_repo=self.raw_data_repo,
++            episode_repo=self.episode_repo,
++            builder_registry=builder_registry,
++            retrieval_service=self.retrieval_service,
++        )
++
++        print("✅ Episode manager initialized")
++
++    def load_locomo_data(self, locomo_df):
++        """Load LoComo data from DataFrame."""
++        self.conversations = [locomo_df.iloc[i].to_dict() for i in range(len(locomo_df))]
++        print(f"📊 Loaded {len(self.conversations)} conversations")
++
++    def parse_locomo_timestamp(self, timestamp_str: str) -> datetime:
++        """Parse LoComo timestamp format to datetime object."""
++        try:
++            timestamp_str = timestamp_str.replace("\\s+", " ").strip()
++            dt = datetime.strptime(timestamp_str, "%I:%M %p on %d %B, %Y")
++            return dt
++        except ValueError as e:
++            print(f"⚠️ Warning: Could not parse timestamp '{timestamp_str}': {e}")
++            return datetime.now()
++
++    def convert_locomo_to_nemori(
++        self, conversation_data: dict, conversation_id: str
++    ) -> RawEventData:
++        """Convert LoComo conversation format to Nemori RawEventData format."""
++        print(f"   🔄 Converting LoComo conversation {conversation_id}...")
++        messages = []
++        conv = conversation_data["conversation"]
++
++        # Get all session keys in order
++        session_keys = sorted(
++            [
++                key
++                for key in conv
++                if key.startswith("session_") and not key.endswith("_date_time")
++            ]
++        )
++
++        print(f"   📅 Found {len(session_keys)} sessions")
++        print(
++            f"   🎭 Speakers: {conv.get('speaker_a', 'Unknown')} & {conv.get('speaker_b', 'Unknown')}"
++        )
++
++        # Generate unique speaker IDs for this conversation
++        speaker_name_to_id = {}
++        for session_key in session_keys:
++            session_messages = conv[session_key]
++            session_time_key = f"{session_key}_date_time"
++
++            if session_time_key in conv:
++                # Parse session timestamp
++                session_time = self.parse_locomo_timestamp(conv[session_time_key])
++
++                # Process each message in this session
++                for i, msg in enumerate(session_messages):
++                    # Generate timestamp for this message (session time + message offset)
++                    msg_timestamp = session_time + timedelta(
++                        seconds=i * 30
++                    )  # 30 seconds between messages
++                    iso_timestamp = msg_timestamp.isoformat()
++
++                    # Generate unique speaker_id for this conversation
++                    speaker_name = msg["speaker"]
++                    if speaker_name not in speaker_name_to_id:
++                        # Generate unique ID: {name}_{conversation_index}
++                        unique_id = f"{speaker_name.lower().replace(' ', '_')}_{conversation_id}"
++                        speaker_name_to_id[speaker_name] = unique_id
++
++                    # Process content with image information if present
++                    content = msg["text"]
++                    if msg.get("img_url"):
++                        blip_caption = msg.get("blip_caption", "an image")
++                        content = f"[{speaker_name} shared an image: {blip_caption}] {content}"
++
++                    message = {
++                        "speaker_id": speaker_name_to_id[speaker_name],
++                        "user_name": speaker_name,
++                        "content": content,
++                        "timestamp": iso_timestamp,
++                        "original_timestamp": conv[session_time_key],
++                        "dia_id": msg["dia_id"],
++                        "session": session_key,
++                    }
++
++                    # Add optional fields if present
++                    for optional_field in ["img_url", "blip_caption", "query"]:
++                        if optional_field in msg:
++                            message[optional_field] = msg[optional_field]
++
++                    messages.append(message)
++
++        print(f"   ✅ Converted {len(messages)} messages from {len(session_keys)} sessions")
++
++        # Calculate total duration based on session lengths
++        if messages:
++            first_time = datetime.fromisoformat(messages[0]["timestamp"])
++
++            # Calculate duration as total session time rather than span across all sessions
++            session_durations = {}
++            for msg in messages:
++                session = msg["session"]
++                if session not in session_durations:
++                    session_durations[session] = 0
++                session_durations[session] += 1  # Count messages per session
++
++            # Estimate duration: 30 seconds per message + 5 minutes setup per session
++            total_duration = sum(msg_count * 30 + 300 for msg_count in session_durations.values())
++            duration = total_duration
++        else:
++            duration = 0.0
++            first_time = datetime.now()
++
++        temporal_info = TemporalInfo(timestamp=first_time, duration=duration, timezone="UTC")
++
++        return RawEventData(
++            data_type=DataType.CONVERSATION,
++            content=messages,
++            source="locomo_dataset",
++            temporal_info=temporal_info,
++            metadata={
++                "conversation_id": conversation_id,
++                "sample_id": conversation_data.get("sample_id", "unknown"),
++                "speaker_a": conv.get("speaker_a"),
++                "speaker_b": conv.get("speaker_b"),
++                "participant_count": 2,
++                "session_count": len(session_keys),
++                "message_count": len(messages),
++                "has_images": any("img_url" in msg for msg in messages),
++                "original_format": "locomo_multi_session",
++                "episode_mode": self.episode_mode,
++            },
++        )
++
++    async def _detect_conversation_boundaries(self, messages: list) -> list[tuple[int, int, str]]:
++        """Detect conversation boundaries using the conversation builder's boundary detection."""
++        print(f"\n     🔍 Starting boundary detection for {len(messages)} messages")
++
++        boundaries = [(0, len(messages) - 1, "Single episode - no boundary detection")]  # Default: single episode
++
++        if not self.llm_provider or len(messages) <= 1:
++            print("     ⚠️ No LLM provider or too few messages, using single episode")
++            return boundaries
++
++        print("     ⚠️ Note: Boundary detection uses sequential LLM calls")
++
++        # Create a conversation builder for boundary detection
++        builder = ConversationEpisodeBuilder(llm_provider=self.llm_provider)
++
++        # Convert messages to the format expected by boundary detection
++        message_dicts = []
++        for msg in messages:
++            message_dict = {
++                "content": msg.content,
++                "speaker_id": msg.speaker_id,
++                "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
++            }
++            message_dicts.append(message_dict)
++
++        print("\n     🔍 Starting boundary detection analysis...")
++
++        # Detect boundaries by checking each message against conversation history
++        boundaries = []
++        current_start = 0
++        current_episode_reason = "Episode start"
++
++        for i in range(1, len(message_dicts)):
++            # Check if we should end the current episode at this message
++            current_episode_history = message_dicts[current_start:i]
++            new_message = message_dicts[i]
++
++            # Use async boundary detection
++            should_end, reason, masked_boundary_detected = await builder._detect_boundary(
++                conversation_history=current_episode_history,
++                new_messages=[new_message],
++                smart_mask=True,
++            )
++
++            if should_end:
++                # End current episode and start new one
++                boundaries.append((current_start, i - 1, current_episode_reason))
++                print(f"     ✂️ Boundary at message {i}: {reason}, masked_boundary_detected: {masked_boundary_detected}")
++                current_start = i if not masked_boundary_detected else i - 1
++                current_episode_reason = reason  # The reason becomes the context for the next episode
++
++        # Add the final segment
++        boundaries.append((current_start, len(message_dicts) - 1, current_episode_reason))
++
++        print(f"     📊 Detected {len(boundaries)} conversation segments")
++
++        return boundaries
++
++    def _calculate_segment_duration(self, messages: list) -> float:
++        """Calculate the duration of a message segment."""
++        if len(messages) < 2:
++            return 300.0  # Default 5 minutes for single message
++
++        first_msg = messages[0]
++        last_msg = messages[-1]
++
++        if first_msg.timestamp and last_msg.timestamp:
++            duration = (last_msg.timestamp - first_msg.timestamp).total_seconds()
++            return max(duration, 60.0)  # Minimum 1 minute
++        else:
++            # Estimate based on message count (30 seconds per message)
++            return len(messages) * 30.0
++
++    async def _build_episodes_for_speaker(
++        self, raw_data: RawEventData, owner_id: str, episode_boundaries: list[tuple[int, int, str]]
++    ) -> list:
++        """Build episodes for a specific speaker using pre-detected boundaries."""
++        conversation_data = ConversationData(raw_data)
++        messages = conversation_data.messages
++        episodes = []
++
++        if not messages:
++            return episodes
++
++        # Create episodes for each boundary segment
++        for start_idx, end_idx, boundary_reason in episode_boundaries:
++            segment_messages = messages[start_idx : end_idx + 1]
++
++            # Create a new RawEventData for this segment
++            segment_raw_data = RawEventData(
++                data_type=DataType.CONVERSATION,
++                content=[
++                    {
++                        "speaker_id": msg.speaker_id,
++                        "user_name": msg.user_name,
++                        "content": msg.content,
++                        "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
++                        "metadata": msg.metadata,
++                    }
++                    for msg in segment_messages
++                ],
++                source=raw_data.source,
++                temporal_info=TemporalInfo(
++                    timestamp=segment_messages[0].timestamp or raw_data.temporal_info.timestamp,
++                    duration=self._calculate_segment_duration(segment_messages),
++                    timezone=raw_data.temporal_info.timezone,
++                ),
++                metadata={
++                    **raw_data.metadata,
++                    "segment_start": start_idx,
++                    "segment_end": end_idx,
++                    "total_segments": len(episode_boundaries),
++                    "owner_id": owner_id,
++                    "boundary_reason": boundary_reason,
++                },
++            )
++
++            # Process the segment through episode manager
++            episode = await self.episode_manager.process_raw_data(segment_raw_data, owner_id)
++            if episode:
++                episodes.append(episode)
++
++        return episodes
++
++    async def _build_episodes_speaker_mode(self, raw_data: RawEventData) -> list:
++        """Build episodes using speaker perspective (each speaker gets their own episodes)."""
++        # Get unique speakers from the conversation
++        speakers = {
++            msg["speaker_id"]
++            for msg in raw_data.content
++            if isinstance(msg, dict) and "speaker_id" in msg
++        }
++
++        print(f"   👥 Speakers: {list(speakers)}")
++        print(f"   💬 Messages: {len(raw_data.content)}")
++        print(f"   🕐 Duration: {raw_data.temporal_info.duration:.0f} seconds")
++
++        # Detect conversation boundaries once for all speakers
++        conversation_data = ConversationData(raw_data)
++        episode_boundaries = await self._detect_conversation_boundaries(conversation_data.messages)
++
++        all_episodes = []
++
++        # Process speakers sequentially (only 2 speakers, concurrency not needed)
++        for speaker_id in speakers:
++            episodes = await self._build_episodes_for_speaker(
++                raw_data, speaker_id, episode_boundaries
++            )
++            all_episodes.extend(episodes)
++            print(f"   ✅ {speaker_id}: {len(episodes)} episodes")
++
++        print(f"   📊 Total: {len(all_episodes)} episodes from {len(speakers)} speakers")
++        return all_episodes
++
++    async def build_episodes(self):
++        """Build episodes from LoComo conversations using boundary detection."""
++        print("\n🏗️ Building Episodes with Boundary Detection")
++        print("=" * 50)
++        print(f"🎭 Mode: {self.episode_mode} perspective")
++        print(
++            f"🔄 Processing {len(self.conversations)} conversations with max concurrency: {self.max_concurrency}"
++        )
++
++        self.episodes = []
++
++        async def process_conversation(conv_index: int, conv_data: dict) -> tuple[str, list]:
++            """Process a single conversation with concurrency control."""
++            conv_id = str(conv_index)
++
++            start_time = time.time()
++            print(f"   🚀 Starting conversation {conv_id} processing... [{start_time:.1f}]")
++            try:
++                # Convert to Nemori format (can be concurrent)
++                raw_data = self.convert_locomo_to_nemori(conv_data, conv_id)
++
++                # Use speaker perspective
++                episodes = await self._build_episodes_speaker_mode(raw_data)
++
++                end_time = time.time()
++                duration = end_time - start_time
++                print(
++                    f"   ✅ Conversation {conv_id}: {len(episodes)} episodes [{end_time:.1f}, took {duration:.1f}s]"
++                )
++                return conv_id, episodes
++
++            except Exception as e:
++                print(f"   ❌ Error processing conversation {conv_id}: {e}")
++                return conv_id, []
++
++        # Create tasks for all conversations
++        tasks = [
++            process_conversation(i, conv_data) for i, conv_data in enumerate(self.conversations)
++        ]
++        print(f"   📋 Created {len(tasks)} concurrent tasks")
++
++        # Wait for all tasks to complete
++        print("   ⏳ Starting concurrent execution...")
++        results = await asyncio.gather(*tasks)
++        print("   🏁 All conversations completed")
++
++        # Collect all episodes
++        for _, episodes in results:
++            self.episodes.extend(episodes)
++
++        print("\n📊 Episode Building Complete")
++        print(f"✅ Successfully created {len(self.episodes)} episodes")
++
++        # Build BM25 indices for all episodes
++        await self.build_bm25_indices()
++
++    async def build_bm25_indices(self):
++        """Build BM25 indices for all episodes after they are created."""
++        print("\n🔧 Building BM25 Indices")
++        print("=" * 50)
++
++        if not self.episodes:
++            print("⚠️ No episodes to index")
++            return
++
++        # Get all unique owner_ids from episodes
++        owner_ids = {episode.owner_id for episode in self.episodes}
++        print(f"🎯 Building indices for {len(owner_ids)} owners: {list(owner_ids)}")
++
++        # Force refresh of BM25 indices
++        try:
++            bm25_provider = self.retrieval_service.get_provider(RetrievalStrategy.BM25)
++            if bm25_provider:
++                print("🔄 Triggering BM25 index rebuild...")
++
++                # Get all episodes from repository
++                all_episodes = []
++                for owner_id in owner_ids:
++                    try:
++                        result = await self.episode_repo.get_episodes_by_owner(owner_id)
++                        # Handle EpisodeSearchResult object
++                        owner_episodes = result.episodes if hasattr(result, "episodes") else result
++                        all_episodes.extend(owner_episodes)
++                        print(f"   📊 Owner {owner_id}: {len(owner_episodes)} episodes")
++                    except Exception as e:
++                        print(f"   ❌ Error getting episodes for {owner_id}: {e}")
++
++                if all_episodes:
++                    print(f"🏗️ Rebuilding indices for {len(all_episodes)} total episodes...")
++
++                    # Trigger BM25 index building by performing dummy searches for each owner
++                    for owner_id in owner_ids:
++                        try:
++                            result = await self.episode_repo.get_episodes_by_owner(owner_id)
++                            # Handle EpisodeSearchResult object
++                            if hasattr(result, "episodes"):
++                                owner_episodes = result.episodes
++                            else:
++                                owner_episodes = result
++
++                            if owner_episodes:
++                                # Trigger index building by performing a search
++                                dummy_query = RetrievalQuery(
++                                    text=".",
++                                    owner_id=owner_id,
++                                    limit=1,
++                                    strategy=RetrievalStrategy.BM25,
++                                )
++                                await self.retrieval_service.search(dummy_query)
++                                print(
++                                    f"   ✅ Triggered index build for {owner_id}: {len(owner_episodes)} episodes"
++                                )
++                            else:
++                                print(f"   ⚠️ No episodes found for {owner_id}")
++                        except Exception as e:
++                            print(f"   ❌ Error triggering index for {owner_id}: {e}")
++
++                print("✅ BM25 index building completed")
++            else:
++                print("❌ BM25 provider not found")
++
++        except Exception as e:
++            print(f"❌ Error during BM25 index building: {e}")
++            import traceback
++            traceback.print_exc()
++
++    async def cleanup(self):
++        """Clean up resources."""
++        print("\n🧹 Cleaning up")
++
++        if self.retrieval_service:
++            await self.retrieval_service.close()
++        if self.raw_data_repo:
++            await self.raw_data_repo.close()
++        if self.episode_repo:
++            await self.episode_repo.close()
++
++        print("✅ Cleanup complete")
+\ No newline at end of file
+diff --git a/evaluation/scripts/locomo/nemori_eval/search.py b/evaluation/scripts/locomo/nemori_eval/search.py
+new file mode 100644
+index 0000000..7414d9d
+--- /dev/null
++++ b/evaluation/scripts/locomo/nemori_eval/search.py
+@@ -0,0 +1,237 @@
++"""
++Nemori search client implementation extracted from wait_for_refactor.
++
++This module contains the search functionality for Nemori in the LoCoMo evaluation.
++"""
++
++import asyncio
++from pathlib import Path
++from time import time
++
++from nemori.retrieval import (
++    RetrievalConfig,
++    RetrievalQuery,
++    RetrievalService,
++    RetrievalStorageType,
++    RetrievalStrategy,
++)
++from nemori.storage.duckdb_storage import DuckDBEpisodicMemoryRepository
++from nemori.storage.storage_types import StorageConfig
++
++
++TEMPLATE_NEMORI = """Episodes memories for conversation between {speaker_1} and {speaker_2}:
++
++    {speaker_memories}
++"""
++
++
++async def get_nemori_client(user_id: str, version: str = "default"):
++    """Get Nemori client for search."""
++    # Setup storage
++    storage_dir = Path(f"results/locomo/nemori-{version}/storages")
++    db_path = storage_dir / "nemori_memory.duckdb"
++    
++    if not db_path.exists():
++        raise FileNotFoundError(f"Nemori database not found at {db_path}. Please run ingestion first.")
++    
++    storage_config = StorageConfig(
++        backend_type="duckdb",
++        connection_string=str(db_path),
++        batch_size=100,
++        cache_size=1000,
++        enable_semantic_search=False,
++    )
++    
++    episode_repo = DuckDBEpisodicMemoryRepository(storage_config)
++    await episode_repo.initialize()
++    
++    # Setup retrieval
++    retrieval_service = RetrievalService(episode_repo)
++    retrieval_config = RetrievalConfig(
++        storage_type=RetrievalStorageType.DISK,
++        storage_config={"directory": str(storage_dir)},
++    )
++    retrieval_service.register_provider(RetrievalStrategy.BM25, retrieval_config)
++    await retrieval_service.initialize()
++    
++    return retrieval_service
++
++
++async def nemori_search(retrieval_service, query: str, speaker_a_user_id: str, speaker_b_user_id: str, top_k: int = 20) -> tuple[str, float]:
++    """Search using Nemori."""
++    start = time()
++    
++    print(f"\n🔍 [NEMORI SEARCH] Starting search for query: '{query}'")
++    print(f"   👤 Speaker A ID: '{speaker_a_user_id}'")
++    print(f"   👤 Speaker B ID: '{speaker_b_user_id}'")
++    print(f"   📊 Top K: {top_k}")
++    
++    # Search for speaker A
++    # From the perspective of episodic memory construction in the current MVP version, 
++    # no specialized processing is done for any individual's memories, 
++    # so searching any one person's memories is sufficient
++    print(f"\n🔎 [SPEAKER A] Searching for owner_id: '{speaker_a_user_id}'")
++    query_a = RetrievalQuery(text=query, owner_id=speaker_a_user_id, limit=top_k, strategy=RetrievalStrategy.BM25)
++    print(f"   📝 Query object: text='{query_a.text}', owner_id='{query_a.owner_id}', limit={query_a.limit}")
++    
++    try:
++        result_a = await retrieval_service.search(query_a)
++        print(f"   ✅ Search completed. Found {len(result_a.episodes)} episodes")
++        
++        if len(result_a.episodes) > 0:
++            print("   📋 Sample episodes for speaker A:")
++            for i, episode in enumerate(result_a.episodes[:2]):
++                print(f"     {i+1}. Title: '{episode.title}'")
++                print(f"        Content: '{episode.content[:100]}...'")
++                print(f"        Summary: '{episode.summary}'")
++        else:
++            print("   ⚠️ No episodes found for speaker A")
++            
++    except Exception as e:
++        print(f"   ❌ Search failed for speaker A: {e}")
++        result_a = type('obj', (object,), {'episodes': []})()
++    
++    # Format results for speaker A
++    speaker_memories = []
++    for episode in result_a.episodes:
++        memory_text = f"{episode.title}: {episode.content}"
++        speaker_memories.append(memory_text)
++    
++    print(f"\n📊 [FORMATTING] Speaker memories: {len(speaker_memories)}")
++    
++    # Format context
++    context = TEMPLATE_NEMORI.format(
++        speaker_1=speaker_a_user_id.split("_")[0] if "_" in speaker_a_user_id else speaker_a_user_id,
++        speaker_2=speaker_b_user_id.split("_")[0] if "_" in speaker_b_user_id else speaker_b_user_id,
++        speaker_memories="\n".join(speaker_memories) if speaker_memories else "No relevant memories found",
++    )
++    
++    print("\n📄 [CONTEXT] Generated context preview:")
++    print(f"   {context[:200]}...")
++    
++    duration_ms = (time() - start) * 1000
++    print(f"\n⏱️ [TIMING] Search completed in {duration_ms:.2f}ms")
++    
++    return context, duration_ms
++
++
++class NemoriSearchClient:
++    """Search client for Nemori memory system."""
++
++    def __init__(self, version: str = "default"):
++        self.version = version
++        self.storage_dir = Path(f"results/locomo/nemori-{version}/storages")
++        self.db_path = self.storage_dir / "nemori_memory.duckdb"
++        self.retrieval_service = None
++        self.episode_repo = None
++        self._initialized = False
++
++    async def initialize(self):
++        """Initialize the search client."""
++        if self._initialized:
++            return
++
++        if not self.db_path.exists():
++            raise FileNotFoundError(f"Nemori database not found at {self.db_path}. Please run ingestion first.")
++
++        # Setup storage
++        storage_config = StorageConfig(
++            backend_type="duckdb",
++            connection_string=str(self.db_path),
++            batch_size=100,
++            cache_size=1000,
++            enable_semantic_search=False,
++        )
++
++        self.episode_repo = DuckDBEpisodicMemoryRepository(storage_config)
++        await self.episode_repo.initialize()
++
++        # Setup retrieval
++        self.retrieval_service = RetrievalService(self.episode_repo)
++        retrieval_config = RetrievalConfig(
++            storage_type=RetrievalStorageType.DISK,
++            storage_config={"directory": str(self.storage_dir)},
++        )
++        self.retrieval_service.register_provider(RetrievalStrategy.BM25, retrieval_config)
++        await self.retrieval_service.initialize()
++
++        self._initialized = True
++
++    async def search(self, query: str, speaker_a_user_id: str, speaker_b_user_id: str, top_k: int = 20) -> tuple[str, float]:
++        """
++        Search using Nemori BM25 retrieval.
++        
++        Args:
++            query: Search query text
++            speaker_a_user_id: ID of first speaker
++            speaker_b_user_id: ID of second speaker  
++            top_k: Number of results to return
++            
++        Returns:
++            Tuple of (context_string, duration_ms)
++        """
++        if not self._initialized:
++            await self.initialize()
++
++        start = time()
++        
++        print(f"\n🔍 [NEMORI SEARCH] Starting search for query: '{query}'")
++        print(f"   👤 Speaker A ID: '{speaker_a_user_id}'")
++        print(f"   👤 Speaker B ID: '{speaker_b_user_id}'")
++        print(f"   📊 Top K: {top_k}")
++        
++        # Search for speaker A
++        # From the perspective of episodic memory construction in the current MVP version, 
++        # no specialized processing is done for any individual's memories, 
++        # so searching any one person's memories is sufficient
++        print(f"\n🔎 [SPEAKER A] Searching for owner_id: '{speaker_a_user_id}'")
++        query_a = RetrievalQuery(text=query, owner_id=speaker_a_user_id, limit=top_k, strategy=RetrievalStrategy.BM25)
++        print(f"   📝 Query object: text='{query_a.text}', owner_id='{query_a.owner_id}', limit={query_a.limit}")
++        
++        try:
++            result_a = await self.retrieval_service.search(query_a)
++            print(f"   ✅ Search completed. Found {len(result_a.episodes)} episodes")
++            
++            if len(result_a.episodes) > 0:
++                print("   📋 Sample episodes for speaker A:")
++                for i, episode in enumerate(result_a.episodes[:2]):
++                    print(f"     {i+1}. Title: '{episode.title}'")
++                    print(f"        Content: '{episode.content[:100]}...'")
++                    print(f"        Summary: '{episode.summary}'")
++            else:
++                print("   ⚠️ No episodes found for speaker A")
++                
++        except Exception as e:
++            print(f"   ❌ Search failed for speaker A: {e}")
++            result_a = type('obj', (object,), {'episodes': []})()
++        
++        # Format results for speaker A
++        speaker_memories = []
++        for episode in result_a.episodes:
++            memory_text = f"{episode.title}: {episode.content}"
++            speaker_memories.append(memory_text)
++        
++        print(f"\n📊 [FORMATTING] Speaker memories: {len(speaker_memories)}")
++        
++        # Format context
++        context = TEMPLATE_NEMORI.format(
++            speaker_1=speaker_a_user_id.split("_")[0] if "_" in speaker_a_user_id else speaker_a_user_id,
++            speaker_2=speaker_b_user_id.split("_")[0] if "_" in speaker_b_user_id else speaker_b_user_id,
++            speaker_memories="\n".join(speaker_memories) if speaker_memories else "No relevant memories found",
++        )
++        
++        print("\n📄 [CONTEXT] Generated context preview:")
++        print(f"   {context[:200]}...")
++        
++        duration_ms = (time() - start) * 1000
++        print(f"\n⏱️ [TIMING] Search completed in {duration_ms:.2f}ms")
++        
++        return context, duration_ms
++
++    async def close(self):
++        """Close the search client."""
++        if self.retrieval_service:
++            await self.retrieval_service.close()
++        if self.episode_repo:
++            await self.episode_repo.close()
++        self._initialized = False
+\ No newline at end of file
+diff --git a/evaluation/scripts/locomo/prompts.py b/evaluation/scripts/locomo/prompts.py
+index 9e080ec..72916de 100644
+--- a/evaluation/scripts/locomo/prompts.py
++++ b/evaluation/scripts/locomo/prompts.py
+@@ -108,3 +108,43 @@ ANSWER_PROMPT_MEMOS = """
+ 
+    Answer:
+    """
++
++
++ANSWER_PROMPT_NEMORI = """
++    You are an intelligent memory assistant tasked with retrieving accurate information from episodic memories.
++
++    # CONTEXT:
++    You have access to episodic memories from conversations between two speakers. These memories contain
++    timestamped information that may be relevant to answering the question.
++
++    # INSTRUCTIONS:
++    1. Carefully analyze all provided episodic memories from both speakers.
++    2. Pay special attention to the timestamps to determine the answer.
++    3. If the question asks about a specific event or fact, look for direct evidence in the memories.
++    4. If the memories contain contradictory information, prioritize the most recent memory.
++    5. If there is a question about time references (like "last year", "two months ago", etc.),
++       calculate the actual date based on the memory timestamp. For example, if a memory from
++       4 May 2022 mentions "went to India last year," then the trip occurred in 2021.
++    6. Always convert relative time references to specific dates, months, or years. For example,
++       convert "last year" to "2022" or "two months ago" to "March 2023" based on the memory
++       timestamp. Ignore the reference while answering the question.
++    7. If the original memory explicitly mentions an exact day of the week (e.g., "Monday", "Tuesday"), include that weekday in your answer.
++    8. Focus only on the content of the episodic memories from both speakers. Do not confuse character
++       names mentioned in memories with the actual users who created those memories.
++    9. The answer should be less than 5-6 words.
++
++    # APPROACH (Think step by step):
++    1. First, examine all episodic memories that contain information related to the question.
++    2. Examine the timestamps and content of these memories carefully.
++    3. Look for explicit mentions of dates, times, locations, events, or weekdays that answer the question.
++    4. If the answer requires calculation (e.g., converting relative time references), show your work.
++    5. Formulate a precise, concise answer based solely on the evidence in the memories, and include the weekday if it is explicitly mentioned in the original memory.
++    6. Double-check that your answer directly addresses the question asked.
++    7. Ensure your final answer is specific and avoids vague time references.
++
++    {context}
++
++    Question: {question}
++
++    Answer:
++    """
+-- 
+2.39.5 (Apple Git-154)
+
