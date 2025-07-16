@@ -32,6 +32,9 @@ You are an episodic memory boundary detection expert. You need to determine if t
 Current conversation history:
 {conversation_history}
 
+Time gap information:
+{time_gap_info}
+
 Newly added messages:
 {new_messages}
 
@@ -54,7 +57,7 @@ Please carefully analyze the following aspects to determine if a new episode sho
 4. **Structural and Temporal Signals**:
    - Are there explicit topic transition phrases introducing substantial new content?
    - Are there clear concluding statements followed by genuinely new topics?
-   - Is there a significant time gap between messages? (Time gap information: {time_gap_info})
+   - Is there a significant time gap between messages?
 
 5. **Content Relevance and Independence**:
    - How related is the new substantive content to the previous meaningful discussion?
@@ -80,7 +83,7 @@ Please return your judgment in JSON format:
     "reasoning": "One sentence summary of your reasoning process",
     "should_end": true/false,
     "confidence": 0.0-1.0,
-    "topic_summary": "If ending, summarize the core meaningful topic of the current episode"
+    "topic_summary": "If should_end = true, summarize the core meaningful topic of the current episode, otherwise leave it blank"
 }}
 
 Note:
