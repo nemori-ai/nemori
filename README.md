@@ -1,7 +1,7 @@
 # Nemori：自然启发的情景记忆系统  
 Nemori: Nature-Inspired Episodic Memory System
 
-## 项目概述  
+## 项目概述  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/nemori-ai/nemori)
 ## Project Overview
 
 Nemori-AI 旨在让大语言模型具备类人的情景记忆能力。  
