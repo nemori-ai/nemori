@@ -178,6 +178,34 @@ cache.db*
 playground/output/
 playground/.tmp/
 
+# playground demo generated files
+playground/*/
+!playground/*.py
+!playground/*.md
+!playground/*.ipynb
+!playground/dataset/
+playground/*demo*/
+playground/full_demo/
+playground/simple_demo/
+playground/search_debug/
+playground/output_debug/
+playground/jsonl_demo/
+
+# demo database files
+*.duckdb
+*.duckdb-wal
+*.duckdb-shm
+
+# JSONL storage files
+*.jsonl
+
+# BM25 index files
+bm25_index_*.pkl
+
+# demo reports
+*_report.json
+comprehensive_report.json
+
 # claude local settings
 .claude/
 
