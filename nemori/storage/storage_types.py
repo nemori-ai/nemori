@@ -189,7 +189,7 @@ class StorageConfig:
     """Configuration for storage layer."""
 
     # Storage backend
-    backend_type: str = "memory"  # memory, sqlite, postgresql, etc.
+    backend_type: str = "memory"  # memory, duckdb, postgresql, etc.
     connection_string: str | None = None
 
     # Performance settings
