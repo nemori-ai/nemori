@@ -5,7 +5,7 @@ This module provides type-safe SQLModel classes for database operations,
 supporting both DuckDB and future PostgreSQL/MySQL implementations.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlmodel import Column, Field, SQLModel, Text
 
@@ -26,7 +26,7 @@ class RawDataTable(SQLModel, table=True):
     event_metadata: str = Field(sa_column=Column(Text))
     processed: bool = Field(default=False, index=True)
     processing_version: str = Field(default="1.0", max_length=10)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now())
 
 
 class EpisodeTable(SQLModel, table=True):
@@ -52,7 +52,7 @@ class EpisodeTable(SQLModel, table=True):
     recall_count: int = Field(default=0)
     importance_score: float = Field(default=0.0, index=True)
     last_accessed: datetime | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now())
 
 
 class EpisodeRawDataTable(SQLModel, table=True):

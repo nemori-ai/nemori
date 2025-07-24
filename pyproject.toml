@@ -18,6 +18,9 @@ dependencies = [
     "duckdb-engine>=0.17.0",
     "rank-bm25>=0.2.2",
     "nltk>=3.9.1",
+    "psycopg2-binary>=2.9.10",
+    "asyncpg>=0.30.0",
+    "greenlet>=3.2.3",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +50,7 @@ markers = [
     "slow: marks tests as slow",
     "llm: marks tests that require LLM providers",
     "unit: marks tests as unit tests",
+    "postgresql: marks tests that require PostgreSQL database",
 ]
 
 [tool.black]

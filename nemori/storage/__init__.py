@@ -6,7 +6,20 @@ and retrieving raw event data, episodes, and their relationships.
 """
 
 from .duckdb_storage import DuckDBEpisodicMemoryRepository, DuckDBRawDataRepository
+from .factory import (
+    StorageError,
+    UnsupportedBackendError,
+    create_duckdb_config,
+    create_episodic_memory_repository,
+    create_memory_config,
+    create_postgresql_config,
+    create_raw_data_repository,
+    create_repositories,
+    get_supported_backends,
+    validate_config,
+)
 from .memory_storage import MemoryEpisodicMemoryRepository, MemoryRawDataRepository
+from .postgresql_storage import PostgreSQLEpisodicMemoryRepository, PostgreSQLRawDataRepository
 from .repository import EpisodicMemoryRepository, RawDataRepository, StorageRepository
 from .storage_types import (
     EpisodeQuery,
@@ -29,6 +42,21 @@ __all__ = [
     # DuckDB implementations
     "DuckDBRawDataRepository",
     "DuckDBEpisodicMemoryRepository",
+    # PostgreSQL implementations
+    "PostgreSQLRawDataRepository",
+    "PostgreSQLEpisodicMemoryRepository",
+    # Factory functions
+    "create_repositories",
+    "create_raw_data_repository",
+    "create_episodic_memory_repository",
+    "create_postgresql_config",
+    "create_duckdb_config",
+    "create_memory_config",
+    "get_supported_backends",
+    "validate_config",
+    # Exceptions
+    "StorageError",
+    "UnsupportedBackendError",
     # Query types
     "EpisodeQuery",
     "EpisodeSearchResult",
