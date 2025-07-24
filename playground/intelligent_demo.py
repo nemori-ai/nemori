@@ -27,7 +27,7 @@ from nemori.core.data_types import DataType, RawEventData, TemporalInfo
 from nemori.episode_manager import EpisodeManager
 from nemori.llm.providers.openai_provider import OpenAIProvider
 from nemori.retrieval import RetrievalConfig, RetrievalQuery, RetrievalService, RetrievalStorageType, RetrievalStrategy
-from nemori.storage import create_jsonl_config, create_duckdb_config, create_postgresql_config, create_repositories
+from nemori.storage import create_duckdb_config, create_jsonl_config, create_postgresql_config, create_repositories
 
 
 class NemoriIntelligentDemo:
@@ -114,7 +114,7 @@ class NemoriIntelligentDemo:
     async def setup_llm_provider(self) -> bool:
         """Setup OpenAI LLM provider - REQUIRED for this demo"""
         print("\n🤖 Setting up LLM provider (OpenAI)...")
-        
+
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             print("❌ ERROR: OPENAI_API_KEY environment variable is required!")
@@ -133,7 +133,7 @@ class NemoriIntelligentDemo:
             # Test connection
             if await self.llm_provider.test_connection():
                 print("✅ OpenAI connection successful!")
-                print(f"   Model: gpt-4o-mini (optimized for cost and quality)")
+                print("   Model: gpt-4o-mini (optimized for cost and quality)")
                 return True
             else:
                 print("❌ OpenAI connection failed - please check your API key")
@@ -144,7 +144,7 @@ class NemoriIntelligentDemo:
             return False
 
     async def setup_storage(self):
-        """Setup storage backend based on configuration""" 
+        """Setup storage backend based on configuration"""
         print(f"\n🗄️ Setting up {self.storage_type.upper()} storage...")
 
         try:
@@ -153,18 +153,18 @@ class NemoriIntelligentDemo:
                 for file_path in self.demo_dir.glob("*.jsonl"):
                     file_path.unlink()
                     print(f"🧹 Cleaned up: {file_path.name}")
-                
+
                 config = create_jsonl_config(str(self.demo_dir))
-                
+
             elif self.storage_type == "duckdb":
                 # Clean up old database
                 db_path = self.demo_dir / "intelligent_demo.duckdb"
                 if db_path.exists():
                     db_path.unlink()
                     print(f"🧹 Cleaned up: {db_path.name}")
-                
+
                 config = create_duckdb_config(str(db_path))
-                
+
             elif self.storage_type == "postgresql":
                 # Check PostgreSQL availability
                 pg_url = os.getenv("POSTGRESQL_TEST_URL")
@@ -218,22 +218,22 @@ class NemoriIntelligentDemo:
         """Clean up existing PostgreSQL demo data for fresh runs"""
         try:
             # Get all episodes from intelligent demo owners
-            demo_owners = ["emma_intelligent", "james_intelligent", "sarah_intelligent", 
+            demo_owners = ["emma_intelligent", "james_intelligent", "sarah_intelligent",
                           "alex_intelligent", "mike_intelligent", "lisa_intelligent"]
-            
+
             for owner_id in demo_owners:
                 try:
                     # Get episodes for this owner
                     episodes_result = await self.episode_repo.get_episodes_by_owner(owner_id)
                     episodes = episodes_result.episodes if hasattr(episodes_result, 'episodes') else (episodes_result or [])
-                    
+
                     # Delete episodes
                     for episode in episodes:
                         await self.episode_repo.delete_episode(episode.episode_id)
                 except Exception:
                     # Owner might not exist, continue
                     pass
-            
+
             # Clean up raw data from intelligent demo
             demo_conversation_ids = ["startup_strategy_discussion", "ai_research_collaboration", "travel_documentary_planning"]
             for conversation_id in demo_conversation_ids:
@@ -242,7 +242,7 @@ class NemoriIntelligentDemo:
                 except Exception:
                     # Data might not exist, continue
                     pass
-                    
+
         except Exception as e:
             # If cleanup fails, it's not critical - just warn
             print(f"⚠️ Demo data cleanup had issues: {e}")
@@ -272,7 +272,7 @@ class NemoriIntelligentDemo:
         """Setup intelligent retrieval service"""
         print("\n🔍 Setting up intelligent retrieval service...")
 
-        # Clean up old indices  
+        # Clean up old indices
         for index_file in self.demo_dir.glob("bm25_index_*.pkl"):
             index_file.unlink()
 
@@ -335,18 +335,18 @@ class NemoriIntelligentDemo:
             speakers = list(set(msg["speaker"] for msg in messages))
             for speaker in speakers:
                 owner_id = f"{speaker}_intelligent"
-                
+
                 print(f"    🧠 LLM analyzing conversation for {speaker}...")
                 try:
                     # Use episode manager to generate intelligent episode (without re-storing raw_data)
                     episode = await self.episode_manager.process_raw_data_to_episode(raw_data, owner_id)
-                    
+
                     if episode:
                         self.generated_episodes.append(episode)
                         print(f"    ✅ Generated episode: {episode.title[:60]}...")
                     else:
                         print(f"    ⚠️ No episode generated for {speaker}")
-                        
+
                 except Exception as e:
                     print(f"    ❌ Error processing {speaker}: {e}")
 
@@ -390,7 +390,7 @@ class NemoriIntelligentDemo:
         # Define meaningful search queries that should find relevant episodes
         search_queries = [
             "startup strategy and market analysis",
-            "artificial intelligence research collaboration", 
+            "artificial intelligence research collaboration",
             "travel documentary storytelling",
             "customer acquisition and pricing",
             "attention mechanisms and deep learning",
@@ -404,7 +404,7 @@ class NemoriIntelligentDemo:
 
         for query in search_queries[:6]:  # Limit to 6 queries for demo
             print(f"\n  🔎 Intelligent search: '{query}'")
-            
+
             total_results = 0
             for owner_id in owners[:3]:  # Show results for first 3 owners
                 try:
@@ -441,9 +441,9 @@ class NemoriIntelligentDemo:
             print("⚠️ No LLM episodes to compare")
             return
 
-        # Show a sample LLM-generated episode  
+        # Show a sample LLM-generated episode
         sample_episode = self.generated_episodes[0]
-        print(f"🤖 LLM-Generated Episode Example:")
+        print("🤖 LLM-Generated Episode Example:")
         print(f"   Title: {sample_episode.title}")
         print(f"   Owner: {sample_episode.owner_id}")
         print(f"   Summary: {sample_episode.summary}")
@@ -451,12 +451,12 @@ class NemoriIntelligentDemo:
         print(f"   Keywords: {', '.join(sample_episode.search_keywords[:6])}")
         print(f"   Key Points: {sample_episode.metadata.key_points[:3]}")
 
-        print(f"\n✨ Key Differences from Mock Episodes:")
-        print(f"   • Real semantic understanding of conversation context")
-        print(f"   • Natural language boundary detection")
-        print(f"   • Intelligent keyword extraction")
-        print(f"   • Contextual summary generation")
-        print(f"   • Meaningful topic identification")
+        print("\n✨ Key Differences from Mock Episodes:")
+        print("   • Real semantic understanding of conversation context")
+        print("   • Natural language boundary detection")
+        print("   • Intelligent keyword extraction")
+        print("   • Contextual summary generation")
+        print("   • Meaningful topic identification")
 
     async def generate_final_report(self):
         """Generate comprehensive demo report"""
@@ -466,12 +466,12 @@ class NemoriIntelligentDemo:
         raw_stats = await self.raw_data_repo.get_stats()
         episode_stats = await self.episode_repo.get_stats()
 
-        print(f"\n📈 Demo Results:")
+        print("\n📈 Demo Results:")
         print(f"   Conversations processed: {raw_stats.total_raw_data}")
         print(f"   Intelligent episodes generated: {episode_stats.total_episodes}")
         print(f"   Participants analyzed: {len(set(ep.owner_id for ep in self.generated_episodes))}")
         print(f"   Storage backend used: {self.storage_type.upper()}")
-        print(f"   LLM model: gpt-4o-mini")
+        print("   LLM model: gpt-4o-mini")
 
         # Show episode distribution by owner
         episode_by_owner = {}
@@ -481,7 +481,7 @@ class NemoriIntelligentDemo:
                 episode_by_owner[owner] = 0
             episode_by_owner[owner] += 1
 
-        print(f"\n👥 Episodes by participant:")
+        print("\n👥 Episodes by participant:")
         for owner, count in episode_by_owner.items():
             print(f"   {owner}: {count} episodes")
 
@@ -538,12 +538,12 @@ class NemoriIntelligentDemo:
             # 9. Generate final report
             await self.generate_final_report()
 
-            print(f"\n🎉 Intelligent demo completed successfully!")
-            print(f"✅ Demonstrated full LLM-powered episodic memory system")
-            
+            print("\n🎉 Intelligent demo completed successfully!")
+            print("✅ Demonstrated full LLM-powered episodic memory system")
+
             if self.storage_type == "jsonl":
                 print(f"📁 Intelligent episodes saved at: {self.demo_dir}/")
-                print(f"💡 Inspect LLM-generated content:")
+                print("💡 Inspect LLM-generated content:")
                 print(f"   cat {self.demo_dir}/episodes.jsonl")
 
         except Exception as e:
@@ -572,7 +572,7 @@ async def main():
 
     # Get storage type from environment
     storage_type = os.getenv("NEMORI_STORAGE", "jsonl").lower()
-    
+
     # Validate storage type
     supported_types = ["jsonl", "duckdb", "postgresql"]
     if storage_type not in supported_types:

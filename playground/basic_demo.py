@@ -48,12 +48,12 @@ async def basic_demo():
     print(f"✅ JSONL storage initialized: {demo_dir}/")
 
     print("\n📊 Creating rich conversation data...")
-    
+
     # Create comprehensive conversation scenarios
     conversations = [
         {
             "id": "work_discussion",
-            "title": "AI Project Planning Meeting", 
+            "title": "AI Project Planning Meeting",
             "messages": [
                 {"speaker": "sarah", "content": "Let's review our AI project milestone. We need to finalize the model architecture this week.", "timestamp": "2024-01-15T09:00:00"},
                 {"speaker": "mike", "content": "I've been working on the transformer implementation. The attention mechanism is showing promising results.", "timestamp": "2024-01-15T09:02:00"},
@@ -121,7 +121,7 @@ async def basic_demo():
 
     # Create mock episodes (simulating LLM-generated episodes)
     print("\n🏗️ Creating mock episodes (simulating LLM processing)...")
-    
+
     episode_data = [
         {
             "conversation_id": "work_discussion",
@@ -136,7 +136,7 @@ async def basic_demo():
                     "key_points": ["finalize model architecture", "quality over speed", "evaluation metrics planning"]
                 },
                 {
-                    "owner": "mike", 
+                    "owner": "mike",
                     "title": "Transformer Implementation Progress and Data Pipeline Optimization",
                     "content": "Mike reported progress on transformer implementation with promising attention mechanism results. He identified data loading optimization as the next critical task, noting current batch processing speed issues.",
                     "summary": "Technical progress report on transformer implementation and data pipeline challenges",
@@ -170,7 +170,7 @@ async def basic_demo():
             ]
         },
         {
-            "conversation_id": "tech_architecture", 
+            "conversation_id": "tech_architecture",
             "episodes": [
                 {
                     "owner": "charlie",
@@ -199,13 +199,13 @@ async def basic_demo():
         conv_id = conv_data["conversation_id"]
         # Find the original conversation
         original_conv = next(c for c in conversations if c["id"] == conv_id)
-        
+
         for ep_data in conv_data["episodes"]:
             # Create episode with realistic timestamp
             first_msg_time = datetime.fromisoformat(original_conv["messages"][0]["timestamp"])
             last_msg_time = datetime.fromisoformat(original_conv["messages"][-1]["timestamp"])
             duration = (last_msg_time - first_msg_time).total_seconds()
-            
+
             episode = Episode(
                 episode_id=f"ep_{conv_id}_{ep_data['owner']}",
                 owner_id=f"{ep_data['owner']}_demo",
@@ -230,7 +230,7 @@ async def basic_demo():
                 search_keywords=ep_data["keywords"],
                 importance_score=0.8
             )
-            
+
             await episode_repo.store_episode(episode)
             all_episodes.append(episode)
             print(f"  ✅ Created episode: {ep_data['owner']} - {ep_data['title'][:50]}...")
@@ -239,7 +239,7 @@ async def basic_demo():
 
     # Demonstrate search and retrieval
     print("\n🔍 Demonstrating search and retrieval capabilities...")
-    
+
     # Get all unique owners
     owners = list(set(ep.owner_id for ep in all_episodes))
     print(f"📊 Found {len(owners)} users: {', '.join(owners)}")
@@ -254,20 +254,20 @@ async def basic_demo():
             print(f"    • {ep.title}")
             print(f"      Keywords: {', '.join(ep.search_keywords[:5])}")
 
-    # Demonstrate keyword-based retrieval  
+    # Demonstrate keyword-based retrieval
     print("\n🔎 Keyword-based episode search:")
     test_keywords = ["AI project", "travel", "database", "architecture", "Europe"]
-    
+
     for keyword in test_keywords:
         print(f"\n  🔍 Searching for: '{keyword}'")
         found_episodes = []
-        
+
         # Simple keyword search across all episodes
         for episode in all_episodes:
             searchable_text = f"{episode.title} {episode.content} {episode.summary} {' '.join(episode.search_keywords)}"
             if keyword.lower() in searchable_text.lower():
                 found_episodes.append(episode)
-        
+
         if found_episodes:
             print(f"    Found {len(found_episodes)} relevant episode(s):")
             for ep in found_episodes[:2]:  # Show top 2 results
@@ -280,13 +280,13 @@ async def basic_demo():
     print("\n📊 Storage statistics:")
     raw_stats = await raw_data_repo.get_stats()
     episode_stats = await episode_repo.get_stats()
-    
+
     print(f"  Raw conversations: {raw_stats.total_raw_data}")
     print(f"  Generated episodes: {episode_stats.total_episodes}")
     print(f"  Episode types: {dict(episode_stats.episodes_by_type)}")
 
     # Cleanup
-    await raw_data_repo.close() 
+    await raw_data_repo.close()
     await episode_repo.close()
 
     print("\n🎉 Basic demo completed successfully!")
@@ -294,7 +294,7 @@ async def basic_demo():
     print(f"📁 Data files saved at: {demo_dir}/")
     print("\n💡 Inspect the generated files:")
     print(f"  cat {demo_dir}/raw_data.jsonl      # Original conversations")
-    print(f"  cat {demo_dir}/episodes.jsonl     # Generated episodes") 
+    print(f"  cat {demo_dir}/episodes.jsonl     # Generated episodes")
     print(f"  cat {demo_dir}/episode_links.jsonl # Episode-data relationships")
     print("\n🚀 Ready to try the intelligent demo with real LLM processing!")
 
