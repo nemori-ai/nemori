@@ -7,7 +7,6 @@ and scenarios where database setup is inconvenient.
 """
 
 import json
-import os
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -66,11 +65,11 @@ class JSONLRawDataRepository(RawDataRepository):
     async def initialize(self) -> None:
         """Initialize the JSONL storage."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create files if they don't exist
         if not self.raw_data_file.exists():
             self.raw_data_file.touch()
-        
+
         # Load existing data into cache
         await self._load_cache()
         self._initialized = True
@@ -113,14 +112,14 @@ class JSONLRawDataRepository(RawDataRepository):
         self._cache = {}
         if not self.raw_data_file.exists():
             return
-            
+
         try:
-            with open(self.raw_data_file, 'r', encoding='utf-8') as f:
+            with open(self.raw_data_file, encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
                         data_dict = json.loads(line)
                         data_dict = _deserialize_datetime(data_dict)
-                        
+
                         # Reconstruct RawEventData object
                         temporal_info = TemporalInfo(
                             timestamp=data_dict['temporal_info']['timestamp'],
@@ -128,7 +127,7 @@ class JSONLRawDataRepository(RawDataRepository):
                             timezone=data_dict['temporal_info']['timezone'],
                             precision=data_dict['temporal_info'].get('precision', 'second')
                         )
-                        
+
                         raw_data = RawEventData(
                             data_id=data_dict['data_id'],
                             data_type=DataType(data_dict['data_type']),
@@ -139,7 +138,7 @@ class JSONLRawDataRepository(RawDataRepository):
                             processed=data_dict['processed'],
                             processing_version=data_dict['processing_version']
                         )
-                        
+
                         self._cache[raw_data.data_id] = raw_data
         except Exception as e:
             print(f"Warning: Failed to load cache from {self.raw_data_file}: {e}")
@@ -173,25 +172,25 @@ class JSONLRawDataRepository(RawDataRepository):
     async def get_stats(self) -> StorageStats:
         """Get storage statistics."""
         stats = StorageStats()
-        
+
         # Count total and processed data
         stats.total_raw_data = len(self._cache)
         stats.processed_raw_data = sum(1 for data in self._cache.values() if data.processed)
-        
+
         # Count by type
         for data in self._cache.values():
             stats.raw_data_by_type[data.data_type] = stats.raw_data_by_type.get(data.data_type, 0) + 1
-        
+
         # Get temporal info
         if self._cache:
             timestamps = [data.temporal_info.timestamp for data in self._cache.values()]
             stats.oldest_data = min(timestamps)
             stats.newest_data = max(timestamps)
-        
+
         # Calculate storage size
         if self.raw_data_file.exists():
             stats.storage_size_mb = self.raw_data_file.stat().st_size / (1024 * 1024)
-        
+
         return stats
 
     async def store_raw_data(self, data: RawEventData) -> str:
@@ -221,7 +220,7 @@ class JSONLRawDataRepository(RawDataRepository):
         """Search raw event data based on query parameters."""
         start_time = time.time()
         results = []
-        
+
         for data in self._cache.values():
             # Apply filters
             if query.data_ids and data.data_id not in query.data_ids:
@@ -232,18 +231,18 @@ class JSONLRawDataRepository(RawDataRepository):
                 continue
             if query.processed_only is not None and data.processed != query.processed_only:
                 continue
-            
+
             # Time range filter
             if query.time_range:
                 if not query.time_range.contains(data.temporal_info.timestamp):
                     continue
-            
+
             # Content search
             if query.content_contains:
                 content_str = json.dumps(data.content) if not isinstance(data.content, str) else data.content
                 if query.content_contains.lower() not in content_str.lower():
                     continue
-            
+
             # Metadata filters
             if query.metadata_filters:
                 match = True
@@ -253,26 +252,26 @@ class JSONLRawDataRepository(RawDataRepository):
                         break
                 if not match:
                     continue
-            
+
             results.append(data)
-        
+
         # Sort results
         if query.sort_by == SortBy.TIMESTAMP:
             results.sort(
                 key=lambda x: x.temporal_info.timestamp,
                 reverse=(query.sort_order == SortOrder.DESC)
             )
-        
+
         # Apply pagination
         total_count = len(results)
         if query.offset:
             results = results[query.offset:]
         if query.limit:
             results = results[:query.limit]
-        
+
         query_time_ms = (time.time() - start_time) * 1000
         has_more = query.limit is not None and len(results) == query.limit and total_count > (query.offset or 0) + len(results)
-        
+
         return RawDataSearchResult(
             data=results,
             total_count=total_count,
@@ -355,13 +354,13 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
     async def initialize(self) -> None:
         """Initialize the JSONL storage."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create files if they don't exist
         if not self.episodes_file.exists():
             self.episodes_file.touch()
         if not self.links_file.exists():
             self.links_file.touch()
-        
+
         # Load existing data into cache
         await self._load_episodes_cache()
         await self._load_links_cache()
@@ -376,9 +375,9 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
 
     async def health_check(self) -> bool:
         """Check if storage is healthy."""
-        return (self._initialized and 
-                self.data_dir.exists() and 
-                self.episodes_file.exists() and 
+        return (self._initialized and
+                self.data_dir.exists() and
+                self.episodes_file.exists() and
                 self.links_file.exists())
 
     async def backup(self, destination: str) -> bool:
@@ -411,9 +410,9 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
         self._episodes_cache = {}
         if not self.episodes_file.exists():
             return
-            
+
         try:
-            with open(self.episodes_file, 'r', encoding='utf-8') as f:
+            with open(self.episodes_file, encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
                         episode_dict = json.loads(line)
@@ -428,9 +427,9 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
         self._links_cache = {}
         if not self.links_file.exists():
             return
-            
+
         try:
-            with open(self.links_file, 'r', encoding='utf-8') as f:
+            with open(self.links_file, encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
                         link_dict = json.loads(line)
@@ -498,14 +497,14 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
     def _dict_to_episode(self, episode_dict: dict) -> Episode:
         """Convert dictionary to Episode object."""
         from ..core.episode import EpisodeMetadata
-        
+
         temporal_info = TemporalInfo(
             timestamp=episode_dict['temporal_info']['timestamp'],
             duration=episode_dict['temporal_info']['duration'],
             timezone=episode_dict['temporal_info']['timezone'],
             precision=episode_dict['temporal_info'].get('precision', 'second')
         )
-        
+
         metadata = EpisodeMetadata(
             source_data_ids=episode_dict['metadata']['source_data_ids'],
             source_types={DataType(dt) for dt in episode_dict['metadata']['source_types']},
@@ -513,7 +512,7 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
             topics=episode_dict['metadata']['topics'],
             key_points=episode_dict['metadata']['key_points']
         )
-        
+
         return Episode(
             episode_id=episode_dict['episode_id'],
             owner_id=episode_dict['owner_id'],
@@ -533,27 +532,27 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
     async def get_stats(self) -> StorageStats:
         """Get storage statistics."""
         stats = StorageStats()
-        
+
         # Count total episodes
         stats.total_episodes = len(self._episodes_cache)
-        
+
         # Count by type and level
         for episode in self._episodes_cache.values():
             stats.episodes_by_type[episode.episode_type] = stats.episodes_by_type.get(episode.episode_type, 0) + 1
             stats.episodes_by_level[episode.level] = stats.episodes_by_level.get(episode.level, 0) + 1
-        
+
         # Get temporal info
         if self._episodes_cache:
             timestamps = [episode.temporal_info.timestamp for episode in self._episodes_cache.values()]
             stats.oldest_data = min(timestamps)
             stats.newest_data = max(timestamps)
-        
+
         # Calculate storage size
         if self.episodes_file.exists():
             stats.storage_size_mb += self.episodes_file.stat().st_size / (1024 * 1024)
         if self.links_file.exists():
             stats.storage_size_mb += self.links_file.stat().st_size / (1024 * 1024)
-        
+
         return stats
 
     async def store_episode(self, episode: Episode) -> str:
@@ -583,7 +582,7 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
         """Search episodes based on query parameters."""
         start_time = time.time()
         results = []
-        
+
         for episode in self._episodes_cache.values():
             # Apply filters
             if query.episode_ids and episode.episode_id not in query.episode_ids:
@@ -594,12 +593,12 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
                 continue
             if query.levels and episode.level not in query.levels:
                 continue
-            
+
             # Time range filter
             if query.time_range:
                 if not query.time_range.contains(episode.temporal_info.timestamp):
                     continue
-            
+
             # Text search (simple implementation)
             if query.text_search:
                 search_text = query.text_search.lower()
@@ -611,45 +610,45 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
                 )
                 if search_text not in searchable_content:
                     continue
-            
+
             # Keywords filter
             if query.keywords:
                 episode_keywords = [kw.lower() for kw in episode.search_keywords]
                 if not any(kw.lower() in episode_keywords for kw in query.keywords):
                     continue
-            
+
             # Entities filter
             if query.entities:
                 episode_entities = [ent.lower() for ent in episode.metadata.entities]
                 if not any(ent.lower() in episode_entities for ent in query.entities):
                     continue
-            
+
             # Topics filter
             if query.topics:
                 episode_topics = [topic.lower() for topic in episode.metadata.topics]
                 if not any(topic.lower() in episode_topics for topic in query.topics):
                     continue
-            
+
             # Importance filters
             if query.min_importance is not None and episode.importance_score < query.min_importance:
                 continue
             if query.max_importance is not None and episode.importance_score > query.max_importance:
                 continue
-            
+
             # Recall count filters
             if query.min_recall_count is not None and episode.recall_count < query.min_recall_count:
                 continue
             if query.max_recall_count is not None and episode.recall_count > query.max_recall_count:
                 continue
-            
+
             # Recent episodes filter
             if query.recent_hours is not None:
                 cutoff_time = datetime.now(UTC) - timedelta(hours=query.recent_hours)
                 if episode.temporal_info.timestamp < cutoff_time:
                     continue
-            
+
             results.append(episode)
-        
+
         # Sort results
         if query.sort_by == SortBy.TIMESTAMP:
             results.sort(
@@ -666,17 +665,17 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
                 key=lambda x: x.recall_count,
                 reverse=(query.sort_order == SortOrder.DESC)
             )
-        
+
         # Apply pagination
         total_count = len(results)
         if query.offset:
             results = results[query.offset:]
         if query.limit:
             results = results[:query.limit]
-        
+
         query_time_ms = (time.time() - start_time) * 1000
         has_more = query.limit is not None and len(results) == query.limit and total_count > (query.offset or 0) + len(results)
-        
+
         return EpisodeSearchResult(
             episodes=results,
             total_count=total_count,
@@ -797,25 +796,25 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
         if episode_id in self._links_cache:
             del self._links_cache[episode_id]
             deleted = True
-        
+
         if deleted:
             await self._flush_episodes_cache()
             await self._flush_links_cache()
-        
+
         return deleted
 
     async def cleanup_old_episodes(self, max_age_days: int) -> int:
         """Clean up episodes older than specified age."""
         cutoff_time = datetime.now(UTC) - timedelta(days=max_age_days)
         to_delete = []
-        
+
         for episode_id, episode in self._episodes_cache.items():
             if episode.temporal_info.timestamp < cutoff_time:
                 to_delete.append(episode_id)
-        
+
         deleted_count = 0
         for episode_id in to_delete:
             if await self.delete_episode(episode_id):
                 deleted_count += 1
-        
+
         return deleted_count
