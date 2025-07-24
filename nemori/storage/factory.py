@@ -6,6 +6,7 @@ repositories based on configuration.
 """
 
 from .duckdb_storage import DuckDBEpisodicMemoryRepository, DuckDBRawDataRepository
+from .jsonl_storage import JSONLEpisodicMemoryRepository, JSONLRawDataRepository
 from .memory_storage import MemoryEpisodicMemoryRepository, MemoryRawDataRepository
 from .postgresql_storage import PostgreSQLEpisodicMemoryRepository, PostgreSQLRawDataRepository
 from .repository import EpisodicMemoryRepository, RawDataRepository
@@ -53,6 +54,10 @@ def create_repositories(config: StorageConfig) -> tuple[RawDataRepository, Episo
             raw_repo = PostgreSQLRawDataRepository(config)
             episode_repo = PostgreSQLEpisodicMemoryRepository(config)
 
+        elif backend_type == "jsonl":
+            raw_repo = JSONLRawDataRepository(config)
+            episode_repo = JSONLEpisodicMemoryRepository(config)
+
         else:
             raise UnsupportedBackendError(f"Unsupported backend type: {backend_type}")
 
@@ -87,6 +92,8 @@ def create_raw_data_repository(config: StorageConfig) -> RawDataRepository:
             return DuckDBRawDataRepository(config)
         elif backend_type == "postgresql":
             return PostgreSQLRawDataRepository(config)
+        elif backend_type == "jsonl":
+            return JSONLRawDataRepository(config)
         else:
             raise UnsupportedBackendError(f"Unsupported backend type: {backend_type}")
 
@@ -119,6 +126,8 @@ def create_episodic_memory_repository(config: StorageConfig) -> EpisodicMemoryRe
             return DuckDBEpisodicMemoryRepository(config)
         elif backend_type == "postgresql":
             return PostgreSQLEpisodicMemoryRepository(config)
+        elif backend_type == "jsonl":
+            return JSONLEpisodicMemoryRepository(config)
         else:
             raise UnsupportedBackendError(f"Unsupported backend type: {backend_type}")
 
@@ -135,7 +144,7 @@ def get_supported_backends() -> list[str]:
     Returns:
         List of supported backend names
     """
-    return ["memory", "duckdb", "postgresql"]
+    return ["memory", "duckdb", "postgresql", "jsonl"]
 
 
 def validate_config(config: StorageConfig) -> None:
@@ -173,6 +182,10 @@ def validate_config(config: StorageConfig) -> None:
 
     elif backend_type == "memory":
         # Memory backend doesn't require a connection string
+        pass
+
+    elif backend_type == "jsonl":
+        # JSONL backend can work with or without a connection string (directory path)
         pass
 
     # Validate other settings
@@ -242,3 +255,17 @@ def create_memory_config(**kwargs) -> StorageConfig:
         StorageConfig configured for in-memory storage
     """
     return StorageConfig(backend_type="memory", **kwargs)
+
+
+def create_jsonl_config(data_dir: str | None = None, **kwargs) -> StorageConfig:
+    """
+    Create a JSONL storage configuration.
+
+    Args:
+        data_dir: Directory path for JSONL files (optional, defaults to "nemori_data")
+        **kwargs: Additional StorageConfig parameters
+
+    Returns:
+        StorageConfig configured for JSONL storage
+    """
+    return StorageConfig(backend_type="jsonl", connection_string=data_dir, **kwargs)

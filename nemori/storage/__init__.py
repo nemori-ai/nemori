@@ -11,6 +11,7 @@ from .factory import (
     UnsupportedBackendError,
     create_duckdb_config,
     create_episodic_memory_repository,
+    create_jsonl_config,
     create_memory_config,
     create_postgresql_config,
     create_raw_data_repository,
@@ -18,6 +19,7 @@ from .factory import (
     get_supported_backends,
     validate_config,
 )
+from .jsonl_storage import JSONLEpisodicMemoryRepository, JSONLRawDataRepository
 from .memory_storage import MemoryEpisodicMemoryRepository, MemoryRawDataRepository
 from .postgresql_storage import PostgreSQLEpisodicMemoryRepository, PostgreSQLRawDataRepository
 from .repository import EpisodicMemoryRepository, RawDataRepository, StorageRepository
@@ -45,6 +47,9 @@ __all__ = [
     # PostgreSQL implementations
     "PostgreSQLRawDataRepository",
     "PostgreSQLEpisodicMemoryRepository",
+    # JSONL implementations
+    "JSONLRawDataRepository",
+    "JSONLEpisodicMemoryRepository",
     # Factory functions
     "create_repositories",
     "create_raw_data_repository",
@@ -52,6 +57,7 @@ __all__ = [
     "create_postgresql_config",
     "create_duckdb_config",
     "create_memory_config",
+    "create_jsonl_config",
     "get_supported_backends",
     "validate_config",
     # Exceptions
