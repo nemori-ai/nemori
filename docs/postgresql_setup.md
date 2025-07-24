@@ -5,7 +5,7 @@ This guide explains how to set up and use PostgreSQL as a storage backend for th
 ## Prerequisites
 
 1. **PostgreSQL Server**: Make sure you have PostgreSQL 12+ installed and running
-2. **Database**: Create a database for Nemori (e.g., `nemori`)
+2. **Database**: Create a database for Nemori (e.g., `nemori_demo`)
 3. **User Permissions**: Ensure your PostgreSQL user has CREATE, INSERT, UPDATE, DELETE, and SELECT permissions
 
 ## Installation
@@ -31,7 +31,7 @@ from nemori.storage import create_postgresql_config
 config = create_postgresql_config(
     host="localhost",
     port=5432,
-    database="nemori",
+    database="nemori_demo",
     username="postgres",
     password="your_password",  # Optional
     batch_size=500,
@@ -81,7 +81,7 @@ async def main():
     # Create configuration
     config = create_postgresql_config(
         host="localhost",
-        database="nemori",
+        database="nemori_demo",
         username="postgres",
         password="your_password"
     )
@@ -222,12 +222,12 @@ To run PostgreSQL-specific tests:
 
 1. Set up a test database:
 ```bash
-createdb nemori_test
+createdb nemori_demo
 ```
 
 2. Set the test environment variable:
 ```bash
-export POSTGRESQL_TEST_URL="postgresql+asyncpg://postgres@localhost/nemori_test"
+export POSTGRESQL_TEST_URL="postgresql+asyncpg://postgres@localhost/nemori_demo"
 ```
 
 3. Run the tests:

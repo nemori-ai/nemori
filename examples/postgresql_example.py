@@ -31,7 +31,7 @@ async def main():
     config = create_postgresql_config(
         host="localhost",
         port=5432,
-        database="nemori",
+        database="nemori_demo",
         username="postgres",
         password=os.getenv("POSTGRES_PASSWORD"),  # Optional password from env
         batch_size=500,

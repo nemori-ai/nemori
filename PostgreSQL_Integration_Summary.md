@@ -140,7 +140,7 @@ from nemori.storage import create_postgresql_config, create_repositories
 
 config = create_postgresql_config(
     host="localhost",
-    database="nemori",
+    database="nemori_demo",
     username="postgres",
     password="your_password"
 )
@@ -176,8 +176,8 @@ raw_repo, episode_repo = create_repositories(config)
 
 ### Test Database Setup
 ```bash
-createdb nemori_test
-export POSTGRESQL_TEST_URL="postgresql+asyncpg://postgres@localhost/nemori_test"
+createdb nemori_demo
+export POSTGRESQL_TEST_URL="postgresql+asyncpg://postgres@localhost/nemori_demo"
 uv run pytest tests/test_postgresql_storage.py -v
 ```
 
