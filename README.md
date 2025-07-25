@@ -45,7 +45,7 @@ To reproduce Nemori's experimental results on the LoCoMo benchmark, please refer
 > Nemori 的 LoCoMo 复现流程极其简单：情景构建阶段只需 **2 条简短提示词**（边界探测 & 情景生成），随后通过 **BM25** 完成检索与回答生成，无需额外的大模型调用。  
 > Reproducing the LoCoMo results with Nemori is very straightforward: the episodic construction uses only **2 short LLM prompts** (boundary detection & episode generation), then a simple **BM25** search retrieves memories and produces the final answer—no further LLM prompts required.
 
-![Episode Creation Flow](figures/create-episode.png)
+![Process Flow](figures/flow.png)
 
 1. **情景边界探测 — 提示词** `Detect episode boundaries along natural topic shifts`  
    **Episode Boundary Detection — Prompt** `Detect episode boundaries along natural topic shifts`
@@ -55,8 +55,6 @@ To reproduce Nemori's experimental results on the LoCoMo benchmark, please refer
 
 3. **BM25 索引构建 — 无额外 LLM 调用 & 无 Embedding**  
    **Build BM25 Index — No extra LLM calls, no embeddings required**
-
-![Retrieval Flow](figures/retrieval.png)
 
 4. **检索与回答生成 — 纯 BM25（同样无额外 LLM 调用）**  
    **Retrieval & Answer Generation — Pure BM25 (again, no additional LLM calls)**
