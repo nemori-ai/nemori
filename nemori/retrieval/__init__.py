@@ -8,12 +8,13 @@ and hybrid approaches.
 
 from .providers import BM25RetrievalProvider, RetrievalProvider
 from .retrieval_types import RetrievalConfig, RetrievalQuery, RetrievalResult, RetrievalStorageType, RetrievalStrategy
-from .service import RetrievalService
+from .service import RetrievalService, UnifiedRetrievalService
 
 __all__ = [
     "RetrievalProvider",
     "BM25RetrievalProvider",
     "RetrievalService",
+    "UnifiedRetrievalService",
     "RetrievalConfig",
     "RetrievalQuery",
     "RetrievalResult",

@@ -4,7 +4,7 @@ Nemori Intelligent Demo - Real LLM-Powered Episode Creation
 
 This demo showcases Nemori's full intelligence capabilities:
 - REQUIRES OpenAI API key for authentic episode generation
-- Performs real conversation boundary detection  
+- Performs real conversation boundary detection
 - Uses LLM to create meaningful episodic memories
 - Supports multiple storage backends (JSONL/DuckDB/PostgreSQL)
 - Demonstrates intelligent search with actual semantic understanding
@@ -59,56 +59,184 @@ class NemoriIntelligentDemo:
                 "id": "startup_strategy_discussion",
                 "title": "Startup Strategy and Market Analysis",
                 "messages": [
-                    {"speaker": "emma", "content": "I've been thinking about our go-to-market strategy. We need to decide between focusing on enterprise clients or starting with SMBs.", "timestamp": "2024-02-01T10:00:00"},
-                    {"speaker": "james", "content": "That's a crucial decision. What's your gut feeling? I've seen startups succeed with both approaches.", "timestamp": "2024-02-01T10:01:30"},
-                    {"speaker": "emma", "content": "Honestly, I'm leaning toward SMBs first. They're easier to reach, have shorter sales cycles, and can give us faster feedback for product iteration.", "timestamp": "2024-02-01T10:02:45"},
-                    {"speaker": "james", "content": "Makes sense. Plus, we can build case studies with SMBs and use those to approach enterprise later. What about pricing strategy?", "timestamp": "2024-02-01T10:04:00"},
-                    {"speaker": "emma", "content": "I've been researching competitors. Most charge $99-299 per month for similar features. I think we should start at $79 to be aggressive.", "timestamp": "2024-02-01T10:05:15"},
-                    {"speaker": "james", "content": "Aggressive pricing could work, but we need to make sure our unit economics still work out. Have you run the numbers on customer acquisition cost?", "timestamp": "2024-02-01T10:06:30"},
-                    {"speaker": "emma", "content": "Not yet, but I estimate we'll need about 3-6 months to break even on each customer if we can keep churn below 5% monthly.", "timestamp": "2024-02-01T10:07:45"},
-                    {"speaker": "james", "content": "That sounds reasonable. What about the technical implementation? I'm worried about scaling if we get a sudden influx of users.", "timestamp": "2024-02-01T10:09:00"},
-                    {"speaker": "emma", "content": "Good point. Maybe we should implement some basic rate limiting and database optimization before launch. Better safe than sorry.", "timestamp": "2024-02-01T10:10:15"},
-                    {"speaker": "james", "content": "Absolutely. I'd rather delay launch by two weeks than have our servers crash when TechCrunch writes about us.", "timestamp": "2024-02-01T10:11:30"},
-                ]
+                    {
+                        "speaker": "emma",
+                        "content": "I've been thinking about our go-to-market strategy. We need to decide between focusing on enterprise clients or starting with SMBs.",
+                        "timestamp": "2024-02-01T10:00:00",
+                    },
+                    {
+                        "speaker": "james",
+                        "content": "That's a crucial decision. What's your gut feeling? I've seen startups succeed with both approaches.",
+                        "timestamp": "2024-02-01T10:01:30",
+                    },
+                    {
+                        "speaker": "emma",
+                        "content": "Honestly, I'm leaning toward SMBs first. They're easier to reach, have shorter sales cycles, and can give us faster feedback for product iteration.",
+                        "timestamp": "2024-02-01T10:02:45",
+                    },
+                    {
+                        "speaker": "james",
+                        "content": "Makes sense. Plus, we can build case studies with SMBs and use those to approach enterprise later. What about pricing strategy?",
+                        "timestamp": "2024-02-01T10:04:00",
+                    },
+                    {
+                        "speaker": "emma",
+                        "content": "I've been researching competitors. Most charge $99-299 per month for similar features. I think we should start at $79 to be aggressive.",
+                        "timestamp": "2024-02-01T10:05:15",
+                    },
+                    {
+                        "speaker": "james",
+                        "content": "Aggressive pricing could work, but we need to make sure our unit economics still work out. Have you run the numbers on customer acquisition cost?",
+                        "timestamp": "2024-02-01T10:06:30",
+                    },
+                    {
+                        "speaker": "emma",
+                        "content": "Not yet, but I estimate we'll need about 3-6 months to break even on each customer if we can keep churn below 5% monthly.",
+                        "timestamp": "2024-02-01T10:07:45",
+                    },
+                    {
+                        "speaker": "james",
+                        "content": "That sounds reasonable. What about the technical implementation? I'm worried about scaling if we get a sudden influx of users.",
+                        "timestamp": "2024-02-01T10:09:00",
+                    },
+                    {
+                        "speaker": "emma",
+                        "content": "Good point. Maybe we should implement some basic rate limiting and database optimization before launch. Better safe than sorry.",
+                        "timestamp": "2024-02-01T10:10:15",
+                    },
+                    {
+                        "speaker": "james",
+                        "content": "Absolutely. I'd rather delay launch by two weeks than have our servers crash when TechCrunch writes about us.",
+                        "timestamp": "2024-02-01T10:11:30",
+                    },
+                ],
             },
             {
                 "id": "ai_research_collaboration",
                 "title": "AI Research Project Collaboration",
                 "messages": [
-                    {"speaker": "sarah", "content": "I just finished reading your paper on attention mechanisms. The results on long-sequence modeling are impressive!", "timestamp": "2024-02-05T14:00:00"},
-                    {"speaker": "alex", "content": "Thanks! It took months to get those experiments right. The key breakthrough was realizing we needed sparse attention patterns for sequences over 10k tokens.", "timestamp": "2024-02-05T14:01:20"},
-                    {"speaker": "sarah", "content": "That's fascinating. Have you considered how this might apply to episodic memory systems? I'm working on something similar for conversation understanding.", "timestamp": "2024-02-05T14:02:40"},
-                    {"speaker": "alex", "content": "Actually, yes! I think there's a natural connection. Episodes could be treated as attention patterns over temporal sequences of events.", "timestamp": "2024-02-05T14:04:00"},
-                    {"speaker": "sarah", "content": "Exactly what I was thinking! In my current project, I'm trying to identify natural conversation boundaries using transformer models.", "timestamp": "2024-02-05T14:05:20"},
-                    {"speaker": "alex", "content": "Interesting approach. Are you using pre-trained models or training from scratch? I imagine domain-specific conversation data would be crucial.", "timestamp": "2024-02-05T14:06:40"},
-                    {"speaker": "sarah", "content": "I started with BERT but found that fine-tuning on conversational data gave much better boundary detection. The model learns to recognize topic shifts and speaker intention changes.", "timestamp": "2024-02-05T14:08:00"},
-                    {"speaker": "alex", "content": "That makes perfect sense. Have you thought about incorporating temporal dynamics? Conversation flow has natural rhythms that might help with segmentation.", "timestamp": "2024-02-05T14:09:20"},
-                    {"speaker": "sarah", "content": "Yes! I'm experimenting with RNNs to capture the temporal dependencies between messages. Early results show 15% improvement in boundary detection accuracy.", "timestamp": "2024-02-05T14:10:40"},
-                    {"speaker": "alex", "content": "Wow, that's significant! We should definitely collaborate on this. My attention work might complement your temporal modeling perfectly.", "timestamp": "2024-02-05T14:12:00"},
-                    {"speaker": "sarah", "content": "I'd love that! Let's set up a research meeting next week to explore how we can combine our approaches.", "timestamp": "2024-02-05T14:13:20"},
-                ]
+                    {
+                        "speaker": "sarah",
+                        "content": "I just finished reading your paper on attention mechanisms. The results on long-sequence modeling are impressive!",
+                        "timestamp": "2024-02-05T14:00:00",
+                    },
+                    {
+                        "speaker": "alex",
+                        "content": "Thanks! It took months to get those experiments right. The key breakthrough was realizing we needed sparse attention patterns for sequences over 10k tokens.",
+                        "timestamp": "2024-02-05T14:01:20",
+                    },
+                    {
+                        "speaker": "sarah",
+                        "content": "That's fascinating. Have you considered how this might apply to episodic memory systems? I'm working on something similar for conversation understanding.",
+                        "timestamp": "2024-02-05T14:02:40",
+                    },
+                    {
+                        "speaker": "alex",
+                        "content": "Actually, yes! I think there's a natural connection. Episodes could be treated as attention patterns over temporal sequences of events.",
+                        "timestamp": "2024-02-05T14:04:00",
+                    },
+                    {
+                        "speaker": "sarah",
+                        "content": "Exactly what I was thinking! In my current project, I'm trying to identify natural conversation boundaries using transformer models.",
+                        "timestamp": "2024-02-05T14:05:20",
+                    },
+                    {
+                        "speaker": "alex",
+                        "content": "Interesting approach. Are you using pre-trained models or training from scratch? I imagine domain-specific conversation data would be crucial.",
+                        "timestamp": "2024-02-05T14:06:40",
+                    },
+                    {
+                        "speaker": "sarah",
+                        "content": "I started with BERT but found that fine-tuning on conversational data gave much better boundary detection. The model learns to recognize topic shifts and speaker intention changes.",
+                        "timestamp": "2024-02-05T14:08:00",
+                    },
+                    {
+                        "speaker": "alex",
+                        "content": "That makes perfect sense. Have you thought about incorporating temporal dynamics? Conversation flow has natural rhythms that might help with segmentation.",
+                        "timestamp": "2024-02-05T14:09:20",
+                    },
+                    {
+                        "speaker": "sarah",
+                        "content": "Yes! I'm experimenting with RNNs to capture the temporal dependencies between messages. Early results show 15% improvement in boundary detection accuracy.",
+                        "timestamp": "2024-02-05T14:10:40",
+                    },
+                    {
+                        "speaker": "alex",
+                        "content": "Wow, that's significant! We should definitely collaborate on this. My attention work might complement your temporal modeling perfectly.",
+                        "timestamp": "2024-02-05T14:12:00",
+                    },
+                    {
+                        "speaker": "sarah",
+                        "content": "I'd love that! Let's set up a research meeting next week to explore how we can combine our approaches.",
+                        "timestamp": "2024-02-05T14:13:20",
+                    },
+                ],
             },
             {
                 "id": "travel_documentary_planning",
                 "title": "Travel Documentary Production Planning",
                 "messages": [
-                    {"speaker": "mike", "content": "I've been reviewing the footage from our Japan trip. The material is incredible, but we need to figure out the narrative structure.", "timestamp": "2024-02-10T16:00:00"},
-                    {"speaker": "lisa", "content": "What's your vision for the story arc? Are we focusing on cultural immersion, personal transformation, or the journey itself?", "timestamp": "2024-02-10T16:01:30"},
-                    {"speaker": "mike", "content": "I think personal transformation works best. The way local people changed our perspective on minimalism and mindfulness was profound.", "timestamp": "2024-02-10T16:03:00"},
-                    {"speaker": "lisa", "content": "Perfect angle! We can structure it chronologically - arrival expectations, cultural shock, gradual understanding, and final transformation.", "timestamp": "2024-02-10T16:04:30"},
-                    {"speaker": "mike", "content": "Yes, and we have amazing footage of that tea ceremony in Kyoto where everything clicked for us. That could be the turning point.", "timestamp": "2024-02-10T16:06:00"},
-                    {"speaker": "lisa", "content": "That scene is pure gold! The old tea master's words about 'finding beauty in imperfection' - so powerful. We should build toward that moment.", "timestamp": "2024-02-10T16:07:30"},
-                    {"speaker": "mike", "content": "Absolutely. And the contrast with our frantic first days in Tokyo will make the Kyoto transformation even more impactful.", "timestamp": "2024-02-10T16:09:00"},
-                    {"speaker": "lisa", "content": "What about music? I'm thinking traditional Japanese instruments mixed with contemporary ambient sounds to bridge old and new.", "timestamp": "2024-02-10T16:10:30"},
-                    {"speaker": "mike", "content": "Brilliant! I know a composer who specializes in cultural fusion music. She could create something that evolves with our narrative arc.", "timestamp": "2024-02-10T16:12:00"},
-                    {"speaker": "lisa", "content": "This is coming together beautifully. When do you think we can have a rough cut ready for feedback?", "timestamp": "2024-02-10T16:13:30"},
-                    {"speaker": "mike", "content": "Given the complexity, I'd say 6-8 weeks for a solid first cut. Quality storytelling takes time, but it'll be worth it.", "timestamp": "2024-02-10T16:15:00"},
-                ]
-            }
+                    {
+                        "speaker": "mike",
+                        "content": "I've been reviewing the footage from our Japan trip. The material is incredible, but we need to figure out the narrative structure.",
+                        "timestamp": "2024-02-10T16:00:00",
+                    },
+                    {
+                        "speaker": "lisa",
+                        "content": "What's your vision for the story arc? Are we focusing on cultural immersion, personal transformation, or the journey itself?",
+                        "timestamp": "2024-02-10T16:01:30",
+                    },
+                    {
+                        "speaker": "mike",
+                        "content": "I think personal transformation works best. The way local people changed our perspective on minimalism and mindfulness was profound.",
+                        "timestamp": "2024-02-10T16:03:00",
+                    },
+                    {
+                        "speaker": "lisa",
+                        "content": "Perfect angle! We can structure it chronologically - arrival expectations, cultural shock, gradual understanding, and final transformation.",
+                        "timestamp": "2024-02-10T16:04:30",
+                    },
+                    {
+                        "speaker": "mike",
+                        "content": "Yes, and we have amazing footage of that tea ceremony in Kyoto where everything clicked for us. That could be the turning point.",
+                        "timestamp": "2024-02-10T16:06:00",
+                    },
+                    {
+                        "speaker": "lisa",
+                        "content": "That scene is pure gold! The old tea master's words about 'finding beauty in imperfection' - so powerful. We should build toward that moment.",
+                        "timestamp": "2024-02-10T16:07:30",
+                    },
+                    {
+                        "speaker": "mike",
+                        "content": "Absolutely. And the contrast with our frantic first days in Tokyo will make the Kyoto transformation even more impactful.",
+                        "timestamp": "2024-02-10T16:09:00",
+                    },
+                    {
+                        "speaker": "lisa",
+                        "content": "What about music? I'm thinking traditional Japanese instruments mixed with contemporary ambient sounds to bridge old and new.",
+                        "timestamp": "2024-02-10T16:10:30",
+                    },
+                    {
+                        "speaker": "mike",
+                        "content": "Brilliant! I know a composer who specializes in cultural fusion music. She could create something that evolves with our narrative arc.",
+                        "timestamp": "2024-02-10T16:12:00",
+                    },
+                    {
+                        "speaker": "lisa",
+                        "content": "This is coming together beautifully. When do you think we can have a rough cut ready for feedback?",
+                        "timestamp": "2024-02-10T16:13:30",
+                    },
+                    {
+                        "speaker": "mike",
+                        "content": "Given the complexity, I'd say 6-8 weeks for a solid first cut. Quality storytelling takes time, but it'll be worth it.",
+                        "timestamp": "2024-02-10T16:15:00",
+                    },
+                ],
+            },
         ]
 
         print(f"✅ Created {len(self.conversations)} realistic conversation scenarios")
-        total_messages = sum(len(conv['messages']) for conv in self.conversations)
+        total_messages = sum(len(conv["messages"]) for conv in self.conversations)
         print(f"📝 Total messages for LLM processing: {total_messages}")
 
     async def setup_llm_provider(self) -> bool:
@@ -126,8 +254,8 @@ class NemoriIntelligentDemo:
         try:
             self.llm_provider = OpenAIProvider(
                 model="gpt-4o-mini",  # Cost-effective but intelligent model
-                temperature=0.1,      # Low temperature for consistent results
-                max_tokens=3000       # Enough for detailed episodes
+                temperature=0.1,  # Low temperature for consistent results
+                max_tokens=3000,  # Enough for detailed episodes
             )
 
             # Test connection
@@ -170,14 +298,17 @@ class NemoriIntelligentDemo:
                 pg_url = os.getenv("POSTGRESQL_TEST_URL")
                 if not pg_url:
                     print("❌ ERROR: POSTGRESQL_TEST_URL required for PostgreSQL storage!")
-                    print("   Example: export POSTGRESQL_TEST_URL='postgresql+asyncpg://postgres:password@localhost/nemori_demo'")
+                    print(
+                        "   Example: export POSTGRESQL_TEST_URL='postgresql+asyncpg://postgres:password@localhost/nemori_demo'"
+                    )
                     print("   Falling back to JSONL storage...")
                     self.storage_type = "jsonl"
                     config = create_jsonl_config(str(self.demo_dir))
                 else:
                     # Parse database name from URL
                     import re
-                    db_match = re.search(r'/([^/]+)(?:\?|$)', pg_url)
+
+                    db_match = re.search(r"/([^/]+)(?:\?|$)", pg_url)
                     db_name = db_match.group(1) if db_match else "nemori_demo"
                     config = create_postgresql_config(
                         host="localhost", database=db_name, username="postgres", password="postgres"
@@ -218,14 +349,22 @@ class NemoriIntelligentDemo:
         """Clean up existing PostgreSQL demo data for fresh runs"""
         try:
             # Get all episodes from intelligent demo owners
-            demo_owners = ["emma_intelligent", "james_intelligent", "sarah_intelligent",
-                          "alex_intelligent", "mike_intelligent", "lisa_intelligent"]
+            demo_owners = [
+                "emma_intelligent",
+                "james_intelligent",
+                "sarah_intelligent",
+                "alex_intelligent",
+                "mike_intelligent",
+                "lisa_intelligent",
+            ]
 
             for owner_id in demo_owners:
                 try:
                     # Get episodes for this owner
                     episodes_result = await self.episode_repo.get_episodes_by_owner(owner_id)
-                    episodes = episodes_result.episodes if hasattr(episodes_result, 'episodes') else (episodes_result or [])
+                    episodes = (
+                        episodes_result.episodes if hasattr(episodes_result, "episodes") else (episodes_result or [])
+                    )
 
                     # Delete episodes
                     for episode in episodes:
@@ -235,7 +374,11 @@ class NemoriIntelligentDemo:
                     pass
 
             # Clean up raw data from intelligent demo
-            demo_conversation_ids = ["startup_strategy_discussion", "ai_research_collaboration", "travel_documentary_planning"]
+            demo_conversation_ids = [
+                "startup_strategy_discussion",
+                "ai_research_collaboration",
+                "travel_documentary_planning",
+            ]
             for conversation_id in demo_conversation_ids:
                 try:
                     await self.raw_data_repo.delete_raw_data(conversation_id)
@@ -263,7 +406,7 @@ class NemoriIntelligentDemo:
             raw_data_repo=self.raw_data_repo,
             episode_repo=self.episode_repo,
             builder_registry=builder_registry,
-            retrieval_service=None  # Will be set up later
+            retrieval_service=None,  # Will be set up later
         )
 
         print("✅ Episode manager ready for intelligent processing")
@@ -280,8 +423,7 @@ class NemoriIntelligentDemo:
 
         # Configure BM25 retrieval
         retrieval_config = RetrievalConfig(
-            storage_type=RetrievalStorageType.DISK,
-            storage_config={"directory": str(self.demo_dir)}
+            storage_type=RetrievalStorageType.DISK, storage_config={"directory": str(self.demo_dir)}
         )
 
         self.retrieval_service.register_provider(RetrievalStrategy.BM25, retrieval_config)
@@ -311,20 +453,15 @@ class NemoriIntelligentDemo:
                 data_type=DataType.CONVERSATION,
                 content=messages,
                 source="intelligent_demo",
-                temporal_info=TemporalInfo(
-                    timestamp=start_time,
-                    duration=duration,
-                    timezone="UTC",
-                    precision="second"
-                ),
+                temporal_info=TemporalInfo(timestamp=start_time, duration=duration, timezone="UTC", precision="second"),
                 metadata={
                     "title": conversation["title"],
-                    "speakers": list(set(msg["speaker"] for msg in messages)),
+                    "speakers": list({msg["speaker"] for msg in messages}),
                     "message_count": len(messages),
-                    "demo_type": "intelligent"
+                    "demo_type": "intelligent",
                 },
                 processed=False,
-                processing_version="1.0"
+                processing_version="1.0",
             )
 
             # Store raw data (once per conversation)
@@ -332,7 +469,7 @@ class NemoriIntelligentDemo:
             print(f"    ✅ Stored raw conversation ({len(messages)} messages)")
 
             # Generate intelligent episodes for each participant
-            speakers = list(set(msg["speaker"] for msg in messages))
+            speakers = list({msg["speaker"] for msg in messages})
             for speaker in speakers:
                 owner_id = f"{speaker}_intelligent"
 
@@ -363,18 +500,13 @@ class NemoriIntelligentDemo:
             return
 
         # Get all unique owners
-        owners = list(set(ep.owner_id for ep in self.generated_episodes))
+        owners = list({ep.owner_id for ep in self.generated_episodes})
         print(f"🎯 Building indices for {len(owners)} participants")
 
         # Trigger index building by performing dummy searches
         for owner_id in owners:
             try:
-                dummy_query = RetrievalQuery(
-                    text="test",
-                    owner_id=owner_id,
-                    limit=1,
-                    strategy=RetrievalStrategy.BM25
-                )
+                dummy_query = RetrievalQuery(text="test", owner_id=owner_id, limit=1, strategy=RetrievalStrategy.BM25)
                 await self.retrieval_service.search(dummy_query)
                 print(f"  ✅ Built search index for {owner_id}")
             except Exception as e:
@@ -396,11 +528,11 @@ class NemoriIntelligentDemo:
             "attention mechanisms and deep learning",
             "cultural transformation through travel",
             "business model optimization",
-            "machine learning model architecture"
+            "machine learning model architecture",
         ]
 
         # Get available owners
-        owners = list(set(ep.owner_id for ep in self.generated_episodes))
+        owners = list({ep.owner_id for ep in self.generated_episodes})
 
         for query in search_queries[:6]:  # Limit to 6 queries for demo
             print(f"\n  🔎 Intelligent search: '{query}'")
@@ -409,10 +541,7 @@ class NemoriIntelligentDemo:
             for owner_id in owners[:3]:  # Show results for first 3 owners
                 try:
                     search_query = RetrievalQuery(
-                        text=query,
-                        owner_id=owner_id,
-                        limit=2,
-                        strategy=RetrievalStrategy.BM25
+                        text=query, owner_id=owner_id, limit=2, strategy=RetrievalStrategy.BM25
                     )
 
                     result = await self.retrieval_service.search(search_query)
@@ -469,7 +598,7 @@ class NemoriIntelligentDemo:
         print("\n📈 Demo Results:")
         print(f"   Conversations processed: {raw_stats.total_raw_data}")
         print(f"   Intelligent episodes generated: {episode_stats.total_episodes}")
-        print(f"   Participants analyzed: {len(set(ep.owner_id for ep in self.generated_episodes))}")
+        print(f"   Participants analyzed: {len({ep.owner_id for ep in self.generated_episodes})}")
         print(f"   Storage backend used: {self.storage_type.upper()}")
         print("   LLM model: gpt-4o-mini")
 
@@ -549,6 +678,7 @@ class NemoriIntelligentDemo:
         except Exception as e:
             print(f"❌ Demo error: {e}")
             import traceback
+
             traceback.print_exc()
         finally:
             await self.cleanup()

@@ -25,11 +25,7 @@ def temp_dir():
 @pytest.fixture
 def jsonl_config(temp_dir):
     """Create a JSONL storage configuration."""
-    return StorageConfig(
-        backend_type="jsonl",
-        connection_string=temp_dir,
-        batch_size=10
-    )
+    return StorageConfig(backend_type="jsonl", connection_string=temp_dir, batch_size=10)
 
 
 @pytest.fixture
@@ -40,17 +36,13 @@ def sample_raw_data():
         data_type=DataType.CONVERSATION,
         content=[
             {"speaker": "alice", "content": "Hello, how are you?", "timestamp": "2024-01-01T10:00:00"},
-            {"speaker": "bob", "content": "I'm doing well, thanks!", "timestamp": "2024-01-01T10:01:00"}
+            {"speaker": "bob", "content": "I'm doing well, thanks!", "timestamp": "2024-01-01T10:01:00"},
         ],
         source="test_source",
-        temporal_info=TemporalInfo(
-            timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
-            duration=60.0,
-            timezone="UTC"
-        ),
+        temporal_info=TemporalInfo(timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC), duration=60.0, timezone="UTC"),
         metadata={"participants": ["alice", "bob"], "topic": "greeting"},
         processed=False,
-        processing_version="1.0"
+        processing_version="1.0",
     )
 
 
@@ -65,20 +57,16 @@ def sample_episode():
         title="Greeting Conversation",
         content="Alice and Bob exchanged greetings",
         summary="A simple greeting exchange",
-        temporal_info=TemporalInfo(
-            timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
-            duration=60.0,
-            timezone="UTC"
-        ),
+        temporal_info=TemporalInfo(timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC), duration=60.0, timezone="UTC"),
         metadata=EpisodeMetadata(
             source_data_ids=["test_data_1"],
             source_types={DataType.CONVERSATION},
             entities=["alice", "bob"],
             topics=["greeting"],
-            key_points=["hello", "how are you"]
+            key_points=["hello", "how are you"],
         ),
         search_keywords=["greeting", "hello", "conversation"],
-        importance_score=0.7
+        importance_score=0.7,
     )
 
 
@@ -145,11 +133,9 @@ class TestJSONLRawDataRepository:
                 content=f"test content {i}",
                 source="test_source",
                 temporal_info=TemporalInfo(
-                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC),
-                    duration=60.0,
-                    timezone="UTC"
+                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC), duration=60.0, timezone="UTC"
                 ),
-                metadata={"index": i}
+                metadata={"index": i},
             )
             data_list.append(data)
 
@@ -199,12 +185,10 @@ class TestJSONLRawDataRepository:
                 content=f"test content {i}",
                 source="test_source",
                 temporal_info=TemporalInfo(
-                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC),
-                    duration=60.0,
-                    timezone="UTC"
+                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC), duration=60.0, timezone="UTC"
                 ),
                 metadata={"index": i},
-                processed=(i % 2 == 0)  # Even indices are processed
+                processed=(i % 2 == 0),  # Even indices are processed
             )
             await repo.store_raw_data(data)
 
@@ -232,11 +216,9 @@ class TestJSONLRawDataRepository:
                 content=f"This is test content number {i}",
                 source=f"source_{i}",
                 temporal_info=TemporalInfo(
-                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC),
-                    duration=60.0,
-                    timezone="UTC"
+                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC), duration=60.0, timezone="UTC"
                 ),
-                metadata={"category": "test" if i < 2 else "other"}
+                metadata={"category": "test" if i < 2 else "other"},
             )
             await repo.store_raw_data(data)
 
@@ -273,12 +255,10 @@ class TestJSONLRawDataRepository:
                 content=f"test content {i}",
                 source="test_source",
                 temporal_info=TemporalInfo(
-                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC),
-                    duration=60.0,
-                    timezone="UTC"
+                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC), duration=60.0, timezone="UTC"
                 ),
                 metadata={"index": i},
-                processed=(i == 0)  # Only first one is processed
+                processed=(i == 0),  # Only first one is processed
             )
             await repo.store_raw_data(data)
 
@@ -345,19 +325,17 @@ class TestJSONLEpisodicMemoryRepository:
                 content=f"Content for episode {i}",
                 summary=f"Summary {i}",
                 temporal_info=TemporalInfo(
-                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC),
-                    duration=60.0,
-                    timezone="UTC"
+                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC), duration=60.0, timezone="UTC"
                 ),
                 metadata=EpisodeMetadata(
                     source_data_ids=[f"data_{i}"],
                     source_types={DataType.CONVERSATION},
                     entities=[owner_id],
                     topics=[f"topic_{i}"],
-                    key_points=[f"point_{i}"]
+                    key_points=[f"point_{i}"],
                 ),
                 search_keywords=[f"keyword_{i}"],
-                importance_score=0.5 + i * 0.1
+                importance_score=0.5 + i * 0.1,
             )
             await repo.store_episode(episode)
 
@@ -390,19 +368,17 @@ class TestJSONLEpisodicMemoryRepository:
                 content=f"This is test content for episode {i}",
                 summary=f"Test summary {i}",
                 temporal_info=TemporalInfo(
-                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC),
-                    duration=60.0,
-                    timezone="UTC"
+                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC), duration=60.0, timezone="UTC"
                 ),
                 metadata=EpisodeMetadata(
                     source_data_ids=[f"data_{i}"],
                     source_types={DataType.CONVERSATION},
                     entities=["alice", "bob"],
                     topics=["conversation", f"topic_{i}"],
-                    key_points=[f"point_{i}"]
+                    key_points=[f"point_{i}"],
                 ),
                 search_keywords=["test", "episode", f"keyword_{i}"],
-                importance_score=0.5 + i * 0.2
+                importance_score=0.5 + i * 0.2,
             )
             episodes.append(episode)
             await repo.store_episode(episode)
@@ -496,19 +472,17 @@ class TestJSONLEpisodicMemoryRepository:
                 content=f"Content {i}",
                 summary=f"Summary {i}",
                 temporal_info=TemporalInfo(
-                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC),
-                    duration=60.0,
-                    timezone="UTC"
+                    timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=UTC), duration=60.0, timezone="UTC"
                 ),
                 metadata=EpisodeMetadata(
                     source_data_ids=[f"data_{i}"],
                     source_types={DataType.CONVERSATION},
                     entities=["test"],
                     topics=[f"topic_{i}"],
-                    key_points=[f"point_{i}"]
+                    key_points=[f"point_{i}"],
                 ),
                 search_keywords=[f"keyword_{i}"],
-                importance_score=0.5
+                importance_score=0.5,
             )
             await repo.store_episode(episode)
 

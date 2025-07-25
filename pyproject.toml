@@ -57,6 +57,7 @@ markers = [
 line-length = 120
 target-version = ["py312"]
 include = '\.pyi?$'
+skip-string-normalization = false  # Use double quotes as default
 exclude = '''
 /(
     \.git
@@ -84,6 +85,7 @@ select = [
     "B",  # flake8-bugbear
     "C4", # flake8-comprehensions
     "UP", # pyupgrade
+    "Q",  # flake8-quotes
 ]
 ignore = [
     "E501",  # line too long, handled by black
@@ -91,12 +93,17 @@ ignore = [
     "C901",  # too complex
 ]
 
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+multiline-quotes = "double"
+
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 
 [dependency-groups]
 dev = [
     "pytest-asyncio>=1.0.0",
+    "ruff>=0.12.1",
 ]
 playground = [
     "matplotlib",

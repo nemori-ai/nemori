@@ -1151,6 +1151,7 @@ dev = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest-asyncio" },
+    { name = "ruff" },
 ]
 playground = [
     { name = "matplotlib" },
@@ -1181,7 +1182,10 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-asyncio", specifier = ">=1.0.0" }]
+dev = [
+    { name = "pytest-asyncio", specifier = ">=1.0.0" },
+    { name = "ruff", specifier = ">=0.12.1" },
+]
 playground = [
     { name = "matplotlib" },
     { name = "numpy" },
