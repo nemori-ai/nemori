@@ -39,6 +39,28 @@ On the LoCoMo (Long-Context Conversation Modeling) dataset, Nemori demonstrates 
 要复现 Nemori 在 LoCoMo 基准测试上的实验结果，请参考 [evaluation/README.md](evaluation/README.md) 获取详细的评测环境搭建与运行步骤。  
 To reproduce Nemori's experimental results on the LoCoMo benchmark, please refer to [evaluation/README.md](evaluation/README.md) for detailed evaluation environment setup and execution steps.
 
+### 简要流程说明（2 条提示词 + BM25 检索）  
+### Quick Pipeline Overview (2 Prompts + BM25 Retrieval)
+
+> Nemori 的 LoCoMo 复现流程极其简单：情景构建阶段只需 **2 条简短提示词**（边界探测 & 情景生成），随后通过 **BM25** 完成检索与回答生成，无需额外的大模型调用。  
+> Reproducing the LoCoMo results with Nemori is very straightforward: the episodic construction uses only **2 short LLM prompts** (boundary detection & episode generation), then a simple **BM25** search retrieves memories and produces the final answer—no further LLM prompts required.
+
+![Episode Creation Flow](figures/create-episode.png)
+
+1. **情景边界探测 — 提示词** `Detect episode boundaries along natural topic shifts`  
+   **Episode Boundary Detection — Prompt** `Detect episode boundaries along natural topic shifts`
+
+2. **情景生成 — 提示词** `Summarize each segment into an episodic memory`  
+   **Episode Generation — Prompt** `Summarize each segment into an episodic memory`
+
+3. **BM25 索引构建 — 无额外 LLM 调用 & 无 Embedding**  
+   **Build BM25 Index — No extra LLM calls, no embeddings required**
+
+![Retrieval Flow](figures/retrieval.png)
+
+4. **检索与回答生成 — 纯 BM25（同样无额外 LLM 调用）**  
+   **Retrieval & Answer Generation — Pure BM25 (again, no additional LLM calls)**
+
 ## 设计理念  
 ## Design Philosophy
 
