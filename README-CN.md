@@ -1,6 +1,6 @@
 # Nemori：自然启发的情景记忆系统
 
-[English](README.md) | [中文](README-CN.md) | [论文](https://arxiv.org/abs/2508.03341)
+🌍 [English](README.md) | 🌍 [中文](README-CN.md) | **📄 [论文](https://arxiv.org/abs/2508.03341)**
 
 ## 项目概述  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/nemori-ai/nemori)
 
