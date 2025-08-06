@@ -1,6 +1,6 @@
-# Nemori: Nature-Inspired Episodic Memory System
+# Nemori: Self-Organizing Agent Memory Inspired by Cognitive Science
 
-[English](README.md) | [中文](README-CN.md)
+[English](README.md) | [中文](README-CN.md) | [Paper](https://arxiv.org/abs/2508.03341)
 
 ## Project Overview  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/nemori-ai/nemori)
 
