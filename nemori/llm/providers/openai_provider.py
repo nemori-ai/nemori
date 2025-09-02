@@ -83,7 +83,16 @@ class OpenAIProvider(LLMProvider):
         message = HumanMessage(content=prompt)
         response = await llm_to_use.ainvoke([message])
 
-        return response.content
+        # Handle response content based on type
+        if hasattr(response, 'content'):
+            return response.content
+        elif isinstance(response, str):
+            return response
+        else:
+            # If response has model_dump, it's likely a Pydantic model
+            if hasattr(response, 'model_dump'):
+                return str(response.model_dump())
+            return str(response)
 
     @classmethod
     def from_env(cls, model: str = "gpt-4o-mini", **kwargs) -> "OpenAIProvider":

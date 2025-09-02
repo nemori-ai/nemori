@@ -89,12 +89,9 @@ class EpisodeManager:
 
         # 5. Add to retrieval index if service is available
         if auto_index and self.retrieval_service:
-            try:
-                await self.retrieval_service.add_episode_to_all_providers(episode)
-                print(f"Added episode to retrieval index: {episode.title[:50]}...")
-            except Exception as e:
-                print(f"Failed to add episode to retrieval index: {e}")
-
+            await self.retrieval_service.add_episode_to_all_providers(episode)
+            print(f"Added episode to retrieval index: {episode.title[:50]}...")
+          
         return episode
 
     async def process_raw_data(self, raw_data: RawEventData, owner_id: str, auto_index: bool = True) -> Episode | None:

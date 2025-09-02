@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -1138,6 +1138,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "rank-bm25" },
     { name = "sqlmodel" },
+    { name = "tiktoken" },
 ]
 
 [package.optional-dependencies]
@@ -1151,6 +1152,7 @@ dev = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest-asyncio" },
+    { name = "ruff" },
 ]
 playground = [
     { name = "matplotlib" },
@@ -1177,11 +1179,15 @@ requires-dist = [
     { name = "rank-bm25", specifier = ">=0.2.2" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "sqlmodel", specifier = ">=0.0.24" },
+    { name = "tiktoken", specifier = ">=0.9.0" },
 ]
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-asyncio", specifier = ">=1.0.0" }]
+dev = [
+    { name = "pytest-asyncio", specifier = ">=1.0.0" },
+    { name = "ruff", specifier = ">=0.12.1" },
+]
 playground = [
     { name = "matplotlib" },
     { name = "numpy" },

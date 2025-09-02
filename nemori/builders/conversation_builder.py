@@ -8,6 +8,7 @@ to create coherent narrative memories from conversational exchanges.
 
 import json
 import re
+import tiktoken
 from datetime import datetime
 from typing import Any
 
@@ -146,8 +147,14 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
     """
 
     def __init__(self, llm_provider: LLMProvider | None = None, custom_instructions: str | None = None):
+        print("⚠️⚠️⚠️ DEBUG: ConversationEpisodeBuilder is being initialized! ⚠️⚠️⚠️")
         super().__init__(llm_provider)
         self.custom_instructions = custom_instructions or DEFAULT_CUSTOM_INSTRUCTIONS
+        # try:
+        #     self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        # except Exception as e:
+        #     print(f"Warning: Failed to initialize tiktoken, falling back to character-based summary. Error: {e}")
+        #     self.tokenizer = None
 
     @property
     def supported_data_type(self) -> DataType:
@@ -219,8 +226,32 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         title = data["title"]
         content = data["content"]
 
-        # Use LLM-provided summary if available, otherwise generate from content
-        summary = data.get("summary", content[:200] + "..." if len(content) > 200 else content)
+        # ----------------- [ NEW DEBUG LOGGING START ] -----------------
+        # print("" + "="*20 + " [DEBUG] Summary Generation " + "="*20)
+        # print(f"   [LLM Content Length]: {len(content)} characters")
+        # if self.tokenizer:
+        #     tokens = self.tokenizer.encode(content)
+        #     print(f"   [Tiktoken available]: Yes")
+        #     print(f"   [Token Count]: {len(tokens)} tokens")
+
+        # else:
+        #     print(f"   [Tiktoken available]: No")
+        # ----------------- [ NEW DEBUG LOGGING END ] -------------------
+        #summary = data.get("summary")
+        # summary = data.get("summary", self.tokenizer.decode(tokens[:512]) + "..." if len(tokens) > 512 else content)
+        # if self.tokenizer:
+        #     tokens = self.tokenizer.encode(summary)
+        #     if len(tokens) > 512:
+        #         truncated_tokens = tokens[:512]
+        #         summary = self.tokenizer.decode(truncated_tokens).rstrip() + "..."
+        #     else:
+        #         summary = summary
+        # # ----------------- [ NEW DEBUG LOGGING START ] -----------------
+        # print(f"   [Final Summary Length]: {len(summary)} characters")
+        # print(f"   [Final Summary Content]: '{summary[:150]}...'")
+        # print("="*64 + "")
+        summary = content
+        # ----------------- [ NEW DEBUG LOGGING END ] -------------------
 
         return title, content, summary
 
@@ -241,8 +272,16 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         # Use the formatted conversation as content
         content = conversation_text
 
-        # Generate summary
-        summary = content[:200] + "..." if len(content) > 200 else content
+        # # Generate summary
+        # if self.tokenizer:
+        #     tokens = self.tokenizer.encode(content)
+        #     if len(tokens) > 512:
+        #         truncated_tokens = tokens[:512]
+        #         summary = self.tokenizer.decode(truncated_tokens).rstrip() + "..."
+        #     else:
+        #         summary = content
+        # else:
+        summary = content
 
         return title, content, summary
 

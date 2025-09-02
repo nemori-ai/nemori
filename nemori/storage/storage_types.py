@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from ..core.data_types import DataType
+from ..core.data_types import DataType, SemanticNode, SemanticRelationship
 from ..core.episode import Episode, EpisodeLevel, EpisodeType
 
 
@@ -230,3 +230,129 @@ class StorageConfig:
             "backup_interval_hours": self.backup_interval_hours,
             "backup_retention_days": self.backup_retention_days,
         }
+
+
+# === Semantic Memory Storage Types ===
+
+
+@dataclass
+class SemanticNodeQuery:
+    """Query parameters for semantic node search."""
+
+    # Owner filtering
+    owner_id: str
+
+    # Content filtering
+    key_pattern: str | None = None
+    value_pattern: str | None = None
+    text_search: str | None = None  # Full-text search across key, value, context
+
+    # Temporal filtering
+    time_range: TimeRange | None = None
+    created_after: datetime | None = None
+    updated_after: datetime | None = None
+
+    # Discovery filtering
+    discovery_episode_id: str | None = None
+    discovery_method: str | None = None
+
+    # Confidence and quality filtering
+    min_confidence: float | None = None
+    min_importance: float | None = None
+    min_access_count: int | None = None
+
+    # Version filtering
+    min_version: int | None = None
+    max_version: int | None = None
+
+    # Relationship filtering
+    has_relationships: bool | None = None
+    linked_to_episode: str | None = None
+
+    # Search parameters
+    similarity_query: str | None = None  # Semantic similarity search
+    limit: int = 50
+    offset: int = 0
+
+    # Sorting
+    sort_by: str = "created_at"  # created_at, updated_at, confidence, importance_score, access_count
+    sort_order: SortOrder = SortOrder.DESC
+
+
+@dataclass
+class SemanticRelationshipQuery:
+    """Query parameters for semantic relationship search."""
+
+    # Node filtering
+    source_node_id: str | None = None
+    target_node_id: str | None = None
+    involves_node_id: str | None = None  # Either source or target
+
+    # Relationship filtering
+    relationship_types: list[str] | None = None
+    min_strength: float | None = None
+    max_strength: float | None = None
+
+    # Temporal filtering
+    time_range: TimeRange | None = None
+    created_after: datetime | None = None
+    reinforced_after: datetime | None = None
+
+    # Discovery filtering
+    discovery_episode_id: str | None = None
+
+    # Search parameters
+    limit: int = 50
+    offset: int = 0
+
+    # Sorting
+    sort_by: str = "created_at"  # created_at, last_reinforced, strength
+    sort_order: SortOrder = SortOrder.DESC
+
+
+@dataclass
+class SemanticSearchResult:
+    """Result from semantic memory search operations."""
+
+    # Semantic nodes results
+    semantic_nodes: list[SemanticNode] = field(default_factory=list)
+    semantic_relationships: list[SemanticRelationship] = field(default_factory=list)
+
+    # Result metadata
+    total_nodes: int = 0
+    total_relationships: int = 0
+    has_more_nodes: bool = False
+    has_more_relationships: bool = False
+
+    # Performance metrics
+    query_time_ms: float = 0.0
+
+    # Search context
+    query_info: dict[str, Any] = field(default_factory=dict)
+
+
+# === Storage Exceptions ===
+
+
+class SemanticStorageError(Exception):
+    """Base exception for semantic storage operations."""
+
+    pass
+
+
+class DuplicateKeyError(SemanticStorageError):
+    """Raised when attempting to store a semantic node with duplicate (owner_id, key)."""
+
+    pass
+
+
+class NotFoundError(SemanticStorageError):
+    """Raised when attempting to operate on non-existent semantic data."""
+
+    pass
+
+
+class InvalidDataError(SemanticStorageError):
+    """Raised when semantic data validation fails."""
+
+    pass

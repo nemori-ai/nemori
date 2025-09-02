@@ -55,35 +55,95 @@ async def basic_demo():
             "id": "work_discussion",
             "title": "AI Project Planning Meeting",
             "messages": [
-                {"speaker": "sarah", "content": "Let's review our AI project milestone. We need to finalize the model architecture this week.", "timestamp": "2024-01-15T09:00:00"},
-                {"speaker": "mike", "content": "I've been working on the transformer implementation. The attention mechanism is showing promising results.", "timestamp": "2024-01-15T09:02:00"},
-                {"speaker": "sarah", "content": "Great! What about the training data pipeline? Are we ready for the next phase?", "timestamp": "2024-01-15T09:03:00"},
-                {"speaker": "mike", "content": "Almost there. I need another day to optimize the data loading. The current batch processing is too slow.", "timestamp": "2024-01-15T09:05:00"},
-                {"speaker": "sarah", "content": "No problem. Quality over speed. Let's also discuss the evaluation metrics for next week.", "timestamp": "2024-01-15T09:06:00"},
-            ]
+                {
+                    "speaker": "sarah",
+                    "content": "Let's review our AI project milestone. We need to finalize the model architecture this week.",
+                    "timestamp": "2024-01-15T09:00:00",
+                },
+                {
+                    "speaker": "mike",
+                    "content": "I've been working on the transformer implementation. The attention mechanism is showing promising results.",
+                    "timestamp": "2024-01-15T09:02:00",
+                },
+                {
+                    "speaker": "sarah",
+                    "content": "Great! What about the training data pipeline? Are we ready for the next phase?",
+                    "timestamp": "2024-01-15T09:03:00",
+                },
+                {
+                    "speaker": "mike",
+                    "content": "Almost there. I need another day to optimize the data loading. The current batch processing is too slow.",
+                    "timestamp": "2024-01-15T09:05:00",
+                },
+                {
+                    "speaker": "sarah",
+                    "content": "No problem. Quality over speed. Let's also discuss the evaluation metrics for next week.",
+                    "timestamp": "2024-01-15T09:06:00",
+                },
+            ],
         },
         {
             "id": "travel_planning",
             "title": "European Vacation Planning",
             "messages": [
-                {"speaker": "alice", "content": "I'm so excited about our Europe trip next month! Have you booked the flights to Paris yet?", "timestamp": "2024-01-20T14:00:00"},
-                {"speaker": "bob", "content": "Not yet, but I've been monitoring the prices. They seem reasonable now. Should I go ahead?", "timestamp": "2024-01-20T14:02:00"},
-                {"speaker": "alice", "content": "Yes! And don't forget travel insurance. I found a good policy that covers medical and trip cancellation.", "timestamp": "2024-01-20T14:03:00"},
-                {"speaker": "bob", "content": "Perfect. What about accommodations in Rome? I saw some great options near the Colosseum.", "timestamp": "2024-01-20T14:05:00"},
-                {"speaker": "alice", "content": "That sounds amazing! I've always wanted to see the Colosseum at sunrise. Book it!", "timestamp": "2024-01-20T14:06:00"},
-            ]
+                {
+                    "speaker": "alice",
+                    "content": "I'm so excited about our Europe trip next month! Have you booked the flights to Paris yet?",
+                    "timestamp": "2024-01-20T14:00:00",
+                },
+                {
+                    "speaker": "bob",
+                    "content": "Not yet, but I've been monitoring the prices. They seem reasonable now. Should I go ahead?",
+                    "timestamp": "2024-01-20T14:02:00",
+                },
+                {
+                    "speaker": "alice",
+                    "content": "Yes! And don't forget travel insurance. I found a good policy that covers medical and trip cancellation.",
+                    "timestamp": "2024-01-20T14:03:00",
+                },
+                {
+                    "speaker": "bob",
+                    "content": "Perfect. What about accommodations in Rome? I saw some great options near the Colosseum.",
+                    "timestamp": "2024-01-20T14:05:00",
+                },
+                {
+                    "speaker": "alice",
+                    "content": "That sounds amazing! I've always wanted to see the Colosseum at sunrise. Book it!",
+                    "timestamp": "2024-01-20T14:06:00",
+                },
+            ],
         },
         {
             "id": "tech_architecture",
             "title": "Database Architecture Decision",
             "messages": [
-                {"speaker": "charlie", "content": "For our new memory system, should we use PostgreSQL or stick with DuckDB?", "timestamp": "2024-01-25T16:00:00"},
-                {"speaker": "diana", "content": "It depends on our use case. PostgreSQL is better for concurrent access and production workloads.", "timestamp": "2024-01-25T16:02:00"},
-                {"speaker": "charlie", "content": "True, but DuckDB excels at analytical queries. Our memory system needs both operational and analytical capabilities.", "timestamp": "2024-01-25T16:03:00"},
-                {"speaker": "diana", "content": "Why not implement a hybrid approach? PostgreSQL for operations and DuckDB for analytics?", "timestamp": "2024-01-25T16:05:00"},
-                {"speaker": "charlie", "content": "Brilliant idea! That gives us the best of both worlds. Let's prototype this architecture.", "timestamp": "2024-01-25T16:06:00"},
-            ]
-        }
+                {
+                    "speaker": "charlie",
+                    "content": "For our new memory system, should we use PostgreSQL or stick with DuckDB?",
+                    "timestamp": "2024-01-25T16:00:00",
+                },
+                {
+                    "speaker": "diana",
+                    "content": "It depends on our use case. PostgreSQL is better for concurrent access and production workloads.",
+                    "timestamp": "2024-01-25T16:02:00",
+                },
+                {
+                    "speaker": "charlie",
+                    "content": "True, but DuckDB excels at analytical queries. Our memory system needs both operational and analytical capabilities.",
+                    "timestamp": "2024-01-25T16:03:00",
+                },
+                {
+                    "speaker": "diana",
+                    "content": "Why not implement a hybrid approach? PostgreSQL for operations and DuckDB for analytics?",
+                    "timestamp": "2024-01-25T16:05:00",
+                },
+                {
+                    "speaker": "charlie",
+                    "content": "Brilliant idea! That gives us the best of both worlds. Let's prototype this architecture.",
+                    "timestamp": "2024-01-25T16:06:00",
+                },
+            ],
+        },
     ]
 
     print(f"✅ Created {len(conversations)} conversation scenarios")
@@ -101,19 +161,14 @@ async def basic_demo():
             data_type=DataType.CONVERSATION,
             content=conv["messages"],
             source="demo_conversations",
-            temporal_info=TemporalInfo(
-                timestamp=start_time,
-                duration=duration,
-                timezone="UTC",
-                precision="second"
-            ),
+            temporal_info=TemporalInfo(timestamp=start_time, duration=duration, timezone="UTC", precision="second"),
             metadata={
                 "title": conv["title"],
-                "speakers": list(set(msg["speaker"] for msg in conv["messages"])),
-                "message_count": len(conv["messages"])
+                "speakers": list({msg["speaker"] for msg in conv["messages"]}),
+                "message_count": len(conv["messages"]),
             },
             processed=False,
-            processing_version="1.0"
+            processing_version="1.0",
         )
 
         await raw_data_repo.store_raw_data(raw_data)
@@ -133,18 +188,28 @@ async def basic_demo():
                     "summary": "Project milestone review with focus on model architecture finalization",
                     "keywords": ["AI project", "milestone", "model architecture", "evaluation metrics", "quality"],
                     "entities": ["Sarah", "Mike", "AI project", "transformer", "attention mechanism"],
-                    "key_points": ["finalize model architecture", "quality over speed", "evaluation metrics planning"]
+                    "key_points": ["finalize model architecture", "quality over speed", "evaluation metrics planning"],
                 },
                 {
                     "owner": "mike",
                     "title": "Transformer Implementation Progress and Data Pipeline Optimization",
                     "content": "Mike reported progress on transformer implementation with promising attention mechanism results. He identified data loading optimization as the next critical task, noting current batch processing speed issues.",
                     "summary": "Technical progress report on transformer implementation and data pipeline challenges",
-                    "keywords": ["transformer", "attention mechanism", "data pipeline", "batch processing", "optimization"],
+                    "keywords": [
+                        "transformer",
+                        "attention mechanism",
+                        "data pipeline",
+                        "batch processing",
+                        "optimization",
+                    ],
                     "entities": ["Mike", "Sarah", "transformer", "attention mechanism", "data pipeline"],
-                    "key_points": ["attention mechanism progress", "data loading optimization needed", "batch processing improvements"]
-                }
-            ]
+                    "key_points": [
+                        "attention mechanism progress",
+                        "data loading optimization needed",
+                        "batch processing improvements",
+                    ],
+                },
+            ],
         },
         {
             "conversation_id": "travel_planning",
@@ -156,7 +221,11 @@ async def basic_demo():
                     "summary": "Enthusiastic travel planning with focus on insurance and Rome attractions",
                     "keywords": ["Europe trip", "travel insurance", "medical coverage", "Colosseum", "sunrise"],
                     "entities": ["Alice", "Bob", "Europe", "Paris", "Rome", "Colosseum"],
-                    "key_points": ["excited about Europe trip", "found travel insurance", "wants Colosseum sunrise visit"]
+                    "key_points": [
+                        "excited about Europe trip",
+                        "found travel insurance",
+                        "wants Colosseum sunrise visit",
+                    ],
                 },
                 {
                     "owner": "bob",
@@ -165,9 +234,13 @@ async def basic_demo():
                     "summary": "Practical travel arrangements focusing on flights and accommodations",
                     "keywords": ["flight prices", "Paris", "Rome accommodation", "Colosseum proximity", "monitoring"],
                     "entities": ["Bob", "Alice", "Paris", "Rome", "Colosseum"],
-                    "key_points": ["monitoring flight prices", "found reasonable prices", "researched Rome accommodations"]
-                }
-            ]
+                    "key_points": [
+                        "monitoring flight prices",
+                        "found reasonable prices",
+                        "researched Rome accommodations",
+                    ],
+                },
+            ],
         },
         {
             "conversation_id": "tech_architecture",
@@ -177,21 +250,41 @@ async def basic_demo():
                     "title": "Database Architecture Analysis for Memory System",
                     "content": "Charlie initiated a technical discussion about database selection for a new memory system, comparing PostgreSQL and DuckDB capabilities. He recognized the need for both operational and analytical capabilities in the system design.",
                     "summary": "Technical analysis of database options for memory system architecture",
-                    "keywords": ["database architecture", "PostgreSQL", "DuckDB", "memory system", "analytical queries"],
+                    "keywords": [
+                        "database architecture",
+                        "PostgreSQL",
+                        "DuckDB",
+                        "memory system",
+                        "analytical queries",
+                    ],
                     "entities": ["Charlie", "Diana", "PostgreSQL", "DuckDB", "memory system"],
-                    "key_points": ["database selection analysis", "operational vs analytical needs", "hybrid approach consideration"]
+                    "key_points": [
+                        "database selection analysis",
+                        "operational vs analytical needs",
+                        "hybrid approach consideration",
+                    ],
                 },
                 {
                     "owner": "diana",
                     "title": "Hybrid Database Architecture Proposal",
                     "content": "Diana provided expert analysis of database trade-offs and proposed an innovative hybrid approach. She suggested using PostgreSQL for operational workloads and DuckDB for analytical processing, creating a best-of-both-worlds solution.",
                     "summary": "Expert database consultation leading to hybrid architecture proposal",
-                    "keywords": ["hybrid architecture", "PostgreSQL operations", "DuckDB analytics", "concurrent access", "workload optimization"],
+                    "keywords": [
+                        "hybrid architecture",
+                        "PostgreSQL operations",
+                        "DuckDB analytics",
+                        "concurrent access",
+                        "workload optimization",
+                    ],
                     "entities": ["Diana", "Charlie", "PostgreSQL", "DuckDB", "hybrid architecture"],
-                    "key_points": ["analyzed database trade-offs", "proposed hybrid approach", "operations/analytics separation"]
-                }
-            ]
-        }
+                    "key_points": [
+                        "analyzed database trade-offs",
+                        "proposed hybrid approach",
+                        "operations/analytics separation",
+                    ],
+                },
+            ],
+        },
     ]
 
     all_episodes = []
@@ -215,20 +308,17 @@ async def basic_demo():
                 content=ep_data["content"],
                 summary=ep_data["summary"],
                 temporal_info=TemporalInfo(
-                    timestamp=first_msg_time,
-                    duration=duration,
-                    timezone="UTC",
-                    precision="second"
+                    timestamp=first_msg_time, duration=duration, timezone="UTC", precision="second"
                 ),
                 metadata=EpisodeMetadata(
                     source_data_ids=[conv_id],
                     source_types={DataType.CONVERSATION},
                     entities=ep_data["entities"],
                     topics=[original_conv["title"]],
-                    key_points=ep_data["key_points"]
+                    key_points=ep_data["key_points"],
                 ),
                 search_keywords=ep_data["keywords"],
-                importance_score=0.8
+                importance_score=0.8,
             )
 
             await episode_repo.store_episode(episode)
@@ -241,14 +331,14 @@ async def basic_demo():
     print("\n🔍 Demonstrating search and retrieval capabilities...")
 
     # Get all unique owners
-    owners = list(set(ep.owner_id for ep in all_episodes))
+    owners = list({ep.owner_id for ep in all_episodes})
     print(f"📊 Found {len(owners)} users: {', '.join(owners)}")
 
     # Show episodes by owner
     print("\n👥 Episodes by owner:")
     for owner in owners:
         owner_episodes = await episode_repo.get_episodes_by_owner(owner)
-        episodes = owner_episodes.episodes if hasattr(owner_episodes, 'episodes') else owner_episodes
+        episodes = owner_episodes.episodes if hasattr(owner_episodes, "episodes") else owner_episodes
         print(f"\n  {owner}:")
         for ep in episodes:
             print(f"    • {ep.title}")

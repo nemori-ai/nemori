@@ -22,12 +22,20 @@ from .factory import (
 from .jsonl_storage import JSONLEpisodicMemoryRepository, JSONLRawDataRepository
 from .memory_storage import MemoryEpisodicMemoryRepository, MemoryRawDataRepository
 from .postgresql_storage import PostgreSQLEpisodicMemoryRepository, PostgreSQLRawDataRepository
-from .repository import EpisodicMemoryRepository, RawDataRepository, StorageRepository
+from .repository import EpisodicMemoryRepository, RawDataRepository, SemanticMemoryRepository, StorageRepository
 from .storage_types import (
+    DuplicateKeyError,
     EpisodeQuery,
     EpisodeSearchResult,
+    InvalidDataError,
+    NotFoundError,
     RawDataQuery,
     RawDataSearchResult,
+    # Semantic memory types
+    SemanticNodeQuery,
+    SemanticRelationshipQuery,
+    SemanticSearchResult,
+    SemanticStorageError,
     StorageConfig,
     StorageStats,
     TimeRange,
@@ -38,6 +46,7 @@ __all__ = [
     "StorageRepository",
     "RawDataRepository",
     "EpisodicMemoryRepository",
+    "SemanticMemoryRepository",
     # Memory implementations
     "MemoryRawDataRepository",
     "MemoryEpisodicMemoryRepository",
@@ -69,6 +78,14 @@ __all__ = [
     "RawDataQuery",
     "RawDataSearchResult",
     "TimeRange",
+    # Semantic memory types
+    "SemanticNodeQuery",
+    "SemanticRelationshipQuery",
+    "SemanticSearchResult",
+    "SemanticStorageError",
+    "DuplicateKeyError",
+    "NotFoundError",
+    "InvalidDataError",
     # Configuration
     "StorageConfig",
     "StorageStats",

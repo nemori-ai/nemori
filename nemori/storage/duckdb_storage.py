@@ -7,14 +7,19 @@ for better type safety and reduced SQL string concatenation.
 
 import json
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+try:
+    from datetime import UTC
+except ImportError:
+    from datetime import timedelta, timezone
+    UTC = timezone.utc
 from pathlib import Path
-
+from typing import Any
 from sqlmodel import Session, SQLModel, and_, create_engine, delete, func, or_, select, update
 
 from ..core.data_types import DataType, RawEventData
 from ..core.episode import Episode, EpisodeLevel, EpisodeType
-from .repository import EpisodicMemoryRepository, RawDataRepository
+from .repository import EpisodicMemoryRepository, SemanticMemoryRepository, RawDataRepository
 from .sql_models import (
     BaseSQLRepository,
     EpisodeRawDataTable,
@@ -31,8 +36,17 @@ from .storage_types import (
     StorageConfig,
     StorageStats,
 )
-
-
+from nemori.storage.storage_types import (
+    DuplicateKeyError,
+    InvalidDataError,
+    NotFoundError,
+    SemanticStorageError,
+    SemanticNodeQuery,
+    SemanticRelationshipQuery,
+    SemanticSearchResult,
+)
+from nemori.core.data_types import RelationshipType, SemanticNode, SemanticRelationship
+ 
 class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
     """DuckDB implementation of raw data repository using SQLModel."""
 
@@ -1026,3 +1040,756 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
                     deleted_count += 1
 
             return deleted_count
+
+
+class DuckDBSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLRepository):
+    """DuckDB implementation of semantic memory repository."""
+
+    def __init__(self, config: StorageConfig):
+        super().__init__(config)
+        self.engine = create_engine(
+            config.connection_string or f"duckdb:///{config.connection_string or 'nemori_semantic.duckdb'}",
+            echo=False,
+        )
+
+    async def initialize(self) -> None:
+        """Initialize semantic memory tables."""
+        from .sql_models import SemanticNodeTable, SemanticRelationshipTable
+
+        # Create tables
+        SQLModel.metadata.create_all(self.engine)
+
+    async def close(self) -> None:
+        """Close the semantic memory storage."""
+        self.engine.dispose()
+
+    async def health_check(self) -> bool:
+        """Check if semantic memory storage is healthy."""
+        try:
+            with Session(self.engine) as session:
+                from .sql_models import SemanticNodeTable
+
+                session.exec(select(func.count(SemanticNodeTable.node_id))).one()
+                return True
+        except Exception:
+            return False
+
+    async def get_stats(self) -> StorageStats:
+        """Get semantic memory statistics."""
+        with Session(self.engine) as session:
+            from .sql_models import SemanticNodeTable, SemanticRelationshipTable
+
+            node_count = session.exec(select(func.count(SemanticNodeTable.node_id))).one()
+            relationship_count = session.exec(select(func.count(SemanticRelationshipTable.relationship_id))).one()
+
+            return StorageStats(
+                # Add semantic-specific stats
+                total_raw_data=node_count,  # Using raw_data field for semantic nodes
+                total_episodes=relationship_count,  # Using episodes field for relationships
+            )
+
+    async def backup(self, destination: str) -> bool:
+        """Create backup of semantic memory."""
+        try:
+            # Simple backup approach for DuckDB
+            source_path = Path(self.config.connection_string.replace("duckdb:///", ""))
+            destination_path = Path(destination)
+            
+            if source_path.exists():
+                import shutil
+                shutil.copy2(source_path, destination_path)
+                return True
+            return False
+        except Exception:
+            return False
+
+    async def restore(self, source: str) -> bool:
+        """Restore semantic memory from backup."""
+        try:
+            source_path = Path(source)
+            destination_path = Path(self.config.connection_string.replace("duckdb:///", ""))
+            
+            if source_path.exists():
+                import shutil
+                shutil.copy2(source_path, destination_path)
+                # Reinitialize engine
+                self.engine.dispose()
+                self.engine = create_engine(self.config.connection_string, echo=False)
+                return True
+            return False
+        except Exception:
+            return False
+
+    async def search_semantic_nodes(self, query: SemanticNodeQuery) -> SemanticSearchResult:
+        """Search semantic nodes with complex query parameters."""
+        from .sql_models import SemanticNodeTable
+
+        start_time = time.time()
+        
+        with Session(self.engine) as session:
+            stmt = select(SemanticNodeTable).where(SemanticNodeTable.owner_id == query.owner_id)
+            conditions = []
+
+            # Apply filters
+            if query.key_pattern:
+                conditions.append(SemanticNodeTable.key.contains(query.key_pattern))
+            
+            if query.value_pattern:
+                conditions.append(SemanticNodeTable.value.contains(query.value_pattern))
+            
+            if query.text_search:
+                search_term = self.sanitize_search_term(query.text_search)
+                conditions.append(
+                    or_(
+                        SemanticNodeTable.key.contains(search_term),
+                        SemanticNodeTable.value.contains(search_term),
+                        SemanticNodeTable.context.contains(search_term)
+                    )
+                )
+            
+            if query.min_confidence:
+                conditions.append(SemanticNodeTable.confidence >= query.min_confidence)
+            
+            if query.min_importance:
+                conditions.append(SemanticNodeTable.importance_score >= query.min_importance)
+            
+            if query.discovery_episode_id:
+                conditions.append(SemanticNodeTable.discovery_episode_id == query.discovery_episode_id)
+            
+            if conditions:
+                stmt = stmt.where(and_(*conditions))
+
+            # Count total results
+            count_stmt = select(func.count(SemanticNodeTable.node_id)).where(
+                SemanticNodeTable.owner_id == query.owner_id
+            )
+            if conditions:
+                count_stmt = count_stmt.where(and_(*conditions))
+            total_nodes = session.exec(count_stmt).one()
+
+            # Apply sorting
+            if query.sort_by == "confidence":
+                if query.sort_order == SortOrder.DESC:
+                    stmt = stmt.order_by(SemanticNodeTable.confidence.desc())
+                else:
+                    stmt = stmt.order_by(SemanticNodeTable.confidence.asc())
+            elif query.sort_by == "importance_score":
+                if query.sort_order == SortOrder.DESC:
+                    stmt = stmt.order_by(SemanticNodeTable.importance_score.desc())
+                else:
+                    stmt = stmt.order_by(SemanticNodeTable.importance_score.asc())
+            else:  # Default to created_at
+                if query.sort_order == SortOrder.DESC:
+                    stmt = stmt.order_by(SemanticNodeTable.created_at.desc())
+                else:
+                    stmt = stmt.order_by(SemanticNodeTable.created_at.asc())
+
+            # Apply pagination
+            if query.limit:
+                stmt = stmt.limit(query.limit)
+            if query.offset:
+                stmt = stmt.offset(query.offset)
+
+            # Execute query
+            results = session.exec(stmt).all()
+            semantic_nodes = [self._row_to_semantic_node(row) for row in results]
+
+            query_time_ms = (time.time() - start_time) * 1000
+
+            return SemanticSearchResult(
+                semantic_nodes=semantic_nodes,
+                total_nodes=total_nodes,
+                has_more_nodes=(len(semantic_nodes) == query.limit) if query.limit else False,
+                query_time_ms=query_time_ms,
+            )
+
+    async def search_semantic_relationships(self, query: SemanticRelationshipQuery) -> SemanticSearchResult:
+        """Search semantic relationships with complex query parameters."""
+        from .sql_models import SemanticRelationshipTable
+
+        start_time = time.time()
+        
+        with Session(self.engine) as session:
+            stmt = select(SemanticRelationshipTable)
+            conditions = []
+
+            # Apply filters
+            if query.source_node_id:
+                conditions.append(SemanticRelationshipTable.source_node_id == query.source_node_id)
+            
+            if query.target_node_id:
+                conditions.append(SemanticRelationshipTable.target_node_id == query.target_node_id)
+            
+            if query.involves_node_id:
+                conditions.append(
+                    or_(
+                        SemanticRelationshipTable.source_node_id == query.involves_node_id,
+                        SemanticRelationshipTable.target_node_id == query.involves_node_id
+                    )
+                )
+            
+            if query.relationship_types:
+                conditions.append(SemanticRelationshipTable.relationship_type.in_(query.relationship_types))
+            
+            if query.min_strength:
+                conditions.append(SemanticRelationshipTable.strength >= query.min_strength)
+            
+            if conditions:
+                stmt = stmt.where(and_(*conditions))
+
+            # Count total results
+            count_stmt = select(func.count(SemanticRelationshipTable.relationship_id))
+            if conditions:
+                count_stmt = count_stmt.where(and_(*conditions))
+            total_relationships = session.exec(count_stmt).one()
+
+            # Apply sorting
+            if query.sort_by == "strength":
+                if query.sort_order == SortOrder.DESC:
+                    stmt = stmt.order_by(SemanticRelationshipTable.strength.desc())
+                else:
+                    stmt = stmt.order_by(SemanticRelationshipTable.strength.asc())
+            else:  # Default to created_at
+                if query.sort_order == SortOrder.DESC:
+                    stmt = stmt.order_by(SemanticRelationshipTable.created_at.desc())
+                else:
+                    stmt = stmt.order_by(SemanticRelationshipTable.created_at.asc())
+
+            # Apply pagination
+            if query.limit:
+                stmt = stmt.limit(query.limit)
+            if query.offset:
+                stmt = stmt.offset(query.offset)
+
+            # Execute query
+            results = session.exec(stmt).all()
+            semantic_relationships = [self._row_to_semantic_relationship(row) for row in results]
+
+            query_time_ms = (time.time() - start_time) * 1000
+
+            return SemanticSearchResult(
+                semantic_relationships=semantic_relationships,
+                total_relationships=total_relationships,
+                has_more_relationships=(len(semantic_relationships) == query.limit) if query.limit else False,
+                query_time_ms=query_time_ms,
+            )
+
+    async def store_semantic_node(self, node: SemanticNode) -> None:
+        """Store a semantic node."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            node_id = self.validate_id(node.node_id)
+            
+            with Session(self.engine) as session:
+                # Check for duplicate key
+                existing = session.exec(
+                    select(SemanticNodeTable).where(
+                        and_(
+                            SemanticNodeTable.owner_id == node.owner_id,
+                            SemanticNodeTable.key == node.key
+                        )
+                    )
+                ).first()
+                
+                if existing:
+                    raise DuplicateKeyError(f"Node with key {node.key} already exists for owner {node.owner_id}")
+
+                # Convert domain object to table row
+                row = SemanticNodeTable(
+                    node_id=node.node_id,
+                    owner_id=node.owner_id,
+                    key=node.key,
+                    value=node.value,
+                    context=node.context,
+                    confidence=node.confidence,
+                    version=node.version,
+                    evolution_history=json.dumps(node.evolution_history, ensure_ascii=False),
+                    created_at=node.created_at,
+                    last_updated=node.last_updated,
+                    last_accessed=node.last_accessed,
+                    discovery_episode_id=node.discovery_episode_id,
+                    discovery_method=node.discovery_method,
+                    linked_episode_ids=json.dumps(node.linked_episode_ids, ensure_ascii=False),
+                    evolution_episode_ids=json.dumps(node.evolution_episode_ids, ensure_ascii=False),
+                    search_keywords=json.dumps(node.search_keywords, ensure_ascii=False),
+                    embedding_vector=json.dumps(node.embedding_vector, ensure_ascii=False) if node.embedding_vector else None,
+                    access_count=node.access_count,
+                    relevance_score=node.relevance_score,
+                    importance_score=node.importance_score,
+                )
+                
+                session.add(row)
+                session.commit()
+
+        except DuplicateKeyError:
+            raise
+        except Exception as e:
+            raise SemanticStorageError(f"Failed to store semantic node: {e}")
+
+    async def get_semantic_node_by_id(self, node_id: str) -> SemanticNode | None:
+        """Retrieve a semantic node by its ID."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            node_id = self.validate_id(node_id)
+            
+            with Session(self.engine) as session:
+                row = session.exec(
+                    select(SemanticNodeTable).where(SemanticNodeTable.node_id == node_id)
+                ).first()
+                
+                return self._row_to_semantic_node(row) if row else None
+
+        except Exception:
+            return None
+
+    async def find_semantic_node_by_key(self, owner_id: str, key: str) -> SemanticNode | None:
+        """Find semantic node by owner and key combination."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            with Session(self.engine) as session:
+                row = session.exec(
+                    select(SemanticNodeTable).where(
+                        and_(
+                            SemanticNodeTable.owner_id == owner_id,
+                            SemanticNodeTable.key == key
+                        )
+                    )
+                ).first()
+                
+                return self._row_to_semantic_node(row) if row else None
+
+        except Exception:
+            return None
+
+    async def update_semantic_node(self, node: SemanticNode) -> None:
+        """Update an existing semantic node."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            node_id = self.validate_id(node.node_id)
+            
+            with Session(self.engine) as session:
+                # Check if node exists
+                existing = session.exec(
+                    select(SemanticNodeTable).where(SemanticNodeTable.node_id == node_id)
+                ).first()
+                
+                if not existing:
+                    raise NotFoundError(f"Node {node_id} not found")
+
+                # Update the row
+                stmt = (
+                    update(SemanticNodeTable)
+                    .where(SemanticNodeTable.node_id == node_id)
+                    .values(
+                        key=node.key,
+                        value=node.value,
+                        context=node.context,
+                        confidence=node.confidence,
+                        version=node.version,
+                        evolution_history=json.dumps(node.evolution_history, ensure_ascii=False),
+                        last_updated=node.last_updated,
+                        last_accessed=node.last_accessed,
+                        linked_episode_ids=json.dumps(node.linked_episode_ids, ensure_ascii=False),
+                        evolution_episode_ids=json.dumps(node.evolution_episode_ids, ensure_ascii=False),
+                        search_keywords=json.dumps(node.search_keywords, ensure_ascii=False),
+                        embedding_vector=json.dumps(node.embedding_vector, ensure_ascii=False) if node.embedding_vector else None,
+                        access_count=node.access_count,
+                        relevance_score=node.relevance_score,
+                        importance_score=node.importance_score,
+                    )
+                )
+                
+                session.exec(stmt)
+                session.commit()
+
+        except (NotFoundError, SemanticStorageError):
+            raise
+        except Exception as e:
+            raise SemanticStorageError(f"Failed to update semantic node: {e}")
+
+    async def delete_semantic_node(self, node_id: str) -> bool:
+        """Delete a semantic node by ID."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            node_id = self.validate_id(node_id)
+            
+            with Session(self.engine) as session:
+                stmt = delete(SemanticNodeTable).where(SemanticNodeTable.node_id == node_id)
+                result = session.exec(stmt)
+                session.commit()
+                
+                return result.rowcount > 0
+
+        except Exception:
+            return False
+
+    async def find_semantic_nodes_by_episode(self, episode_id: str) -> list[SemanticNode]:
+        """Find all semantic nodes discovered from a specific episode."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            episode_id = self.validate_id(episode_id)
+            
+            with Session(self.engine) as session:
+                rows = session.exec(
+                    select(SemanticNodeTable).where(SemanticNodeTable.discovery_episode_id == episode_id)
+                ).all()
+                
+                return [self._row_to_semantic_node(row) for row in rows]
+
+        except Exception:
+            return []
+
+    async def find_semantic_nodes_by_linked_episode(self, episode_id: str) -> list[SemanticNode]:
+        """Find all semantic nodes that have the episode in their linked_episode_ids."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            episode_id = self.validate_id(episode_id)
+            
+            with Session(self.engine) as session:
+                # For DuckDB, we'll use a simple contains query
+                rows = session.exec(
+                    select(SemanticNodeTable).where(SemanticNodeTable.linked_episode_ids.contains(episode_id))
+                ).all()
+                
+                # Filter to exact matches (since contains is not perfect for JSON arrays)
+                result = []
+                for row in rows:
+                    node = self._row_to_semantic_node(row)
+                    if episode_id in node.linked_episode_ids:
+                        result.append(node)
+                
+                return result
+
+        except Exception:
+            return []
+
+    async def similarity_search_semantic_nodes(self, owner_id: str, query: str, limit: int = 10) -> list[SemanticNode]:
+        """Search semantic nodes by similarity to query text."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            query_term = self.sanitize_search_term(query)
+            
+            with Session(self.engine) as session:
+                # Simple text-based similarity search
+                stmt = (
+                    select(SemanticNodeTable)
+                    .where(
+                        and_(
+                            SemanticNodeTable.owner_id == owner_id,
+                            or_(
+                                SemanticNodeTable.key.contains(query_term),
+                                SemanticNodeTable.value.contains(query_term),
+                                SemanticNodeTable.context.contains(query_term)
+                            )
+                        )
+                    )
+                    .order_by(SemanticNodeTable.importance_score.desc(), SemanticNodeTable.confidence.desc())
+                    .limit(limit)
+                )
+                
+                rows = session.exec(stmt).all()
+                return [self._row_to_semantic_node(row) for row in rows]
+
+        except Exception:
+            return []
+
+    async def store_semantic_relationship(self, relationship: SemanticRelationship) -> None:
+        """Store a semantic relationship."""
+        try:
+            from .sql_models import SemanticRelationshipTable
+
+            relationship_id = self.validate_id(relationship.relationship_id)
+            
+            with Session(self.engine) as session:
+                # Convert domain object to table row
+                row = SemanticRelationshipTable(
+                    relationship_id=relationship.relationship_id,
+                    source_node_id=relationship.source_node_id,
+                    target_node_id=relationship.target_node_id,
+                    relationship_type=relationship.relationship_type.value,
+                    strength=relationship.strength,
+                    description=relationship.description,
+                    created_at=relationship.created_at,
+                    last_reinforced=relationship.last_reinforced,
+                    discovery_episode_id=relationship.discovery_episode_id,
+                )
+                
+                session.add(row)
+                session.commit()
+
+        except Exception as e:
+            raise SemanticStorageError(f"Failed to store semantic relationship: {e}")
+
+    async def get_semantic_relationship_by_id(self, relationship_id: str) -> SemanticRelationship | None:
+        """Retrieve a semantic relationship by its ID."""
+        try:
+            from .sql_models import SemanticRelationshipTable
+
+            relationship_id = self.validate_id(relationship_id)
+            
+            with Session(self.engine) as session:
+                row = session.exec(
+                    select(SemanticRelationshipTable).where(SemanticRelationshipTable.relationship_id == relationship_id)
+                ).first()
+                
+                return self._row_to_semantic_relationship(row) if row else None
+
+        except Exception:
+            return None
+
+    async def find_relationships_for_node(self, node_id: str) -> list[tuple[SemanticNode, SemanticRelationship]]:
+        """Find all relationships and related nodes for a given semantic node."""
+        try:
+            from .sql_models import SemanticRelationshipTable, SemanticNodeTable
+
+            node_id = self.validate_id(node_id)
+            
+            with Session(self.engine) as session:
+                # Find relationships where this node is either source or target
+                relationships = session.exec(
+                    select(SemanticRelationshipTable).where(
+                        or_(
+                            SemanticRelationshipTable.source_node_id == node_id,
+                            SemanticRelationshipTable.target_node_id == node_id
+                        )
+                    )
+                ).all()
+                
+                result = []
+                for rel_row in relationships:
+                    relationship = self._row_to_semantic_relationship(rel_row)
+                    
+                    # Find the related node (not the current node)
+                    related_node_id = (
+                        rel_row.target_node_id if rel_row.source_node_id == node_id 
+                        else rel_row.source_node_id
+                    )
+                    
+                    related_node_row = session.exec(
+                        select(SemanticNodeTable).where(SemanticNodeTable.node_id == related_node_id)
+                    ).first()
+                    
+                    if related_node_row:
+                        related_node = self._row_to_semantic_node(related_node_row)
+                        result.append((related_node, relationship))
+                
+                return result
+
+        except Exception:
+            return []
+
+    async def update_semantic_relationship(self, relationship: SemanticRelationship) -> None:
+        """Update an existing semantic relationship."""
+        try:
+            from .sql_models import SemanticRelationshipTable
+
+            relationship_id = self.validate_id(relationship.relationship_id)
+            
+            with Session(self.engine) as session:
+                # Check if relationship exists
+                existing = session.exec(
+                    select(SemanticRelationshipTable).where(SemanticRelationshipTable.relationship_id == relationship_id)
+                ).first()
+                
+                if not existing:
+                    raise NotFoundError(f"Relationship {relationship_id} not found")
+
+                # Update the row
+                stmt = (
+                    update(SemanticRelationshipTable)
+                    .where(SemanticRelationshipTable.relationship_id == relationship_id)
+                    .values(
+                        relationship_type=relationship.relationship_type.value,
+                        strength=relationship.strength,
+                        description=relationship.description,
+                        last_reinforced=relationship.last_reinforced,
+                    )
+                )
+                
+                session.exec(stmt)
+                session.commit()
+
+        except (NotFoundError, SemanticStorageError):
+            raise
+        except Exception as e:
+            raise SemanticStorageError(f"Failed to update semantic relationship: {e}")
+
+    async def delete_semantic_relationship(self, relationship_id: str) -> bool:
+        """Delete a semantic relationship by ID."""
+        try:
+            from .sql_models import SemanticRelationshipTable
+
+            relationship_id = self.validate_id(relationship_id)
+            
+            with Session(self.engine) as session:
+                stmt = delete(SemanticRelationshipTable).where(SemanticRelationshipTable.relationship_id == relationship_id)
+                result = session.exec(stmt)
+                session.commit()
+                
+                return result.rowcount > 0
+
+        except Exception:
+            return False
+
+    async def get_semantic_nodes_by_ids(self, node_ids: list[str]) -> list[SemanticNode]:
+        """Retrieve multiple semantic nodes by their IDs."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            validated_ids = [self.validate_id(node_id) for node_id in node_ids]
+            
+            with Session(self.engine) as session:
+                rows = session.exec(
+                    select(SemanticNodeTable).where(SemanticNodeTable.node_id.in_(validated_ids))
+                ).all()
+                
+                return [self._row_to_semantic_node(row) for row in rows]
+
+        except Exception:
+            return []
+
+    async def get_all_semantic_nodes_for_owner(self, owner_id: str) -> list[SemanticNode]:
+        """Retrieve all semantic nodes for a specific owner."""
+        try:
+            from .sql_models import SemanticNodeTable
+
+            with Session(self.engine) as session:
+                rows = session.exec(
+                    select(SemanticNodeTable).where(SemanticNodeTable.owner_id == owner_id)
+                ).all()
+                
+                return [self._row_to_semantic_node(row) for row in rows]
+
+        except Exception:
+            return []
+
+    async def get_semantic_statistics(self, owner_id: str) -> dict[str, any]:
+        """Get statistics about semantic memory for an owner."""
+        try:
+            from .sql_models import SemanticNodeTable, SemanticRelationshipTable
+
+            with Session(self.engine) as session:
+                # Count nodes for this owner
+                node_count = session.exec(
+                    select(func.count(SemanticNodeTable.node_id)).where(SemanticNodeTable.owner_id == owner_id)
+                ).one()
+                
+                # Get average confidence
+                avg_confidence = session.exec(
+                    select(func.avg(SemanticNodeTable.confidence)).where(SemanticNodeTable.owner_id == owner_id)
+                ).one() or 0.0
+                
+                # Count relationships involving this owner's nodes
+                relationship_count = session.exec(
+                    select(func.count(SemanticRelationshipTable.relationship_id))
+                    .select_from(
+                        SemanticRelationshipTable.join(
+                            SemanticNodeTable,
+                            or_(
+                                SemanticRelationshipTable.source_node_id == SemanticNodeTable.node_id,
+                                SemanticRelationshipTable.target_node_id == SemanticNodeTable.node_id
+                            )
+                        )
+                    )
+                    .where(SemanticNodeTable.owner_id == owner_id)
+                ).one()
+                
+                # Total access count
+                total_access_count = session.exec(
+                    select(func.sum(SemanticNodeTable.access_count)).where(SemanticNodeTable.owner_id == owner_id)
+                ).one() or 0
+
+                return {
+                    "total_nodes": node_count,
+                    "total_relationships": relationship_count,
+                    "average_confidence": float(avg_confidence),
+                    "total_access_count": int(total_access_count),
+                }
+
+        except Exception:
+            return {
+                "total_nodes": 0,
+                "total_relationships": 0,
+                "average_confidence": 0.0,
+                "total_access_count": 0,
+            }
+
+    async def cleanup_orphaned_relationships(self) -> int:
+        """Clean up relationships that reference non-existent nodes."""
+        try:
+            from .sql_models import SemanticRelationshipTable, SemanticNodeTable
+
+            with Session(self.engine) as session:
+                # Find orphaned relationships
+                orphaned_stmt = (
+                    select(SemanticRelationshipTable.relationship_id)
+                    .outerjoin(
+                        SemanticNodeTable,
+                        SemanticRelationshipTable.source_node_id == SemanticNodeTable.node_id,
+                        full=False
+                    )
+                    .where(SemanticNodeTable.node_id.is_(None))
+                )
+                
+                orphaned_ids = session.exec(orphaned_stmt).all()
+                
+                if orphaned_ids:
+                    delete_stmt = delete(SemanticRelationshipTable).where(
+                        SemanticRelationshipTable.relationship_id.in_(orphaned_ids)
+                    )
+                    session.exec(delete_stmt)
+                    session.commit()
+                
+                return len(orphaned_ids)
+
+        except Exception:
+            return 0
+
+    def _row_to_semantic_node(self, row) -> SemanticNode:
+        """Convert database row to SemanticNode domain object."""
+        return SemanticNode(
+            node_id=row.node_id,
+            owner_id=row.owner_id,
+            key=row.key,
+            value=row.value,
+            context=row.context or "",
+            confidence=row.confidence,
+            version=row.version,
+            evolution_history=json.loads(row.evolution_history) if row.evolution_history else [],
+            created_at=row.created_at,
+            last_updated=row.last_updated,
+            last_accessed=row.last_accessed,
+            discovery_episode_id=row.discovery_episode_id,
+            discovery_method=row.discovery_method,
+            linked_episode_ids=json.loads(row.linked_episode_ids) if row.linked_episode_ids else [],
+            evolution_episode_ids=json.loads(row.evolution_episode_ids) if row.evolution_episode_ids else [],
+            search_keywords=json.loads(row.search_keywords) if row.search_keywords else [],
+            embedding_vector=json.loads(row.embedding_vector) if row.embedding_vector else None,
+            access_count=row.access_count,
+            relevance_score=row.relevance_score,
+            importance_score=row.importance_score,
+        )
+
+    def _row_to_semantic_relationship(self, row) -> SemanticRelationship:
+        """Convert database row to SemanticRelationship domain object."""
+        from nemori.core.data_types import RelationshipType
+        
+        return SemanticRelationship(
+            relationship_id=row.relationship_id,
+            source_node_id=row.source_node_id,
+            target_node_id=row.target_node_id,
+            relationship_type=RelationshipType(row.relationship_type),
+            strength=row.strength,
+            description=row.description or "",
+            created_at=row.created_at,
+            last_reinforced=row.last_reinforced,
+            discovery_episode_id=row.discovery_episode_id,
+        )

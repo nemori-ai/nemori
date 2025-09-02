@@ -15,12 +15,23 @@ Episodic memory system for transforming raw user data into structured narrative 
 - Add dependencies: `uv add <package>`
 - Run tests: `uv run pytest`
 - Run linting: `uv run black .` and `uv run ruff check .`
-- Code formatting uses 120 character line length for better readability
+
+## Code Formatting Standards
+- **Line length**: 120 characters maximum
+- **Quote style**: Use double quotes (`"`) for strings (default Python style)
+- **Tools**: Black formatter with standard settings and Ruff linter with flake8-quotes
+- **Commands**:
+  - Format code: `uv run black .`
+  - Check/fix linting: `uv run ruff check . --fix`
+  - Both together: `uv run black . && uv run ruff check . --fix`
+- **Configuration**: All formatting rules are defined in `pyproject.toml`
 
 ## Project Structure
-- Core modules: `nemori/core/` - data types, episodes, builders
+- Core modules: `nemori/core/` - data types (episodic + semantic), episodes, builders
+- Storage layer: `nemori/storage/` - repository interfaces and implementations
+- Retrieval system: `nemori/retrieval/` - search providers and unified services
 - LLM providers: `nemori/llm/providers/` - OpenAI, Anthropic, Gemini
-- Conversation builder: `nemori/builders/conversation_builder.py`
+- Builders: `nemori/builders/` - episode builders and registry
 - Tests: `tests/` - comprehensive test suite with fixtures
 
 ## Dependencies

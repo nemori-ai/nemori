@@ -9,8 +9,9 @@ import pickle
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-
+from typing import Any, Dict, List
+# [新增] 导入 jieba 库
+import jieba
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
@@ -29,6 +30,10 @@ from ..retrieval_types import (
 )
 from .base import RetrievalProvider
 
+# [新增] 定义一个中文分词函数
+def chinese_tokenizer(text: str) -> List[str]:
+    """使用 jieba 对中文文本进行分词"""
+    return jieba.lcut(text)
 
 class BM25RetrievalProvider(RetrievalProvider):
     """

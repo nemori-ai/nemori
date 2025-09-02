@@ -7,13 +7,16 @@ episodes, and their relationships in the episodic memory system.
 
 from abc import ABC, abstractmethod
 
-from ..core.data_types import DataType, RawEventData
+from ..core.data_types import DataType, RawEventData, SemanticNode, SemanticRelationship
 from ..core.episode import Episode
 from .storage_types import (
     EpisodeQuery,
     EpisodeSearchResult,
     RawDataQuery,
     RawDataSearchResult,
+    SemanticNodeQuery,
+    SemanticRelationshipQuery,
+    SemanticSearchResult,
     StorageConfig,
     StorageStats,
 )
@@ -419,5 +422,272 @@ class EpisodicMemoryRepository(StorageRepository):
 
         Returns:
             Number of episodes deleted
+        """
+        pass
+
+
+class SemanticMemoryRepository(StorageRepository):
+    """
+    Repository interface for semantic memory storage.
+
+    Handles storage and retrieval of semantic nodes and relationships,
+    supporting the core requirements of the semantic memory system.
+    """
+
+    # === Semantic Node Operations ===
+
+    @abstractmethod
+    async def store_semantic_node(self, node: SemanticNode) -> None:
+        """
+        Store a semantic node.
+
+        Args:
+            node: The semantic node to store
+
+        Raises:
+            StorageError: If storage operation fails
+            DuplicateKeyError: If node with same (owner_id, key) already exists
+        """
+        pass
+
+    @abstractmethod
+    async def get_semantic_node_by_id(self, node_id: str) -> SemanticNode | None:
+        """
+        Retrieve a semantic node by its ID.
+
+        Args:
+            node_id: The unique identifier of the semantic node
+
+        Returns:
+            The semantic node if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def find_semantic_node_by_key(self, owner_id: str, key: str) -> SemanticNode | None:
+        """
+        Find semantic node by owner and key combination.
+
+        Args:
+            owner_id: The owner of the semantic knowledge
+            key: The knowledge key/identifier
+
+        Returns:
+            The semantic node if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def update_semantic_node(self, node: SemanticNode) -> None:
+        """
+        Update an existing semantic node.
+
+        Args:
+            node: The updated semantic node
+
+        Raises:
+            StorageError: If storage operation fails
+            NotFoundError: If node doesn't exist
+        """
+        pass
+
+    @abstractmethod
+    async def delete_semantic_node(self, node_id: str) -> bool:
+        """
+        Delete a semantic node by ID.
+
+        Args:
+            node_id: The unique identifier of the semantic node
+
+        Returns:
+            True if node was deleted, False if not found
+        """
+        pass
+
+    @abstractmethod
+    async def search_semantic_nodes(self, query: SemanticNodeQuery) -> SemanticSearchResult:
+        """
+        Search semantic nodes with complex query parameters.
+
+        Args:
+            query: The search query parameters
+
+        Returns:
+            Search results containing matching semantic nodes
+        """
+        pass
+
+    @abstractmethod
+    async def similarity_search_semantic_nodes(self, owner_id: str, query: str, limit: int = 10) -> list[SemanticNode]:
+        """
+        Search semantic nodes by similarity to query text.
+
+        Args:
+            owner_id: The owner of the semantic knowledge
+            query: The search query
+            limit: Maximum number of results to return
+
+        Returns:
+            List of semantic nodes ranked by similarity
+        """
+        pass
+
+    @abstractmethod
+    async def find_semantic_nodes_by_episode(self, episode_id: str) -> list[SemanticNode]:
+        """
+        Find all semantic nodes discovered from a specific episode.
+
+        Args:
+            episode_id: The episode identifier
+
+        Returns:
+            List of semantic nodes discovered from the episode
+        """
+        pass
+
+    @abstractmethod
+    async def find_semantic_nodes_by_linked_episode(self, episode_id: str) -> list[SemanticNode]:
+        """
+        Find all semantic nodes that have the episode in their linked_episode_ids.
+
+        Args:
+            episode_id: The episode identifier
+
+        Returns:
+            List of semantic nodes linked to the episode
+        """
+        pass
+
+    # === Semantic Relationship Operations ===
+
+    @abstractmethod
+    async def store_semantic_relationship(self, relationship: SemanticRelationship) -> None:
+        """
+        Store a semantic relationship.
+
+        Args:
+            relationship: The semantic relationship to store
+
+        Raises:
+            StorageError: If storage operation fails
+        """
+        pass
+
+    @abstractmethod
+    async def get_semantic_relationship_by_id(self, relationship_id: str) -> SemanticRelationship | None:
+        """
+        Retrieve a semantic relationship by its ID.
+
+        Args:
+            relationship_id: The unique identifier of the relationship
+
+        Returns:
+            The semantic relationship if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def find_relationships_for_node(self, node_id: str) -> list[tuple[SemanticNode, SemanticRelationship]]:
+        """
+        Find all relationships and related nodes for a given semantic node.
+
+        Args:
+            node_id: The semantic node identifier
+
+        Returns:
+            List of tuples containing (related_node, relationship)
+        """
+        pass
+
+    @abstractmethod
+    async def search_semantic_relationships(self, query: SemanticRelationshipQuery) -> SemanticSearchResult:
+        """
+        Search semantic relationships with complex query parameters.
+
+        Args:
+            query: The search query parameters
+
+        Returns:
+            Search results containing matching semantic relationships
+        """
+        pass
+
+    @abstractmethod
+    async def update_semantic_relationship(self, relationship: SemanticRelationship) -> None:
+        """
+        Update an existing semantic relationship.
+
+        Args:
+            relationship: The updated semantic relationship
+
+        Raises:
+            StorageError: If storage operation fails
+            NotFoundError: If relationship doesn't exist
+        """
+        pass
+
+    @abstractmethod
+    async def delete_semantic_relationship(self, relationship_id: str) -> bool:
+        """
+        Delete a semantic relationship by ID.
+
+        Args:
+            relationship_id: The unique identifier of the relationship
+
+        Returns:
+            True if relationship was deleted, False if not found
+        """
+        pass
+
+    # === Bulk Operations ===
+
+    @abstractmethod
+    async def get_semantic_nodes_by_ids(self, node_ids: list[str]) -> list[SemanticNode]:
+        """
+        Retrieve multiple semantic nodes by their IDs.
+
+        Args:
+            node_ids: List of semantic node identifiers
+
+        Returns:
+            List of semantic nodes (may be shorter than input if some not found)
+        """
+        pass
+
+    @abstractmethod
+    async def get_all_semantic_nodes_for_owner(self, owner_id: str) -> list[SemanticNode]:
+        """
+        Retrieve all semantic nodes for a specific owner.
+
+        Args:
+            owner_id: The owner identifier
+
+        Returns:
+            List of all semantic nodes owned by the user
+        """
+        pass
+
+    # === Statistics and Maintenance ===
+
+    @abstractmethod
+    async def get_semantic_statistics(self, owner_id: str) -> dict[str, any]:
+        """
+        Get statistics about semantic memory for an owner.
+
+        Args:
+            owner_id: The owner identifier
+
+        Returns:
+            Dictionary containing statistics like node count, relationship count, etc.
+        """
+        pass
+
+    @abstractmethod
+    async def cleanup_orphaned_relationships(self) -> int:
+        """
+        Clean up relationships that reference non-existent nodes.
+
+        Returns:
+            Number of orphaned relationships cleaned up
         """
         pass

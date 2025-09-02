@@ -123,3 +123,49 @@ class BaseSQLRepository:
                 raise ValueError(f"Search term contains invalid pattern: {char}")
 
         return term.strip()
+
+
+# === Semantic Memory SQL Models ===
+
+
+class SemanticNodeTable(SQLModel, table=True):
+    """SQLModel for semantic node storage."""
+
+    __tablename__ = "semantic_nodes"
+
+    node_id: str = Field(primary_key=True, max_length=255)
+    owner_id: str = Field(max_length=255, index=True)
+    key: str = Field(max_length=500, index=True)
+    value: str = Field(sa_column=Column(Text))
+    context: str = Field(default="", sa_column=Column(Text))
+    confidence: float = Field(default=1.0, index=True)
+    version: int = Field(default=1, index=True)
+    evolution_history: str = Field(default="[]", sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(), index=True)
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(), index=True)
+    last_accessed: datetime | None = None
+    discovery_episode_id: str | None = Field(default=None, max_length=255)
+    discovery_method: str = Field(default="diff_analysis", max_length=50)
+    linked_episode_ids: str = Field(default="[]", sa_column=Column(Text))
+    evolution_episode_ids: str = Field(default="[]", sa_column=Column(Text))
+    search_keywords: str = Field(default="[]", sa_column=Column(Text))
+    embedding_vector: str | None = Field(default=None, sa_column=Column(Text))
+    access_count: int = Field(default=0)
+    relevance_score: float = Field(default=0.0)
+    importance_score: float = Field(default=0.0)
+
+
+class SemanticRelationshipTable(SQLModel, table=True):
+    """SQLModel for semantic relationship storage."""
+
+    __tablename__ = "semantic_relationships"
+
+    relationship_id: str = Field(primary_key=True, max_length=255)
+    source_node_id: str = Field(max_length=255, index=True)
+    target_node_id: str = Field(max_length=255, index=True)
+    relationship_type: str = Field(max_length=50, index=True)
+    strength: float = Field(default=0.5)
+    description: str = Field(default="", sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=lambda: datetime.now())
+    last_reinforced: datetime = Field(default_factory=lambda: datetime.now())
+    discovery_episode_id: str | None = Field(default=None, max_length=255)
