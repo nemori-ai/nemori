@@ -7,7 +7,12 @@ for better type safety and reduced SQL string concatenation.
 
 import json
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+try:
+    from datetime import UTC
+except ImportError:
+    from datetime import timedelta, timezone
+    UTC = timezone.utc
 from pathlib import Path
 
 from sqlmodel import Session, SQLModel, and_, create_engine, delete, func, or_, select, update

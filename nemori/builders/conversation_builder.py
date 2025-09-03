@@ -10,7 +10,7 @@ import json
 import re
 from datetime import datetime
 from typing import Any
-
+import tiktoken
 from ..core.builders import EpisodeBuilder
 from ..core.data_types import ConversationData, DataType, TypedEventData
 from ..core.episode import EpisodeLevel, EpisodeMetadata, EpisodeType
@@ -220,8 +220,8 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         content = data["content"]
 
         # Use LLM-provided summary if available, otherwise generate from content
-        summary = data.get("summary", content[:200] + "..." if len(content) > 200 else content)
-
+        #summary = data.get("summary", content[:200] + "..." if len(content) > 200 else content)
+        summary = data.get("summary", content)
         return title, content, summary
 
     def _generate_content_simple(self, data: ConversationData, conversation_text: str) -> tuple[str, str, str]:
@@ -242,8 +242,8 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         content = conversation_text
 
         # Generate summary
-        summary = content[:200] + "..." if len(content) > 200 else content
-
+        summary = data.get("summary", content)
+        
         return title, content, summary
 
     async def _detect_boundary(
