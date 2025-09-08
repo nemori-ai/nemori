@@ -21,6 +21,7 @@ dependencies = [
     "psycopg2-binary>=2.9.10",
     "asyncpg>=0.30.0",
     "greenlet>=3.2.3",
+    "tiktoken>=0.9.0",
 ]
 
 [project.optional-dependencies]

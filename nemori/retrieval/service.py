@@ -10,7 +10,10 @@ from typing import Any
 from ..storage.repository import EpisodicMemoryRepository
 from .providers import BM25RetrievalProvider, RetrievalProvider
 from .retrieval_types import RetrievalConfig, RetrievalQuery, RetrievalResult, RetrievalStrategy
-
+from ..core.episode import Episode
+from ..storage.repository import EpisodicMemoryRepository
+from ..storage.storage_types import EpisodeQuery
+from .providers import BM25RetrievalProvider, RetrievalProvider, EmbeddingRetrievalProvider
 
 class RetrievalService:
     """
@@ -63,6 +66,8 @@ class RetrievalService:
         """
         if strategy == RetrievalStrategy.BM25:
             provider = BM25RetrievalProvider(config, self.storage_repo)
+        elif strategy == RetrievalStrategy.EMBEDDING:
+            provider = EmbeddingRetrievalProvider(config, self.storage_repo)
         else:
             raise ValueError(f"Unsupported retrieval strategy: {strategy}")
 

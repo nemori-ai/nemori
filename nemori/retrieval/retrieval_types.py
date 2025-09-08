@@ -142,7 +142,10 @@ class RetrievalConfig:
     # Quality settings
     min_score_threshold: float = 0.0
     max_results: int = 100
-
+    api_key: str = ""
+    base_url: str = ""
+    embed_model: str = ""
+    
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
@@ -155,6 +158,9 @@ class RetrievalConfig:
             "rebuild_on_startup": self.rebuild_on_startup,
             "min_score_threshold": self.min_score_threshold,
             "max_results": self.max_results,
+            "api_key": self.api_key,
+            "base_url": self.base_url,
+            "embed_model": self.embed_model
         }
 
 

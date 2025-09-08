@@ -8,7 +8,11 @@ and scenarios where database setup is inconvenient.
 
 import json
 import time
-from datetime import UTC, datetime, timedelta
+try:
+    from datetime import UTC
+except ImportError:
+    from datetime import timedelta, timezone
+    UTC = timezone.utc
 from pathlib import Path
 from typing import Any
 
