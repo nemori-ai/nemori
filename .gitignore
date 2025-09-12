@@ -7,7 +7,6 @@ results/
 
 # C extensions
 *.so
-evaluation/
 # Distribution / packaging
 .Python
 build/
@@ -214,7 +213,6 @@ comprehensive_report.json
 .tmp/
 
 # eval workspace
-evaluation/memos/
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -428,6 +426,4 @@ comprehensive_report.json
 
 # tmp
 .tmp/
-
-# eval workspace
-evaluation/memos/
+evaluation/
