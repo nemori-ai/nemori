@@ -25,8 +25,8 @@ async def main_nemori(version="default"):
     )
 
     # Step 1: Setup LLM provider
-    api_key = "sk-NuO4dbNTkXXi5zWYkLFnhyug1kkqjeysvrb74pA9jTGfz8cm"
-    base_url = "https://jeniya.cn/v1"
+    api_key = "sk-xxxx"
+    base_url = "https://xxxx/v1"
     model = "gpt-4.1-mini"
     llm_available = await experiment.setup_llm_provider(model=model, api_key=api_key, base_url=base_url)
     if not llm_available:
