@@ -7,12 +7,12 @@ and scenarios where database setup is inconvenient.
 """
 
 import json
+import time
 try:
     from datetime import UTC
 except ImportError:
     from datetime import timedelta, timezone
     UTC = timezone.utc
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -45,9 +45,9 @@ def _serialize_datetime(obj: Any) -> Any:
 
 def _deserialize_datetime(obj: Any) -> Any:
     """Deserialize ISO format strings back to datetime objects."""
-    if isinstance(obj, str) and obj.endswith("Z") or "T" in obj:
+    if isinstance(obj, str) and obj.endswith('Z') or 'T' in obj:
         try:
-            return datetime.fromisoformat(obj.replace("Z", "+00:00"))
+            return datetime.fromisoformat(obj.replace('Z', '+00:00'))
         except ValueError:
             return obj
     elif isinstance(obj, dict):
@@ -92,7 +92,6 @@ class JSONLRawDataRepository(RawDataRepository):
         """Create a backup of the storage."""
         try:
             import shutil
-
             dest_path = Path(destination)
             dest_path.mkdir(parents=True, exist_ok=True)
             shutil.copytree(self.data_dir, dest_path / "nemori_backup", dirs_exist_ok=True)
@@ -104,7 +103,6 @@ class JSONLRawDataRepository(RawDataRepository):
         """Restore storage from a backup."""
         try:
             import shutil
-
             source_path = Path(source) / "nemori_backup"
             if source_path.exists():
                 shutil.copytree(source_path, self.data_dir, dirs_exist_ok=True)
@@ -121,7 +119,7 @@ class JSONLRawDataRepository(RawDataRepository):
             return
 
         try:
-            with open(self.raw_data_file, encoding="utf-8") as f:
+            with open(self.raw_data_file, encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
                         data_dict = json.loads(line)
@@ -129,21 +127,21 @@ class JSONLRawDataRepository(RawDataRepository):
 
                         # Reconstruct RawEventData object
                         temporal_info = TemporalInfo(
-                            timestamp=data_dict["temporal_info"]["timestamp"],
-                            duration=data_dict["temporal_info"]["duration"],
-                            timezone=data_dict["temporal_info"]["timezone"],
-                            precision=data_dict["temporal_info"].get("precision", "second"),
+                            timestamp=data_dict['temporal_info']['timestamp'],
+                            duration=data_dict['temporal_info']['duration'],
+                            timezone=data_dict['temporal_info']['timezone'],
+                            precision=data_dict['temporal_info'].get('precision', 'second')
                         )
 
                         raw_data = RawEventData(
-                            data_id=data_dict["data_id"],
-                            data_type=DataType(data_dict["data_type"]),
-                            content=data_dict["content"],
-                            source=data_dict["source"],
+                            data_id=data_dict['data_id'],
+                            data_type=DataType(data_dict['data_type']),
+                            content=data_dict['content'],
+                            source=data_dict['source'],
                             temporal_info=temporal_info,
-                            metadata=data_dict["metadata"],
-                            processed=data_dict["processed"],
-                            processing_version=data_dict["processing_version"],
+                            metadata=data_dict['metadata'],
+                            processed=data_dict['processed'],
+                            processing_version=data_dict['processing_version']
                         )
 
                         self._cache[raw_data.data_id] = raw_data
@@ -153,26 +151,26 @@ class JSONLRawDataRepository(RawDataRepository):
     async def _flush_cache(self) -> None:
         """Write cache to disk."""
         try:
-            with open(self.raw_data_file, "w", encoding="utf-8") as f:
+            with open(self.raw_data_file, 'w', encoding='utf-8') as f:
                 for raw_data in self._cache.values():
                     data_dict = {
-                        "data_id": raw_data.data_id,
-                        "data_type": raw_data.data_type.value,
-                        "content": raw_data.content,
-                        "source": raw_data.source,
-                        "temporal_info": {
-                            "timestamp": raw_data.temporal_info.timestamp,
-                            "duration": raw_data.temporal_info.duration,
-                            "timezone": raw_data.temporal_info.timezone,
-                            "precision": raw_data.temporal_info.precision,
+                        'data_id': raw_data.data_id,
+                        'data_type': raw_data.data_type.value,
+                        'content': raw_data.content,
+                        'source': raw_data.source,
+                        'temporal_info': {
+                            'timestamp': raw_data.temporal_info.timestamp,
+                            'duration': raw_data.temporal_info.duration,
+                            'timezone': raw_data.temporal_info.timezone,
+                            'precision': raw_data.temporal_info.precision
                         },
-                        "metadata": raw_data.metadata,
-                        "processed": raw_data.processed,
-                        "processing_version": raw_data.processing_version,
+                        'metadata': raw_data.metadata,
+                        'processed': raw_data.processed,
+                        'processing_version': raw_data.processing_version
                     }
                     data_dict = _serialize_datetime(data_dict)
                     json.dump(data_dict, f, ensure_ascii=False)
-                    f.write("\n")
+                    f.write('\n')
         except Exception as e:
             print(f"Warning: Failed to flush cache to {self.raw_data_file}: {e}")
 
@@ -264,22 +262,26 @@ class JSONLRawDataRepository(RawDataRepository):
 
         # Sort results
         if query.sort_by == SortBy.TIMESTAMP:
-            results.sort(key=lambda x: x.temporal_info.timestamp, reverse=(query.sort_order == SortOrder.DESC))
+            results.sort(
+                key=lambda x: x.temporal_info.timestamp,
+                reverse=(query.sort_order == SortOrder.DESC)
+            )
 
         # Apply pagination
         total_count = len(results)
         if query.offset:
-            results = results[query.offset :]
+            results = results[query.offset:]
         if query.limit:
-            results = results[: query.limit]
+            results = results[:query.limit]
 
         query_time_ms = (time.time() - start_time) * 1000
-        has_more = (
-            query.limit is not None and len(results) == query.limit and total_count > (query.offset or 0) + len(results)
-        )
+        has_more = query.limit is not None and len(results) == query.limit and total_count > (query.offset or 0) + len(results)
 
         return RawDataSearchResult(
-            data=results, total_count=total_count, has_more=has_more, query_time_ms=query_time_ms
+            data=results,
+            total_count=total_count,
+            has_more=has_more,
+            query_time_ms=query_time_ms
         )
 
     async def update_raw_data(self, data_id: str, data: RawEventData) -> bool:
@@ -303,7 +305,7 @@ class JSONLRawDataRepository(RawDataRepository):
                 temporal_info=data.temporal_info,
                 metadata=data.metadata,
                 processed=True,
-                processing_version=processing_version,
+                processing_version=processing_version
             )
             self._cache[data_id] = updated_data
             await self._flush_cache()
@@ -378,13 +380,15 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
 
     async def health_check(self) -> bool:
         """Check if storage is healthy."""
-        return self._initialized and self.data_dir.exists() and self.episodes_file.exists() and self.links_file.exists()
+        return (self._initialized and
+                self.data_dir.exists() and
+                self.episodes_file.exists() and
+                self.links_file.exists())
 
     async def backup(self, destination: str) -> bool:
         """Create a backup of the storage."""
         try:
             import shutil
-
             dest_path = Path(destination)
             dest_path.mkdir(parents=True, exist_ok=True)
             shutil.copytree(self.data_dir, dest_path / "nemori_backup", dirs_exist_ok=True)
@@ -396,7 +400,6 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
         """Restore storage from a backup."""
         try:
             import shutil
-
             source_path = Path(source) / "nemori_backup"
             if source_path.exists():
                 shutil.copytree(source_path, self.data_dir, dirs_exist_ok=True)
@@ -414,7 +417,7 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
             return
 
         try:
-            with open(self.episodes_file, encoding="utf-8") as f:
+            with open(self.episodes_file, encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
                         episode_dict = json.loads(line)
@@ -431,12 +434,12 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
             return
 
         try:
-            with open(self.links_file, encoding="utf-8") as f:
+            with open(self.links_file, encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
                         link_dict = json.loads(line)
-                        episode_id = link_dict["episode_id"]
-                        raw_data_ids = link_dict["raw_data_ids"]
+                        episode_id = link_dict['episode_id']
+                        raw_data_ids = link_dict['raw_data_ids']
                         self._links_cache[episode_id] = raw_data_ids
         except Exception as e:
             print(f"Warning: Failed to load links cache from {self.links_file}: {e}")
@@ -444,53 +447,56 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
     async def _flush_episodes_cache(self) -> None:
         """Write episodes cache to disk."""
         try:
-            with open(self.episodes_file, "w", encoding="utf-8") as f:
+            with open(self.episodes_file, 'w', encoding='utf-8') as f:
                 for episode in self._episodes_cache.values():
                     episode_dict = self._episode_to_dict(episode)
                     episode_dict = _serialize_datetime(episode_dict)
                     json.dump(episode_dict, f, ensure_ascii=False)
-                    f.write("\n")
+                    f.write('\n')
         except Exception as e:
             print(f"Warning: Failed to flush episodes cache to {self.episodes_file}: {e}")
 
     async def _flush_links_cache(self) -> None:
         """Write links cache to disk."""
         try:
-            with open(self.links_file, "w", encoding="utf-8") as f:
+            with open(self.links_file, 'w', encoding='utf-8') as f:
                 for episode_id, raw_data_ids in self._links_cache.items():
-                    link_dict = {"episode_id": episode_id, "raw_data_ids": raw_data_ids}
+                    link_dict = {
+                        'episode_id': episode_id,
+                        'raw_data_ids': raw_data_ids
+                    }
                     json.dump(link_dict, f, ensure_ascii=False)
-                    f.write("\n")
+                    f.write('\n')
         except Exception as e:
             print(f"Warning: Failed to flush links cache to {self.links_file}: {e}")
 
     def _episode_to_dict(self, episode: Episode) -> dict:
         """Convert Episode object to dictionary."""
         return {
-            "episode_id": episode.episode_id,
-            "owner_id": episode.owner_id,
-            "episode_type": episode.episode_type.value,
-            "level": episode.level.value,
-            "title": episode.title,
-            "content": episode.content,
-            "summary": episode.summary,
-            "temporal_info": {
-                "timestamp": episode.temporal_info.timestamp,
-                "duration": episode.temporal_info.duration,
-                "timezone": episode.temporal_info.timezone,
-                "precision": episode.temporal_info.precision,
+            'episode_id': episode.episode_id,
+            'owner_id': episode.owner_id,
+            'episode_type': episode.episode_type.value,
+            'level': episode.level.value,
+            'title': episode.title,
+            'content': episode.content,
+            'summary': episode.summary,
+            'temporal_info': {
+                'timestamp': episode.temporal_info.timestamp,
+                'duration': episode.temporal_info.duration,
+                'timezone': episode.temporal_info.timezone,
+                'precision': episode.temporal_info.precision
             },
-            "metadata": {
-                "source_data_ids": episode.metadata.source_data_ids,
-                "source_types": [dt.value for dt in episode.metadata.source_types],
-                "entities": episode.metadata.entities,
-                "topics": episode.metadata.topics,
-                "key_points": episode.metadata.key_points,
+            'metadata': {
+                'source_data_ids': episode.metadata.source_data_ids,
+                'source_types': [dt.value for dt in episode.metadata.source_types],
+                'entities': episode.metadata.entities,
+                'topics': episode.metadata.topics,
+                'key_points': episode.metadata.key_points
             },
-            "search_keywords": episode.search_keywords,
-            "importance_score": episode.importance_score,
-            "recall_count": episode.recall_count,
-            "last_accessed": episode.last_accessed,
+            'search_keywords': episode.search_keywords,
+            'importance_score': episode.importance_score,
+            'recall_count': episode.recall_count,
+            'last_accessed': episode.last_accessed
         }
 
     def _dict_to_episode(self, episode_dict: dict) -> Episode:
@@ -498,34 +504,34 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
         from ..core.episode import EpisodeMetadata
 
         temporal_info = TemporalInfo(
-            timestamp=episode_dict["temporal_info"]["timestamp"],
-            duration=episode_dict["temporal_info"]["duration"],
-            timezone=episode_dict["temporal_info"]["timezone"],
-            precision=episode_dict["temporal_info"].get("precision", "second"),
+            timestamp=episode_dict['temporal_info']['timestamp'],
+            duration=episode_dict['temporal_info']['duration'],
+            timezone=episode_dict['temporal_info']['timezone'],
+            precision=episode_dict['temporal_info'].get('precision', 'second')
         )
 
         metadata = EpisodeMetadata(
-            source_data_ids=episode_dict["metadata"]["source_data_ids"],
-            source_types={DataType(dt) for dt in episode_dict["metadata"]["source_types"]},
-            entities=episode_dict["metadata"]["entities"],
-            topics=episode_dict["metadata"]["topics"],
-            key_points=episode_dict["metadata"]["key_points"],
+            source_data_ids=episode_dict['metadata']['source_data_ids'],
+            source_types={DataType(dt) for dt in episode_dict['metadata']['source_types']},
+            entities=episode_dict['metadata']['entities'],
+            topics=episode_dict['metadata']['topics'],
+            key_points=episode_dict['metadata']['key_points']
         )
 
         return Episode(
-            episode_id=episode_dict["episode_id"],
-            owner_id=episode_dict["owner_id"],
-            episode_type=EpisodeType(episode_dict["episode_type"]),
-            level=EpisodeLevel(episode_dict["level"]),
-            title=episode_dict["title"],
-            content=episode_dict["content"],
-            summary=episode_dict["summary"],
+            episode_id=episode_dict['episode_id'],
+            owner_id=episode_dict['owner_id'],
+            episode_type=EpisodeType(episode_dict['episode_type']),
+            level=EpisodeLevel(episode_dict['level']),
+            title=episode_dict['title'],
+            content=episode_dict['content'],
+            summary=episode_dict['summary'],
             temporal_info=temporal_info,
             metadata=metadata,
-            search_keywords=episode_dict["search_keywords"],
-            importance_score=episode_dict["importance_score"],
-            recall_count=episode_dict["recall_count"],
-            last_accessed=episode_dict["last_accessed"],
+            search_keywords=episode_dict['search_keywords'],
+            importance_score=episode_dict['importance_score'],
+            recall_count=episode_dict['recall_count'],
+            last_accessed=episode_dict['last_accessed']
         )
 
     async def get_stats(self) -> StorageStats:
@@ -602,13 +608,10 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
             if query.text_search:
                 search_text = query.text_search.lower()
                 searchable_content = (
-                    episode.title.lower()
-                    + " "
-                    + episode.content.lower()
-                    + " "
-                    + episode.summary.lower()
-                    + " "
-                    + " ".join(episode.search_keywords).lower()
+                    episode.title.lower() + " " +
+                    episode.content.lower() + " " +
+                    episode.summary.lower() + " " +
+                    " ".join(episode.search_keywords).lower()
                 )
                 if search_text not in searchable_content:
                     continue
@@ -653,26 +656,36 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
 
         # Sort results
         if query.sort_by == SortBy.TIMESTAMP:
-            results.sort(key=lambda x: x.temporal_info.timestamp, reverse=(query.sort_order == SortOrder.DESC))
+            results.sort(
+                key=lambda x: x.temporal_info.timestamp,
+                reverse=(query.sort_order == SortOrder.DESC)
+            )
         elif query.sort_by == SortBy.IMPORTANCE:
-            results.sort(key=lambda x: x.importance_score, reverse=(query.sort_order == SortOrder.DESC))
+            results.sort(
+                key=lambda x: x.importance_score,
+                reverse=(query.sort_order == SortOrder.DESC)
+            )
         elif query.sort_by == SortBy.RECALL_COUNT:
-            results.sort(key=lambda x: x.recall_count, reverse=(query.sort_order == SortOrder.DESC))
+            results.sort(
+                key=lambda x: x.recall_count,
+                reverse=(query.sort_order == SortOrder.DESC)
+            )
 
         # Apply pagination
         total_count = len(results)
         if query.offset:
-            results = results[query.offset :]
+            results = results[query.offset:]
         if query.limit:
-            results = results[: query.limit]
+            results = results[:query.limit]
 
         query_time_ms = (time.time() - start_time) * 1000
-        has_more = (
-            query.limit is not None and len(results) == query.limit and total_count > (query.offset or 0) + len(results)
-        )
+        has_more = query.limit is not None and len(results) == query.limit and total_count > (query.offset or 0) + len(results)
 
         return EpisodeSearchResult(
-            episodes=results, total_count=total_count, has_more=has_more, query_time_ms=query_time_ms
+            episodes=results,
+            total_count=total_count,
+            has_more=has_more,
+            query_time_ms=query_time_ms
         )
 
     async def get_episodes_by_owner(
@@ -680,7 +693,11 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
     ) -> EpisodeSearchResult:
         """Get episodes for a specific owner."""
         query = EpisodeQuery(
-            owner_ids=[owner_id], limit=limit, offset=offset, sort_by=SortBy.TIMESTAMP, sort_order=SortOrder.DESC
+            owner_ids=[owner_id],
+            limit=limit,
+            offset=offset,
+            sort_by=SortBy.TIMESTAMP,
+            sort_order=SortOrder.DESC
         )
         return await self.search_episodes(query)
 
@@ -693,7 +710,7 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
             recent_hours=hours,
             limit=limit,
             sort_by=SortBy.TIMESTAMP,
-            sort_order=SortOrder.DESC,
+            sort_order=SortOrder.DESC
         )
         return await self.search_episodes(query)
 
@@ -723,7 +740,7 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
                 search_keywords=episode.search_keywords,
                 importance_score=importance_score,
                 recall_count=episode.recall_count,
-                last_accessed=episode.last_accessed,
+                last_accessed=episode.last_accessed
             )
             self._episodes_cache[episode_id] = updated_episode
             await self._flush_episodes_cache()
@@ -748,7 +765,7 @@ class JSONLEpisodicMemoryRepository(EpisodicMemoryRepository):
                 search_keywords=episode.search_keywords,
                 importance_score=episode.importance_score,
                 recall_count=episode.recall_count + 1,
-                last_accessed=datetime.now(UTC),
+                last_accessed=datetime.now(UTC)
             )
             self._episodes_cache[episode_id] = updated_episode
             await self._flush_episodes_cache()

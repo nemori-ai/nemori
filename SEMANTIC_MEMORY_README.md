@@ -327,6 +327,45 @@ The test suite covers:
 - **UnifiedRetrievalService**: Combines episodic and semantic retrieval
 - **Adaptive Memory Service**: Smart memory selection based on query characteristics
 
+## Latest Updates | 最新更新
+
+### Semantic Memory Indexing (December 2024) | 语义记忆索引 (2024年12月)
+
+**Complete Vector Indexing System** | **完整向量索引系统**
+
+The system now provides complete indexing capabilities matching episodic memory:
+
+系统现在提供与情景记忆匹配的完整索引功能：
+
+- ✅ **SemanticEmbeddingProvider**: Vector similarity search for semantic nodes
+- ✅ **Persistent JSON Indices**: Fast loading of embedding vectors
+- ✅ **Unified Index Building**: Both episodic and semantic indices in single process
+- ✅ **Concurrent Processing**: Inter-conversation parallelism for large datasets
+- ✅ **Complete Integration**: Ready for LoCoMo evaluation framework
+
+```python
+# Automatic semantic indexing during processing
+await self.semantic_embedding_provider._rebuild_semantic_index(owner_id)
+
+# Persistent index files created:
+# semantic_embedding_index_{owner_id}.json - Vector indices for fast search
+# embedding_index_{owner_id}.json - Episodic memory indices
+```
+
+### Complete LoCoMo Integration | 完整LoCoMo集成
+
+The system now provides end-to-end LoCoMo dataset processing:
+
+系统现在提供端到端的LoCoMo数据集处理：
+
+```bash
+# Complete processing with semantic memory + indexing
+python locomo_ingestion_emb_full.py --lib nemori --version full_semantic_emb --max-concurrency 10
+
+# Unified search with both memory types  
+python locomo_search.py --lib nemori --version full_semantic_emb --top_k 20
+```
+
 ## Future Enhancements | 未来增强
 
 ### Planned Features | 计划功能
@@ -340,9 +379,10 @@ The test suite covers:
 ### Roadmap | 路线图
 
 - **Phase 1** ✅: Core semantic memory implementation
-- **Phase 2**: Advanced relationship discovery
-- **Phase 3**: Multi-modal semantic knowledge
-- **Phase 4**: Distributed semantic memory networks
+- **Phase 2** ✅: Complete indexing and unified retrieval
+- **Phase 3**: Advanced relationship discovery  
+- **Phase 4**: Multi-modal semantic knowledge
+- **Phase 5**: Distributed semantic memory networks
 
 ## Contributing | 贡献
 

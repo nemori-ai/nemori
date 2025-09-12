@@ -226,32 +226,7 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         title = data["title"]
         content = data["content"]
 
-        # ----------------- [ NEW DEBUG LOGGING START ] -----------------
-        # print("" + "="*20 + " [DEBUG] Summary Generation " + "="*20)
-        # print(f"   [LLM Content Length]: {len(content)} characters")
-        # if self.tokenizer:
-        #     tokens = self.tokenizer.encode(content)
-        #     print(f"   [Tiktoken available]: Yes")
-        #     print(f"   [Token Count]: {len(tokens)} tokens")
-
-        # else:
-        #     print(f"   [Tiktoken available]: No")
-        # ----------------- [ NEW DEBUG LOGGING END ] -------------------
-        #summary = data.get("summary")
-        # summary = data.get("summary", self.tokenizer.decode(tokens[:512]) + "..." if len(tokens) > 512 else content)
-        # if self.tokenizer:
-        #     tokens = self.tokenizer.encode(summary)
-        #     if len(tokens) > 512:
-        #         truncated_tokens = tokens[:512]
-        #         summary = self.tokenizer.decode(truncated_tokens).rstrip() + "..."
-        #     else:
-        #         summary = summary
-        # # ----------------- [ NEW DEBUG LOGGING START ] -----------------
-        # print(f"   [Final Summary Length]: {len(summary)} characters")
-        # print(f"   [Final Summary Content]: '{summary[:150]}...'")
-        # print("="*64 + "")
-        summary = content
-        # ----------------- [ NEW DEBUG LOGGING END ] -------------------
+        summary = data.get("summary", content)
 
         return title, content, summary
 
@@ -272,16 +247,7 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         # Use the formatted conversation as content
         content = conversation_text
 
-        # # Generate summary
-        # if self.tokenizer:
-        #     tokens = self.tokenizer.encode(content)
-        #     if len(tokens) > 512:
-        #         truncated_tokens = tokens[:512]
-        #         summary = self.tokenizer.decode(truncated_tokens).rstrip() + "..."
-        #     else:
-        #         summary = content
-        # else:
-        summary = content
+        summary = data.get("summary", content)
 
         return title, content, summary
 

@@ -1,4 +1,3 @@
-
 import asyncio
 from datetime import datetime
 import os
@@ -17,6 +16,8 @@ from nemori.storage.storage_types import (
     SemanticStorageError,
 )
 from nemori.core.data_types import RelationshipType, SemanticNode, SemanticRelationship
+
+
 class MockSemanticStorage(SemanticMemoryRepository):
     """Mock implementation of SemanticStorage for testing protocol adherence."""
 
@@ -211,9 +212,7 @@ async def main():
     await semantic_repo.initialize()
 
     # UnifiedRetrievalService 是与记忆系统交互的统一入口
-    retrieval_service = UnifiedRetrievalService(
-        episode_repository=episode_repo, semantic_repository=semantic_repo
-    )
+    retrieval_service = UnifiedRetrievalService(episode_repository=episode_repo, semantic_repository=semantic_repo)
     print("服务初始化成功。")
 
     # --- 2. 记忆的产生与存储 (Storing Initial Memories) ---
@@ -254,18 +253,16 @@ async def main():
     )
     await episode_repo.store_episode(update_episode)
     print(f"  [存储新情节] '{update_episode.title}'")
-    
     # 找到旧的语义知识并使其“演化”
     node_to_evolve = await semantic_repo.find_semantic_node_by_key(owner_id, "John的研究方向")
     if node_to_evolve:
         evolved_node = node_to_evolve.evolve(
             new_value="AI Agent 行为规划",
             new_context="在研究方向更新会议上得知",
-            evolution_episode_id="ep_002" # 记录是哪个情节导致了这次演化
+            evolution_episode_id="ep_002",  # 记录是哪个情节导致了这次演化
         )
         await semantic_repo.update_semantic_node(evolved_node)
         print(f"  [演化语义] 知识 '{evolved_node.key}' 已更新 -> '{evolved_node.value}' (版本: {evolved_node.version})")
-
 
     # --- 4. 记忆的检索与溯源 (Retrieval and Tracing) ---
     print("--- 步骤 4: 记忆的检索与溯源 ---")

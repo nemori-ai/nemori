@@ -84,13 +84,13 @@ class OpenAIProvider(LLMProvider):
         response = await llm_to_use.ainvoke([message])
 
         # Handle response content based on type
-        if hasattr(response, 'content'):
+        if hasattr(response, "content"):
             return response.content
         elif isinstance(response, str):
             return response
         else:
             # If response has model_dump, it's likely a Pydantic model
-            if hasattr(response, 'model_dump'):
+            if hasattr(response, "model_dump"):
                 return str(response.model_dump())
             return str(response)
 

@@ -211,6 +211,9 @@ class StorageConfig:
     backup_enabled: bool = False
     backup_interval_hours: int = 24
     backup_retention_days: int = 30
+    openai_api_key = ""
+    openai_base_url = ""
+    openai_embed_model = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""

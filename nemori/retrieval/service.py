@@ -7,13 +7,15 @@ different retrieval providers and can combine results from multiple strategies.
 
 from typing import Any
 
-from ..core.data_types import SemanticNode
-from ..core.episode import Episode
 from ..storage.repository import EpisodicMemoryRepository, SemanticMemoryRepository
-from ..storage.storage_types import EpisodeQuery
 from .providers import BM25RetrievalProvider, RetrievalProvider, EmbeddingRetrievalProvider
 from .retrieval_types import RetrievalConfig, RetrievalQuery, RetrievalResult, RetrievalStrategy
 
+
+from ..core.data_types import SemanticNode
+from ..core.episode import Episode
+
+from ..storage.storage_types import EpisodeQuery
 
 class RetrievalService:
     """
@@ -56,14 +58,13 @@ class RetrievalService:
         self.providers.clear()
         self._initialized = False
 
-    def register_provider(self, strategy: RetrievalStrategy, config: RetrievalConfig, llm_provider=None) -> None:
+    def register_provider(self, strategy: RetrievalStrategy, config: RetrievalConfig) -> None:
         """
         Register a retrieval provider for a specific strategy.
 
         Args:
             strategy: The retrieval strategy
             config: Configuration for the provider
-            llm_provider: Optional LLM provider (required for enhanced embedding)
         """
         if strategy == RetrievalStrategy.BM25:
             provider = BM25RetrievalProvider(config, self.storage_repo)
@@ -115,8 +116,15 @@ class RetrievalService:
             if await provider.is_initialized():
                 await provider.add_episode(episode)
 
-    async def remove_episode_from_all_providers(self, episode_id: str, owner_id: str) -> None:
-        """Remove an episode from all retrieval providers."""
+    async def remove_episode_from_all_providers(self, episode_id: str) -> None:
+        """
+        Remove an episode from all registered providers.
+
+        This should be called when an episode is deleted from storage.
+
+        Args:
+            episode_id: ID of the episode to remove
+        """
         for provider in self.providers.values():
             if await provider.is_initialized():
                 await provider.remove_episode(episode_id)

@@ -144,6 +144,9 @@ class TypedEventData(ABC):
     @property
     def metadata(self) -> dict[str, Any]:
         return self.raw_data.metadata
+    @property
+    def data_type(self) -> DataType:
+        return self.raw_data.data_type
 
 
 @dataclass(frozen=True)

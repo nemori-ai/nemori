@@ -16,7 +16,6 @@ from .episode_manager import EpisodeManager
 from .llm import AnthropicProvider, GeminiProvider, LLMProvider, OpenAIProvider
 from .semantic import (
     ContextAwareSemanticDiscoveryEngine,
-    SemanticDiscoveryEngine,
     SemanticEvolutionManager,
     UnifiedRetrievalService,
 )
@@ -35,8 +34,7 @@ __all__ = [
     "EpisodeManager",
     # Semantic memory components
     "SemanticNode",
-    "SemanticRelationship", 
-    "SemanticDiscoveryEngine",
+    "SemanticRelationship",
     "ContextAwareSemanticDiscoveryEngine",
     "SemanticEvolutionManager",
     "UnifiedRetrievalService",

@@ -6,6 +6,7 @@ episodes, and their relationships in the episodic memory system.
 """
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from ..core.data_types import DataType, RawEventData, SemanticNode, SemanticRelationship
 from ..core.episode import Episode
@@ -445,8 +446,8 @@ class SemanticMemoryRepository(StorageRepository):
             node: The semantic node to store
 
         Raises:
-            StorageError: If storage operation fails
             DuplicateKeyError: If node with same (owner_id, key) already exists
+            SemanticStorageError: If storage operation fails
         """
         pass
 
@@ -486,8 +487,8 @@ class SemanticMemoryRepository(StorageRepository):
             node: The updated semantic node
 
         Raises:
-            StorageError: If storage operation fails
             NotFoundError: If node doesn't exist
+            SemanticStorageError: If storage operation fails
         """
         pass
 
@@ -544,6 +545,11 @@ class SemanticMemoryRepository(StorageRepository):
             List of semantic nodes discovered from the episode
         """
         pass
+    
+    @abstractmethod
+    async def store_semantic_node_with_embedding(self, node: SemanticNode, content_for_embedding: str | None = None) -> None:
+        """Store semantic node and generate embedding if possible."""
+        pass
 
     @abstractmethod
     async def find_semantic_nodes_by_linked_episode(self, episode_id: str) -> list[SemanticNode]:
@@ -569,7 +575,7 @@ class SemanticMemoryRepository(StorageRepository):
             relationship: The semantic relationship to store
 
         Raises:
-            StorageError: If storage operation fails
+            SemanticStorageError: If storage operation fails
         """
         pass
 
@@ -621,8 +627,8 @@ class SemanticMemoryRepository(StorageRepository):
             relationship: The updated semantic relationship
 
         Raises:
-            StorageError: If storage operation fails
             NotFoundError: If relationship doesn't exist
+            SemanticStorageError: If storage operation fails
         """
         pass
 
@@ -670,7 +676,7 @@ class SemanticMemoryRepository(StorageRepository):
     # === Statistics and Maintenance ===
 
     @abstractmethod
-    async def get_semantic_statistics(self, owner_id: str) -> dict[str, any]:
+    async def get_semantic_statistics(self, owner_id: str) -> dict[str, Any]:
         """
         Get statistics about semantic memory for an owner.
 

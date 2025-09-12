@@ -18,6 +18,8 @@ from nemori.storage.storage_types import (
     SemanticStorageError,
 )
 from nemori.core.data_types import RelationshipType, SemanticNode, SemanticRelationship
+
+
 class MockSemanticStorage(SemanticMemoryRepository):
     """Mock implementation of SemanticStorage for testing protocol adherence."""
 
