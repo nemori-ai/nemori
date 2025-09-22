@@ -1,0 +1,37 @@
+# LoCoMo 测试评估环境依赖
+# 基于 nemori 项目的测试评估框架
+
+# 核心依赖 (从主项目继承)
+pandas>=2.0.0
+python-dotenv>=1.0.0
+
+# LLM 和 API 客户端
+openai>=1.0.0
+pydantic>=2.0.0
+litellm>=1.0.0
+
+# 记忆框架客户端
+mem0-ai>=0.1.0
+zep-cloud>=2.0.0
+
+# NLP 和文本处理
+nltk>=3.8.0
+transformers>=4.30.0
+sentence-transformers>=2.2.0
+tokenizers>=0.13.0
+
+# 评估指标
+bert-score>=0.3.13
+rouge-score>=0.1.2
+scipy>=1.10.0
+
+# 进度条和工具
+tqdm>=4.65.0
+numpy>=1.24.0
+
+# 异步处理
+asyncio-throttle>=1.0.0
+
+# 可选：如果需要本地嵌入模型
+# torch>=2.0.0
+# torchvision>=0.15.0

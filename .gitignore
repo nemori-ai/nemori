@@ -426,4 +426,4 @@ comprehensive_report.json
 
 # tmp
 .tmp/
-evaluation/
+*.log
