@@ -111,3 +111,21 @@ playground = [
     "matplotlib",
     "numpy",
 ]
+test = [
+    "asyncio-throttle>=1.0.0",
+    "bert-score>=0.3.13",
+    "litellm>=1.77.1",
+    "nltk>=3.8.0",
+    "numpy>=1.24.0",
+    "openai>=1.0.0",
+    "pandas>=2.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "rouge-score>=0.1.2",
+    "scipy>=1.10.0",
+    "sentence-transformers>=2.2.0",
+    "tokenizers>=0.13.0",
+    "tqdm>=4.65.0",
+    "transformers>=4.30.0",
+    "zep-cloud>=3.4.3",
+]

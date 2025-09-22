@@ -1,6 +1,4 @@
 """
-Episode Manager for Nemori - Coordinates storage, retrieval, and episode building.
-
 This module provides the high-level interface for managing episodes throughout
 their lifecycle, from creation via builders to storage and indexing for retrieval.
 """

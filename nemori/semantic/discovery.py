@@ -208,88 +208,75 @@ class ContextAwareSemanticDiscoveryEngine:
 # Return the reconstructed conversation:
 # 返回重建的对话："""
         return f"""You are an expert at reconstructing original conversations from episodic summaries.
-您是从情景摘要重建原始对话的专家。
 
 Given this episodic memory:
-给定以下情景记忆：
 Title: {episode.title}
 Summary: {episode.summary}
 Content: {episode.content}{related_context}
 
 Please reconstruct what the original conversation might have looked like, using your general world knowledge.
-请使用您的通用世界知识重建原始对话可能的样子。
 
-Important guidelines | 重要准则:
-1. Use only common knowledge that a typical LLM would know | 只使用典型大语言模型会知道的常识
-2. Make reasonable assumptions for missing details | 对缺失细节做合理假设
-3. Focus on factual reconstruction, not creative interpretation | 专注于事实重建，而非创意解释
-4. Maintain the same conversation structure and flow | 保持相同的对话结构和流程
+Important guidelines 
+1. Use only common knowledge that a typical LLM would know 
+2. Make reasonable assumptions for missing details 
+3. Focus on factual reconstruction, not creative interpretation 
+4. Maintain the same conversation structure and flow 
 
 Return the reconstructed conversation:
-返回重建的对话："""
+"""
 
     def _build_knowledge_gap_analysis_prompt(
         self, original: str, reconstructed: str, episode: Episode, context: dict[str, Any]
     ) -> str:
         """Build prompt for knowledge gap analysis."""
-#         return f"""
-# You are a meticulous, high-fidelity knowledge analyst. Your mission is to perform a detailed comparison between an 'Original Content' block, which represents private domain truth, and a 'Reconstructed Content' block, which is an attempt to summarize or infer that truth.
 
-# 您是一名一丝不苟的高保真知识分析师。您的任务是详细比较“原始内容”（代表私域真理）和“重建内容”（尝试总结或推断该真理）之间的差异。
-
-# Your goal is to precisely identify pieces of private, non-public knowledge that are present in the original but are either missing, incorrectly stated, over-generalized, or inferred without sufficient evidence in the reconstruction.
-
-# 您的目标是精确识别出原始内容中存在的，但在重建内容中缺失、陈述错误、过度泛化或在证据不足的情况下被推断出来的私域、非公开知识。
-
-# Original content | 原始内容:
-# {original}
-
-# Reconstructed content | 重建内容:
-# {reconstructed}
-# Please identify specific pieces of information that exist in the original but are missing or incorrectly assumed in the reconstruction. These represent private domain knowledge.
-# 请识别原始内容中存在但在重建中缺失或错误假设的具体信息。这些代表私域知识。
-
-# Focus on | 关注:
-# 1. Proper names, project names, specific terminology | 专有名词、项目名称、特定术语
-# 2. Personal preferences, habits, and characteristics | 个人偏好、习惯和特征
-# 3. Specific facts, dates, numbers that differ | 具体的事实、日期、数字差异
-# 4. Context-specific meanings and interpretations | 上下文特定的含义和解释
-# 53.  Focus on the loss of fidelity and the introduction of assumptions. | 专注于保真度的损失和假设的引入。
-
-# Return your analysis in JSON format:
-# 以 JSON 格式返回分析：
-# {{
-#     "knowledge_gaps": [
-#         {{  
-#             "analysis": "A brief explanation of WHY this is a knowledge gap. Explain the nature of the mismatch (e.g., generalization, assumption, factual error).",
-#             "key": "specific identifier or topic",
-#             "value": "the correct private knowledge",
-#             "context": "surrounding context from original",
-#             "gap_type": "proper_noun|personal_fact|specific_detail|contextual_meaning",
-#             "confidence": 0.0-1.0
-#         }}
-#     ]
-# }}"""
         return f"""You are an expert at identifying private domain knowledge gaps.
-您是识别私域知识差距的专家。
 
-Original content | 原始内容:
+Original content 
 {original}
 
-Reconstructed content (using general LLM knowledge) | 重建内容（使用通用大语言模型知识）:
+Reconstructed content (using general LLM knowledge) 
 {reconstructed}
 
 Please identify specific pieces of information that exist in the original but are missing or incorrectly assumed in the reconstruction. These represent private domain knowledge.
-请识别原始内容中存在但在重建中缺失或错误假设的具体信息。这些代表私域知识。
 
-Focus on | 关注:
-1. Proper names, project names, specific terminology | 专有名词、项目名称、特定术语
-2. Personal preferences, habits, and characteristics | 个人偏好、习惯和特征
-3. Specific facts, dates, numbers that differ | 具体的事实、日期、数字差异
-4. Context-specific meanings and interpretations | 上下文特定的含义和解释
+## CRITICAL: Focus on HIGH-VALUE Knowledge Only
 
+Extract ONLY knowledge that passes these criteria:
+- **Persistence Test**: Will this still be true in 6 months?
+- **Specificity Test**: Does it contain concrete, searchable information?
+- **Utility Test**: Can this help predict future user needs or preferences?
+- **Independence Test**: Can this be understood without the conversation context?
+
+## HIGH-VALUE Knowledge Categories (EXTRACT THESE):
+1. **Identity & Background**: Names, professions, companies, education
+2. **Persistent Preferences**: Favorite books/movies/tools, long-term likes/dislikes  
+3. **Technical Details**: Technologies, versions, methodologies, architectures
+4. **Relationships**: Family, colleagues, team members, mentors
+5. **Goals & Plans**: Career objectives, learning goals, project plans
+6. **Beliefs & Values**: Principles, philosophies, strong opinions
+7. **Habits & Patterns**: Regular activities, workflows, schedules
+
+## LOW-VALUE Knowledge (SKIP THESE):
+- Temporary emotions or reactions
+- Single conversation acknowledgments
+- Vague statements without specifics
+- Context-dependent information
+
+## Guidelines:
+1. Each statement should be self-contained and atomic
+2. Include ALL specific details (names, versions, titles)
+3. Use present tense for persistent facts
+4. Focus on facts that help understand the user long-term
+5. DO NOT include time/date information in the statement
+6. Quality over quantity - fewer valuable statements are better
+
+## Examples:
+GOOD: "Caroline's favorite book is 'Becoming Nicole' by Amy Ellis Nutt"
+GOOD: "The user works at ByteDance as a senior ML engineer"
+BAD: "The user thanked the assistant"
+BAD: "The user was happy about the response"
 Return your analysis in JSON format:
-以 JSON 格式返回分析：
 {{
     "knowledge_gaps": [
         {{
