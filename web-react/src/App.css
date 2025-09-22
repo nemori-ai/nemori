@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar for better UX */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(156 163 175) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgb(156 163 175);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(107 114 128);
+}
+
+/* Animation for fade in */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Memory item styling */
+.memory-item {
+  @apply border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow duration-200;
+}
+
+.memory-item.episodic {
+  @apply border-l-4 border-l-blue-500 bg-blue-50/50;
+}
+
+.memory-item.semantic {
+  @apply border-l-4 border-l-green-500 bg-green-50/50;
+}
+
+/* Evidence highlighting */
+.evidence-highlight {
+  @apply bg-yellow-200 px-1 rounded font-medium;
+}
+
+/* Correct/Incorrect badges */
+.status-correct {
+  @apply bg-green-100 text-green-800 border border-green-200;
+}
+
+.status-incorrect {
+  @apply bg-red-100 text-red-800 border border-red-200;
+}
+
+/* Score indicators */
+.score-high {
+  @apply text-green-600 font-medium;
+}
+
+.score-medium {
+  @apply text-yellow-600 font-medium;
+}
+
+.score-low {
+  @apply text-red-600 font-medium;
+}
