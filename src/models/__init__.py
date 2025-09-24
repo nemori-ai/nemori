@@ -1,6 +1,5 @@
 """
 Data Models
-数据模型定义
 """
 
 from .message import Message, MessageBuffer

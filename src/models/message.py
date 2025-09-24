@@ -1,6 +1,5 @@
 """
 Message Data Models
-Message data models
 """
 
 from dataclasses import dataclass, field

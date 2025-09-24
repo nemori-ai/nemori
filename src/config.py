@@ -55,9 +55,17 @@ class MemoryConfig:
     norlift_sigmoid_lambda: float = 2.5          # Sigmoid steepness
     norlift_epsilon: float = 1e-6                # Numerical stability epsilon
     
+    # === Storage / Index Backends ===
+    storage_backend: str = "filesystem"         # "filesystem" | "memory"
+    vector_index_backend: str = "chroma"        # "chroma" | "memory"
+    lexical_index_backend: str = "bm25"          # "bm25" | "memory"
+
+    # === Vector Database Configuration ===
+    vector_db_type: str = "chroma"              # Vector database type: "chroma"
+    chroma_persist_directory: str = "./chroma_db"  # ChromaDB persistence directory
+    chroma_collection_prefix: str = "nemori"    # ChromaDB collection name prefix
+    
     # === Performance Configuration ===
-    use_faiss: bool = True                      # Use faiss for vector search
-    faiss_index_type: str = "IVF"               # faiss index type
     batch_size: int = 32                        # Batch size
     max_workers: int = 4                        # Maximum number of worker threads
     semantic_generation_workers: int = 8         # Number of semantic memory generation threads
@@ -66,6 +74,8 @@ class MemoryConfig:
     enable_cache: bool = True                   # Enable cache
     cache_size: int = 1000                      # Cache size
     cache_ttl_seconds: int = 3600               # Cache expiration time (seconds)
+    semantic_cache_ttl: int = 600               # Semantic cache TTL
+    episode_cache_ttl: int = 600                # Episode cache TTL
     
     # === Environment Variable Configuration ===
     openai_api_key: Optional[str] = field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))

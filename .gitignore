@@ -230,3 +230,6 @@ api_keys.txt
 secrets.txt
 credentials.json
 token.txt
+
+test/
+tests/

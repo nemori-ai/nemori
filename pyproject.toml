@@ -89,7 +89,7 @@ nemori-search-longmemeval = "evaluation.longmemeval.search:main"
 nemori-eval-longmemeval = "evaluation.longmemeval.evals:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src", "evaluation"]
+packages = ["nemori", "src", "evaluation"]
 
 [tool.black]
 line-length = 88

@@ -5,6 +5,8 @@ Knowledge learning system based on Free Energy Principle
 
 import logging
 import json
+import threading
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import numpy as np
@@ -48,6 +50,9 @@ class PredictionCorrectionEngine:
         self.vector_search = vector_search  # Add vector search engine reference
         self.prompts = PromptTemplates()
         
+        # 注意：使用ChromaDB向量搜索后，不再需要缓存embeddings
+        # ChromaDB会自动管理和索引所有embeddings
+        
         logger.info("Prediction-Correction Engine initialized")
     
 
@@ -70,8 +75,8 @@ class PredictionCorrectionEngine:
             List of newly generated semantic memories
         """
         try:
-            logger.info(f"Starting simplified extraction for episode: {new_episode.title}")
-            logger.info(f"Existing knowledge statements: {len(existing_statements)}")
+            logger.debug(f"Starting simplified extraction for episode: {new_episode.title}")
+            logger.debug(f"Existing knowledge statements: {len(existing_statements)}")
             
             # If no historical knowledge exists, use cold start mode
             if not existing_statements:
@@ -216,7 +221,7 @@ Extract ONLY high-value, persistent knowledge. Return empty list if none found.
     ) -> List[str]:
         """
         Retrieve statement knowledge related to new episode
-        True optimization version: Use embedding vectors from vector index directly, zero API calls
+        Optimized version: Use ChromaDB's vector search directly
         
         Args:
             episode: New episode
@@ -230,63 +235,66 @@ Extract ONLY high-value, persistent knowledge. Return empty list if none found.
                 logger.debug("No existing statements for retrieval")
                 return []
             
-            # Generate episode embedding vector (1 API call)
-            episode_text = f"{episode.title}. {episode.content}"
-            episode_embedding = np.array(self.embedding_client.embed_text(episode_text))
-            
             user_id = episode.user_id
-            similarities = []
             
-            # Try to get existing semantic memory embeddings from vector index (zero API calls)
-            if (self.vector_search and 
-                user_id in self.vector_search.semantic_embeddings and 
-                user_id in self.vector_search.semantic_data):
+            # 优化：使用ChromaDB的向量搜索而不是手动计算
+            if self.vector_search and hasattr(self.vector_search, 'search_semantic_memories'):
+                logger.debug(f"Using ChromaDB vector search for user {user_id}")
                 
-                logger.debug("✅ Get existing semantic memory embeddings directly from vector index, zero API calls")
+                # 构建查询文本
+                query_text = f"{episode.title}. {episode.content}"
                 
-                # Use existing embedding vectors directly
-                existing_embeddings = self.vector_search.semantic_embeddings[user_id]
-                existing_memories = self.vector_search.semantic_data[user_id]
+                # 获取配置的参数
+                max_statements = getattr(self.config, 'max_statements_for_prediction', 10)
                 
-                # Calculate similarity
-                for i, statement_embedding_np in enumerate(existing_embeddings):
-                    similarity = self._cosine_similarity(episode_embedding, statement_embedding_np)
-                    # Ensure index corresponds to correct semantic memory
-                    if i < len(existing_memories):
-                        similarities.append((existing_memories[i].content, similarity))
+                # 使用ChromaDB搜索相关语义记忆
+                search_results = self.vector_search.search_semantic_memories(
+                    user_id=user_id,
+                    query=query_text,
+                    top_k=max_statements * 2  # 搜索更多结果以便筛选
+                )
                 
+                # 提取内容并按相似度筛选
+                relevant_statements = []
+                similarity_threshold = getattr(self.config, 'statement_similarity_threshold', 0.7)
+                
+                for result in search_results[:max_statements]:
+                    if result.get('score', 0) >= similarity_threshold:
+                        # 从结果中提取内容
+                        content = result.get('content') or result.get('document', '')
+                        if content:
+                            relevant_statements.append(content)
+                
+                logger.debug(f"Retrieved {len(relevant_statements)} relevant statements using ChromaDB search")
+                return relevant_statements
+            
             else:
-                logger.debug("⚠️ Fall back to batch generate embeddings (vector index not available)")
+                # 降级方案：如果没有vector_search，使用简化的随机采样
+                logger.warning("No vector search available, using random sampling fallback")
                 
-                # Fallback solution: batch generate embeddings (1 API call instead of N)
-                statement_texts = [stmt.content for stmt in existing_statements]
+                # 随机采样一部分语句，避免处理全部
+                sample_size = min(50, len(existing_statements))
+                if len(existing_statements) > sample_size:
+                    import random
+                    sampled_statements = random.sample(existing_statements, sample_size)
+                else:
+                    sampled_statements = existing_statements
                 
-                # Batch generate embeddings (1 API call instead of N)
-                embeddings_response = self.embedding_client.embed_texts(statement_texts)
-                statement_embeddings = embeddings_response.embeddings
+                # 简单返回最近的N个语句
+                max_statements = getattr(self.config, 'max_statements_for_prediction', 10)
+                relevant_statements = [stmt.content for stmt in sampled_statements[-max_statements:]]
                 
-                # Calculate similarity
-                for i, statement_embedding in enumerate(statement_embeddings):
-                    statement_embedding_np = np.array(statement_embedding)
-                    similarity = self._cosine_similarity(episode_embedding, statement_embedding_np)
-                    similarities.append((existing_statements[i].content, similarity))
-            
-            # Sort by similarity and select top-k
-            similarities.sort(key=lambda x: x[1], reverse=True)
-            
-            # Get configured maximum number of statements
-            max_statements = getattr(self.config, 'max_statements_for_prediction', 10)
-            relevant_statements = [
-                content for content, sim in similarities[:max_statements]
-                if sim >= getattr(self.config, 'statement_similarity_threshold', 0.7)
-            ]
-            
-            logger.debug(f"Retrieved {len(relevant_statements)} relevant statements using optimized embedding access")
-            return relevant_statements
+                logger.debug(f"Retrieved {len(relevant_statements)} recent statements using fallback method")
+                return relevant_statements
             
         except Exception as e:
             logger.error(f"Error retrieving relevant statements: {e}")
-            return []
+            # 错误时返回最近的几个语句
+            try:
+                max_statements = getattr(self.config, 'max_statements_for_prediction', 10)
+                return [stmt.content for stmt in existing_statements[-max_statements:]]
+            except:
+                return []
     
     def _predict_episode(
         self,

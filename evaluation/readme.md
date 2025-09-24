@@ -127,14 +127,72 @@ python longmemeval/evals.py longmemeval/results.json
 
 ### Memory System Configuration
 - **Model**: Choose LLM model (default: `gpt-4o-mini`)
+- **Vector Database**: ChromaDB for vector storage and search
+- **Storage Path**: File system storage for original data (JSONL format)
 - **Batch Size**: Control processing batch size
 - **Workers**: Configure parallel processing threads
-- **Search Method**: Vector, BM25, or hybrid search
+- **Search Method**: Vector (ChromaDB), BM25, or hybrid search
 - **Semantic Memory**: Enable/disable semantic memory generation
+
+### Vector Database Configuration
+- **Vector DB Type**: `chroma` (ChromaDB)
+- **Persist Directory**: ChromaDB database storage path
+- **Collection Prefix**: Prefix for ChromaDB collections (default: `nemori_eval` for LOCOMO, `nemori_longmem` for LongMemEval)
 
 ### Evaluation Parameters
 - **Top-K Episodes**: Number of episodic memories to retrieve
 - **Top-K Semantic**: Number of semantic memories to retrieve
 - **Evaluation Model**: Model used for response evaluation
 - **Concurrency**: Maximum concurrent evaluation tasks
+
+## 🔄 ChromaDB Migration
+
+The evaluation system has been updated to use **ChromaDB** instead of FAISS for vector storage and search. This provides:
+
+### Key Benefits
+- **Unified Storage**: Single ChromaDB database manages all vector data
+- **Auto-Persistence**: Built-in data persistence without manual file management
+- **Rich Metadata**: Enhanced metadata querying and filtering capabilities
+- **User Isolation**: Independent collections for each user/evaluation run
+
+### Data Storage Architecture
+```
+evaluation_memories_v3/          # Base storage directory
+├── episodes/                    # Episode data (JSONL files)
+├── semantic/                    # Semantic memory data (JSONL files)
+└── chroma_db/                   # ChromaDB vector database
+    ├── nemori_eval_user1_episodes    # User episode vectors
+    ├── nemori_eval_user1_semantic    # User semantic vectors
+    └── ...
+```
+
+### Configuration Changes
+The evaluation scripts now use ChromaDB-specific configuration:
+
+```python
+config = MemoryConfig(
+    # Vector Database Configuration
+    vector_db_type="chroma",
+    chroma_persist_directory="./storage_path/chroma_db",
+    chroma_collection_prefix="nemori_eval",  # or "nemori_longmem"
+    
+    # Other settings remain the same
+    llm_model="gpt-4o-mini",
+    embedding_model="text-embedding-3-small"
+)
+```
+
+### Compatibility Testing
+Run the compatibility test to verify your setup:
+
+```bash
+python test_chroma_compatibility.py
+```
+
+This will validate:
+- Basic module imports
+- ChromaDB configuration
+- Memory system initialization
+- Evaluation script dependencies
+- ChromaDB functionality
 

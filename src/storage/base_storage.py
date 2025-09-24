@@ -1,6 +1,5 @@
 """
 Base Storage Interface
-Base storage interface
 """
 
 from abc import ABC, abstractmethod

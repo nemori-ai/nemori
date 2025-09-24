@@ -155,39 +155,42 @@ You are extracting valuable knowledge by comparing original conversation with pr
 ## Your Task:
 Extract ONLY the valuable knowledge that exists in the original but is missing or misrepresented in the prediction.
 
-## What to Extract:
-Knowledge that is:
-- Factual and will remain true over time
-- Specific (names, titles, preferences, reasons)
-- Useful for future interactions
-- Not captured accurately in the prediction
+## CRITICAL: Focus on HIGH-VALUE Knowledge Only
 
-## What to Ignore:
-- Temporary states or emotions
-- Conversational flow or style
-- Information already well-represented in prediction
-- Social pleasantries or reactions
+Extract ONLY knowledge that passes these criteria:
+- **Persistence Test**: Will this still be true in 6 months?
+- **Specificity Test**: Does it contain concrete, searchable information?
+- **Utility Test**: Can this help predict future user needs or preferences?
+- **Independence Test**: Can this be understood without the conversation context?
+
+## HIGH-VALUE Knowledge Categories (EXTRACT THESE):
+1. **Identity & Background**: Names, professions, companies, education
+2. **Persistent Preferences**: Favorite books/movies/tools, long-term likes/dislikes  
+3. **Technical Details**: Technologies, versions, methodologies, architectures
+4. **Relationships**: Family, colleagues, team members, mentors
+5. **Goals & Plans**: Career objectives, learning goals, project plans
+6. **Beliefs & Values**: Principles, philosophies, strong opinions
+7. **Habits & Patterns**: Regular activities, workflows, schedules
+
+## LOW-VALUE Knowledge (SKIP THESE):
+- Temporary emotions or reactions
+- Single conversation acknowledgments
+- Vague statements without specifics
+- Context-dependent information
+
+## Guidelines:
+1. Each statement should be self-contained and atomic
+2. Include ALL specific details (names, versions, titles)
+3. Use present tense for persistent facts
+4. Focus on facts that help understand the user long-term
+5. DO NOT include time/date information in the statement
+6. Quality over quantity - fewer valuable statements are better
 
 ## Examples:
-
-Original: "I'm Alice, a senior engineer at Google. I switched from Java to Python last year because I wanted to work on ML projects."
-Predicted: "Alice discussed their programming experience."
-Extract: 
-- "Alice is a senior engineer at Google"
-- "Alice switched from Java to Python for ML projects"
-
-Original: "My favorite book is 'Deep Learning' by Goodfellow. I read it three times because the math explanations are so clear."
-Predicted: "Alice mentioned liking technical books."
-Extract:
-- "Alice's favorite book is 'Deep Learning' by Goodfellow"
-- "Alice values clear mathematical explanations in technical books"
-
-Original: "I've been with Microsoft since 2019, started as a junior developer and got promoted to team lead in 2022. Planning to finish my online CS masters by December 2024."
-Predicted: "Alice works at Microsoft and is studying."
-Extract:
-- "Alice has been at Microsoft since 2019 (5+ years)"
-- "Alice was promoted from junior developer to team lead in 2022"
-- "Alice is pursuing an online CS masters degree, expected completion December 2024"
+GOOD: "Caroline's favorite book is 'Becoming Nicole' by Amy Ellis Nutt"
+GOOD: "The user works at ByteDance as a senior ML engineer"
+BAD: "The user thanked the assistant"
+BAD: "The user was happy about the response"
 
 ## Output Format:
 {{

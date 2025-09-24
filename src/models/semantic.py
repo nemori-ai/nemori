@@ -1,6 +1,5 @@
 """
 Semantic Memory Data Model
-Semantic memory data model
 """
 
 from dataclasses import dataclass, field

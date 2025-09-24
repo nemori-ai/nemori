@@ -1,6 +1,5 @@
 """
 Core Modules
-核心模块
 """
 
 from .memory_system import MemorySystem

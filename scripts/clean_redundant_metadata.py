@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Clean redundant metadata from existing episode files
-清理现有episode文件中的冗余metadata
 """
 
 import json

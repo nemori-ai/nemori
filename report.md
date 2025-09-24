@@ -1,88 +1,74 @@
-# Nemori 记忆系统架构报告
+# Nemori Memory System 重构报告
 
-## 1. 概览
-Nemori 是一套分层记忆系统，负责接收连续对话、判定情景边界、持久化情景记忆、提炼长期语义知识，并对外提供快速检索接口。核心类 `MemorySystem` 串联了缓冲、生成、存储与索引组件；周边模块则提供工具、存储抽象以及向量/BM25 混合检索能力。系统采用文件式持久化（JSONL + FAISS/NumPy），并通过 OpenAI 的 LLM 与嵌入接口完成语言理解任务。
-
-整体处理流程：
-1. `MemorySystem.add_messages` 接收消息字典，封装为 `Message` 并写入用户缓冲；
-2. 边界检测（LLM + 启发式）判断是否需要截断缓冲生成新情景；
-3. 触发情景生成：调用 LLM 产出标题/正文/时间戳，失败时退化为 deterministic 摘要；随后持久化并更新向量/BM25 索引；
-4. 语义记忆提炼在后台线程执行，利用预测-纠错引擎比对已有知识后抽取新增事实；
-5. 检索层结合 FAISS、BM25 与排序融合，支持情景与语义两类记忆查询。
-
-## 2. 配置与运行时（`src/config.py`）
-`MemoryConfig` 集中管理存储路径、模型名称、语言设定、缓冲阈值、语义功能开关、检索策略以及性能参数，并从环境变量读取 `OPENAI_API_KEY`。配置会校验缓冲上下限，以及是否启用智能边界、预测纠错、FAISS、NOR-LIFT 等特性。
-
-## 3. 数据模型（`src/models`）
-- `Message` / `MessageBuffer`：保存单条对话与用户缓冲，维护时间戳与元数据；
-- `Episode`：描述情景记忆（标题、叙事、原始消息、边界原因、时间戳、标签等）；
-- `SemanticMemory`：存储长期知识陈述，记录类型、置信度、来源情景与版本信息。
-
-## 4. 工具层（`src/utils`）
-- `LLMClient`：封装 OpenAI Chat Completions，内置重试、JSON 解析与兜底逻辑；
-- `EmbeddingClient`：负责批量嵌入、指数回退重试及相似度计算；
-- `PerformanceOptimizer`：实现分片 LRU 缓存与并行调度，复用昂贵的边界/情景生成结果。
-
-## 5. 存储层（`src/storage`）
-`BaseStorage` 定义统一接口，具体实现包括：
-- `EpisodeStorage`：按用户写入 `{user}_episodes.jsonl`，现已改为同步写盘，保证磁盘、缓存、内存索引一致；同时维护 per-user 锁、缓存、索引与 JSON→JSONL 迁移；
-- `SemanticStorage`：将语义记忆追加到 `{user}_semantic.jsonl`，提供去重、统计与删除功能。
-
-目录结构示例：
+## 目录结构概览
 ```
-memories/
-  episodes/
-    <user>_episodes.jsonl
-    vector_db/
-      <user>.faiss
-      <user>_embeddings.npy
-  semantic/
-    <user>_semantic.jsonl
-    vector_db/
-      <user>.faiss
-      <user>_embeddings.npy
+Nemori-code/
+├── src/
+│   ├── api/                # Facade 和对外接口 (NemoriMemory)
+│   ├── core/               # 核心业务流程 (MemorySystem, message buffer)
+│   ├── domain/             # 抽象接口 (仓库、索引、生成器、事件)
+│   ├── infrastructure/     # 具体实现 (filesystem/in-memory 仓库与索引)
+│   ├── services/           # 缓存、事件总线、任务管理、依赖装配等服务
+│   ├── generation/         # Episode/Semantic 生成逻辑与 prompts
+│   ├── search/             # 统一检索接口，封装 BM25/Chroma
+│   ├── storage/            # JSONL 文件存储实现
+│   ├── utils/              # OpenAI 客户端、性能优化等工具
+│   └── config.py           # MemoryConfig 配置项
+├── examples/               # 快速上手示例
+├── tests/                  # Facade/契约测试集
+├── scripts/                # CI、初始化、基准脚本
+├── docs/                   # 快速上手与性能记录
+├── plan.md                 # 重构路线图与进度
+└── report.md               # 本报告
 ```
 
-## 6. 生成层（`src/generation`）
-- `prompts.py`：集中维护边界、情景、语义、预测纠错等提示词；
-- `EpisodeGenerator`：格式化缓冲消息并调用 LLM 输出结构化 JSON，失败时生成 fallback 摘要；
-- `BoundaryDetector`：先跑快速启发式，再调用 LLM 判定；若出错则退化到关键词重叠检测；
-- `PredictionCorrectionEngine`：实现“预测 → 比较 → 抽取”的两阶段学习，冷启动时直接从情景中提取高价值知识；
-- `SemanticGenerator`：根据配置选择预测纠错或逐情景抽取，并可调用向量检索辅助。
+## 架构核心要点
 
-## 7. 核心运行时（`src/core`）
-### 7.1 `MessageBufferManager`
-以用户维度加锁管理 `MessageBuffer`，提供新增、清空、删除操作以及缓冲状态查询。
+### 1. 分层抽象
+- **Domain Interfaces (`src/domain/interfaces.py`)**：定义 EpisodeRepository、SemanticRepository、VectorIndex、LexicalIndex、BoundaryDetector 等接口，确保核心流程只依赖抽象。
+- **Infrastructure (`src/infrastructure/`)**：提供文件与内存两套仓库/索引实现，可按配置注入。
+- **Services (`src/services/`)**：实现 DefaultProviders（依赖注入）、缓存（PerUserCache / SemanticEmbeddingCache）、事件总线、任务管理、指标上报等横向能力。
 
-### 7.2 `MemorySystem`
-系统核心，负责：
-- **初始化**：惰性加载存储、检索、生成器和缓存，并创建语义生成线程池；
-- **`add_messages` 流程**：
-  1. 解析输入消息并写入缓冲；
-  2. 触发边界检测，必要时分批生成情景；
-  3. 调用 `EpisodeGenerator` 生成情景并持久化，再增量更新向量索引；
-  4. 为新情景调度语义生成任务；
-  5. 更新统计数据与锁管理。
-- **语义生成任务**：后台线程加载用户情景，选取历史语义知识，调用 `SemanticGenerator` 产出新知识并写入存储及索引；
-- **检索加载**：`load_user_data_and_indices*` 会根据文件、索引时间戳决定是否重建向量库；
-- **维护接口**：如 `delete_user_data`、`flush_all_buffers`、统计查询等。
+### 2. MemorySystem 重构
+- 构造函数支持注入各类抽象，实现 DI（`src/core/memory_system.py:73`）。
+- 事件驱动：新 episode 通过 `EventBus` 发布 `episode_created`，由订阅者调度语义生成（`src/core/memory_system.py:242`）。
+- 缓存集中管理：语义/向量/情节缓存提取到服务层，避免散落的锁与字典逻辑（`src/services/cache.py:12`）。
+- 任务管理：`SemanticTaskManager` 统一封装后台线程池与重试（`src/services/task_manager.py:12`）。
+- 指标上报：`LoggingMetricsReporter` 记录 episode 创建、语义生成、搜索等事件（`src/services/metrics.py:12`）。
 
-### 7.3 `LightweightSearchSystem`
-简化版检索系统，直接从磁盘预加载情景/语义至内存，并仅使用 `VectorSearch`，适合只读场景。
+### 3. Facade 与开箱即用体验
+- `NemoriMemory` 提供同步/异步搜索 API，支持从环境变量加载默认配置或自定义参数（`src/api/facade.py:28`）。
+- 快速上手：`examples/quickstart.py`、`docs/quickstart.md` 展示最少代码的使用方式，并提示最小消息数需求。
+- 初始化脚本：`scripts/init_workspace.py` 能创建标准目录结构并写出配置模板。
+- 基准脚本：`scripts/benchmark.py` 可比较内存与文件后端性能。
 
-## 8. 检索子系统（`src/search`）
-- `VectorSearch`：封装 FAISS/NumPy，支持全量索引、增量更新、持久化（`.faiss` + `.npy`）与查询；
-- `BM25Search`：为情景/语义构建 BM25Okapi 索引，优先使用 spaCy 词元化，回退到正则分词，并缓存分词结果提升增量效率；
-- `UnifiedSearchEngine`：调度向量与 BM25 检索，支持单引擎模式与基于 RRF 的混合排序，必要时可启用 NOR-LIFT。
+## 流程说明
+1. **消息写入**：`NemoriMemory.add_messages` → `MemorySystem.add_messages`，触发边界检测、episode 生成。
+2. **情景记忆生成**：Episode 通过 `EpisodeRepository` 持久化，并分别更新向量/词法索引。
+3. **语义记忆流水**：Episode 发布事件 → TaskManager 提交后台语义生成 → 生成后走去重、存储、索引更新。
+4. **检索**：`search_all` 会确定索引加载并并行查询 episodic/semantic，返回统一结构。
 
-## 9. 评估与脚本
-`evaluation/locomo` 等目录中包含全流程脚本：`add.py` 写入记忆并等待语义生成，`search.py`/`evals.py` 运行检索与评分，`generate_scores.py` 汇总指标。生成的记忆与向量存放在 `evaluation/memories`。
+## 可配置后端
+- `MemoryConfig.storage_backend`：`filesystem`（默认 JSONL）或 `memory`（适合集成测试）。
+- `vector_index_backend`, `lexical_index_backend`：`chroma`/`bm25` 或 `memory`。
+- 缓存 TTL 等也可通过配置调整（`semantic_cache_ttl`, `episode_cache_ttl`）。
 
-## 10. 设计要点
-- **用户级锁**：缓冲、存储、索引均按用户加锁，易于并发扩展；
-- **缓存与重试**：性能优化器缓存高成本调用，LLM/嵌入客户端使用指数回退；
-- **鲁棒性**：情景与语义生成具备 fallback 路径，避免 LLM 故障导致数据缺失；
-- **索引一致性**：同步写盘 + 索引状态检查，必要时自动重建 FAISS；
-- **模块化**：分层设计便于替换存储或检索实现。
+## 测试体系
+- `tests/test_facade.py`：验证基础流程、内存后端以及异步搜索。
+- `tests/test_repositories_contract.py`：确保仓库抽象在不同实现下行为一致。
+- 运行方式：`pytest tests/test_facade.py tests/test_repositories_contract.py`。
 
-综上，Nemori 将原始对话转化为结构化情景记忆，并提炼为可检索的长期知识，为后续智能体提供可扩展的认知记忆底座。
+## 工具与脚本
+- `scripts/run_ci.sh`：统一编译检查与核心测试，可拓展 lint/benchmark。
+- `scripts/benchmark.py`：运行输入规模与后端的性能对比。
+- `docs/performance_log.md`：记录性能观测。
+
+## 推荐后续工作
+1. **队列/重试强化**：可接入异步任务队列（如 Celery/Arq）或更丰富的重试策略与告警。 
+2. **指标观测扩展**：替换 LoggingMetricsReporter 为 Prometheus/StatsD，提供可视化监控。 
+3. **CI 完善**：补充 lint（ruff/black）、类型检查（mypy）与基准回归对比。 
+4. **文档与迁移指南**：进一步完善 README、提供旧接口迁移说明。 
+5. **安全与多租户**：若用于生产，应引入身份校验、数据隔离等措施。
+
+---
+当前仓库已完成阶段 1–5 目标，具备模块化、可扩展、可测试和性能基准的基础。后续可围绕监控、部署与运营层面持续迭代。

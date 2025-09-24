@@ -149,7 +149,6 @@ src/
 │   ├── memory_system.py         # Main MemorySystem class
 │   ├── boundary_detector.py     # Topic segmentation (Boundary Alignment)
 │   ├── message_buffer.py        # Conversation buffering
-│   └── lightweight_search_system.py  # Optimized retrieval
 ├── models/                       # Data models
 │   ├── message.py              # Message representation
 │   ├── episode.py              # Episodic memory model
@@ -289,5 +288,4 @@ Our approach draws inspiration from:
 # Install development dependencies
 uv pip install -e ".[dev]"
 ```
-
 

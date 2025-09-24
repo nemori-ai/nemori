@@ -107,9 +107,12 @@ class LongMemEvalMemorySystemAdd:
             search_top_k_episodes=15,
             search_top_k_semantic=15,
             
+            # Vector Database Configuration
+            vector_db_type="chroma",
+            chroma_persist_directory=f"{storage_path}/chroma_db",
+            chroma_collection_prefix="nemori_longmem",
+            
             # Performance settings
-            use_faiss=True,
-            faiss_index_type="Flat",  # Changed to Flat, more accurate but may be slightly slower
             batch_size=64,
             max_workers=8,
             semantic_generation_workers=semantic_generation_workers,  # New configuration

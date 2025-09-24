@@ -14,8 +14,21 @@ import threading
 from ..config import MemoryConfig
 from ..models import Message, MessageBuffer, Episode, SemanticMemory
 from ..utils import LLMClient, EmbeddingClient, PerformanceOptimizer
+from ..domain.interfaces import (
+    EpisodeRepository,
+    SemanticRepository,
+    VectorIndex,
+    LexicalIndex,
+    BoundaryDetector as BoundaryDetectorInterface,
+    EpisodeGenerator as EpisodeGeneratorInterface,
+    SemanticGenerator as SemanticGeneratorInterface,
+)
+from ..services.providers import DefaultProviders
+from ..services.cache import PerUserCache, SemanticEmbeddingCache
+from ..services.event_bus import EventBus
+from ..services.task_manager import SemanticTaskManager
+from ..services.metrics import MetricsReporter, LoggingMetricsReporter
 from .message_buffer import MessageBufferManager
-from .boundary_detector import BoundaryDetector
 
 logger = logging.getLogger(__name__)
 
@@ -33,27 +46,98 @@ class MemorySystem:
     - Optimized concurrent processing
     """
     
-    def __init__(self, config: Optional[MemoryConfig] = None, language: str = "en"):
+    def __init__(
+        self,
+        config: Optional[MemoryConfig] = None,
+        language: str = "en",
+        llm_client: Optional[LLMClient] = None,
+        embedding_client: Optional[EmbeddingClient] = None,
+        episode_repository: Optional[EpisodeRepository] = None,
+        semantic_repository: Optional[SemanticRepository] = None,
+        vector_index: Optional[VectorIndex] = None,
+        lexical_index: Optional[LexicalIndex] = None,
+        boundary_detector: Optional[BoundaryDetectorInterface] = None,
+        episode_generator: Optional[EpisodeGeneratorInterface] = None,
+        semantic_generator: Optional[SemanticGeneratorInterface] = None,
+        metrics_reporter: Optional[MetricsReporter] = None,
+    ):
         """
         Initialize memory system
         
         Args:
             config: System configuration, uses default if not provided
             language: Language setting for BM25 tokenization
+            llm_client: Optional custom LLM client (useful for testing or alternative providers)
+            embedding_client: Optional custom embedding client
         """
         self.config = config or MemoryConfig()
         self.language = language
         
         # Initialize clients
-        self.llm_client = LLMClient(
+        providers = None
+        if any(
+            component is None
+            for component in (
+                episode_repository,
+                semantic_repository,
+                vector_index,
+                lexical_index,
+                boundary_detector,
+                episode_generator,
+                semantic_generator,
+            )
+        ):
+            providers = DefaultProviders(self.config, llm_client=llm_client, embedding_client=embedding_client)
+
+        self.llm_client = llm_client or (providers.llm_client if providers else LLMClient(
             api_key=self.config.openai_api_key,
             model=self.config.llm_model
-        )
-        
-        self.embedding_client = EmbeddingClient(
+        ))
+
+        self.embedding_client = embedding_client or (providers.embedding_client if providers else EmbeddingClient(
             api_key=self.config.openai_api_key,
             model=self.config.embedding_model
-        )
+        ))
+
+        if providers is None:
+            from ..storage.episode_storage import EpisodeStorage
+            from ..storage.semantic_storage import SemanticStorage
+            from ..search.chroma_search import ChromaSearchEngine
+            from ..search.bm25_search import BM25Search
+            from ..generation.episode_generator import EpisodeGenerator
+            from ..generation.semantic_generator import SemanticGenerator
+            from ..core.boundary_detector import BoundaryDetector
+            from ..infrastructure.repositories import EpisodeStorageRepository, SemanticStorageRepository
+            from ..infrastructure.indices import Bm25Index, ChromaVectorIndex
+
+            providers_episode_repo = EpisodeStorageRepository(EpisodeStorage(self.config.storage_path))
+            providers_semantic_repo = SemanticStorageRepository(SemanticStorage(self.config.storage_path))
+            providers_vector_index = ChromaVectorIndex(ChromaSearchEngine(self.embedding_client, self.config))
+            providers_lexical_index = Bm25Index(BM25Search(language=self.language))
+            providers_boundary = BoundaryDetector(self.llm_client, self.config)
+            providers_episode_gen = EpisodeGenerator(self.llm_client, self.config)
+            providers_semantic_gen = SemanticGenerator(
+                self.llm_client,
+                self.embedding_client,
+                self.config,
+                vector_search=providers_vector_index._backend,
+            )
+        else:
+            providers_episode_repo = providers.episode_repository()
+            providers_semantic_repo = providers.semantic_repository()
+            providers_vector_index = providers.vector_index()
+            providers_lexical_index = providers.lexical_index()
+            providers_boundary = providers.boundary_detector()
+            providers_episode_gen = providers.episode_generator()
+            providers_semantic_gen = providers.semantic_generator()
+
+        self._episode_repository = episode_repository or providers_episode_repo
+        self._semantic_repository = semantic_repository or providers_semantic_repo
+        self._vector_index = vector_index or providers_vector_index
+        self._lexical_index = lexical_index or providers_lexical_index
+        self._boundary_detector = boundary_detector or providers_boundary
+        self._episode_generator = episode_generator or providers_episode_gen
+        self._semantic_generator = semantic_generator or providers_semantic_gen
         
         # Initialize performance optimizer (increased shard count)
         self.performance_optimizer = PerformanceOptimizer(
@@ -62,19 +146,15 @@ class MemorySystem:
             max_workers=self.config.max_workers,
             num_cache_shards=40  # Increase shard count to reduce contention
         )
+
+        # Public handles for downstream usage
+        self.boundary_detector = self._boundary_detector
         
         # Initialize core components
         self.buffer_manager = MessageBufferManager(self.config)
-        self.boundary_detector = BoundaryDetector(
-            llm_client=self.llm_client,
-            config=self.config
-        )
-        
         # Lazy initialization of storage and search components (avoid circular imports)
         self._storage = None
         self._search_engine = None
-        self._episode_generator = None
-        self._semantic_generator = None
         
         # User-level processing locks (avoid concurrent processing conflicts for same user)
         self._user_processing_locks: Dict[str, threading.RLock] = {}
@@ -92,13 +172,30 @@ class MemorySystem:
         self.stats_lock = threading.Lock()
         
         # Semantic memory async generation queue
-        semantic_workers = getattr(self.config, 'semantic_generation_workers', 8)  # Increase default thread count
+        semantic_workers = getattr(self.config, 'semantic_generation_workers', 20)  # 提高默认线程数以匹配旧版本性能
         self._semantic_generation_executor = ThreadPoolExecutor(
             max_workers=semantic_workers,
             thread_name_prefix="semantic_gen"
         )
         self._semantic_generation_futures = {}  # Track async tasks
         self._semantic_futures_lock = threading.Lock()
+        self.semantic_task_manager = SemanticTaskManager(self._semantic_generation_executor, max_retries=1)
+        self.metrics_reporter = metrics_reporter or LoggingMetricsReporter()
+        
+        # 添加语义记忆缓存，避免重复加载
+        self._semantic_cache_ttl = getattr(self.config, "semantic_cache_ttl", 600)
+        self.semantic_memory_cache: PerUserCache[List[SemanticMemory]] = PerUserCache(
+            ttl_seconds=self._semantic_cache_ttl
+        )
+        self.semantic_embedding_cache = SemanticEmbeddingCache()
+
+        self._episode_cache_ttl = getattr(self.config, "episode_cache_ttl", 600)
+        self.episode_cache: PerUserCache[List[Episode]] = PerUserCache(
+            ttl_seconds=self._episode_cache_ttl
+        )
+
+        self.event_bus = EventBus()
+        self.event_bus.subscribe("episode_created", self._handle_episode_created_event)
         
         logger.info(f"Memory System initialized with optimized concurrency: {self.config.to_dict()}")
     
@@ -127,10 +224,11 @@ class MemorySystem:
     def storage(self):
         """Lazy initialization of storage components"""
         if self._storage is None:
-            from ..storage import EpisodeStorage, SemanticStorage
+            episode_backend = getattr(self._episode_repository, "_storage", self._episode_repository)
+            semantic_backend = getattr(self._semantic_repository, "_storage", self._semantic_repository)
             self._storage = {
-                "episode": EpisodeStorage(self.config.storage_path),
-                "semantic": SemanticStorage(self.config.storage_path)
+                "episode": episode_backend,
+                "semantic": semantic_backend
             }
         return self._storage
     
@@ -145,6 +243,21 @@ class MemorySystem:
                 language=self.language
             )
         return self._search_engine
+
+    # ------------------------------------------------------------------
+    # Event handling
+    # ------------------------------------------------------------------
+    def _handle_episode_created_event(self, event_name: str, payload: Dict[str, Any]) -> None:
+        if not self.config.enable_semantic_memory:
+            return
+        episode = payload.get("episode")
+        owner_id = payload.get("user_id")
+        if not episode or not owner_id:
+            return
+        try:
+            self._schedule_semantic_generation(owner_id, episode)
+        except Exception as exc:
+            logger.error(f"Failed to schedule semantic generation for user {owner_id}: {exc}")
     
     def load_user_data_and_indices(self, owner_id: str):
         """
@@ -162,12 +275,12 @@ class MemorySystem:
                     return
                 
                 # Load episodic memories
-                episodes = self.storage["episode"].get_user_episodes(owner_id)
+                episodes = self._episode_repository.list_by_user(owner_id)
                 
                 # Load semantic memories
                 semantic_memories = []
                 if self.config.enable_semantic_memory:
-                    semantic_memories = self.storage["semantic"].list_user_items(owner_id)
+                    semantic_memories = self._semantic_repository.list_by_user(owner_id)
                 
                 # Check if forced index rebuild is needed（兼容性处理）
                 force_rebuild = self._should_force_rebuild_indices(owner_id, episodes, semantic_memories)
@@ -202,7 +315,7 @@ class MemorySystem:
                             )
                         else:                          
                             vector_future = executor.submit(
-                                self.search_engine.vector_search.load_user_indices,
+                                self.search_engine.chroma_search.load_user_indices,
                                 owner_id, episodes, semantic_memories
                             )
                         
@@ -237,12 +350,12 @@ class MemorySystem:
                     return
                 
                 # Load episodic memories
-                episodes = self.storage["episode"].get_user_episodes(owner_id)
+                episodes = self._episode_repository.list_by_user(owner_id)
                 
                 # Load semantic memories
                 semantic_memories = []
                 if self.config.enable_semantic_memory:
-                    semantic_memories = self.storage["semantic"].list_user_items(owner_id)
+                    semantic_memories = self._semantic_repository.list_by_user(owner_id)
                 
                 # Check if forced index rebuild is needed
                 force_rebuild = self._should_force_rebuild_indices(owner_id, episodes, semantic_memories)
@@ -276,7 +389,7 @@ class MemorySystem:
             if force_rebuild:
                 self._force_rebuild_vector_indices(owner_id, episodes, semantic_memories)
             else:
-                self.search_engine.vector_search.load_user_indices(owner_id, episodes, semantic_memories)
+                self.search_engine.chroma_search.load_user_indices(owner_id, episodes, semantic_memories)
             
             logger.debug(f"Loaded vector indices for user {owner_id}")
             
@@ -369,17 +482,17 @@ class MemorySystem:
                                 logger.warning(f"Failed to remove old vector index file {file_path}: {e}")
             
             if episodes:
-                self.search_engine.vector_search.index_episodes(owner_id, episodes)
+                self.search_engine.chroma_search.index_episodes(owner_id, episodes)
             
             if semantic_memories:
-                self.search_engine.vector_search.index_semantic_memories(owner_id, semantic_memories)
+                self.search_engine.chroma_search.index_semantic_memories(owner_id, semantic_memories)
             
             logger.info(f"Successfully rebuilt vector indices for user {owner_id}")
             
         except Exception as e:
             logger.error(f"Error rebuilding vector indices for user {owner_id}: {e}")
             # 回退到正常加载
-            self.search_engine.vector_search.load_user_indices(owner_id, episodes, semantic_memories)
+            self.search_engine.chroma_search.load_user_indices(owner_id, episodes, semantic_memories)
     
     @property
     def episode_generator(self):
@@ -401,7 +514,7 @@ class MemorySystem:
                 llm_client=self.llm_client,
                 embedding_client=self.embedding_client,
                 config=self.config,
-                vector_search=self.search_engine.vector_search  # 传递向量搜索引擎实例
+                vector_search=self.search_engine.chroma_search  # 传递向量搜索引擎实例
             )
         return self._semantic_generator
     
@@ -532,21 +645,31 @@ class MemorySystem:
                 if episodes_to_create:
                     created_episodes = self._batch_create_episodes(owner_id, episodes_to_create)
                     result["episodes_created"] = created_episodes
-                
-                # Check if semantic memory generation is needed (async processing)
-                if self.config.enable_semantic_memory and result["episodes_created"]:
-                    # Trigger semantic memory generation for all created episodes
                     semantic_tasks_scheduled = 0
-                    for episode_info in result["episodes_created"]:
-                        if "episode_object" in episode_info:
-                            # Asynchronous generation of semantic memories
-                            self._schedule_semantic_generation(owner_id, episode_info["episode_object"])
-                            semantic_tasks_scheduled += 1
-                    
-                    if semantic_tasks_scheduled > 0:
+                    for episode_info in created_episodes:
+                        episode_obj = episode_info.get("episode_object")
+                        if episode_obj is None:
+                            continue
+                        self.metrics_reporter.report(
+                            "episode_created",
+                            {
+                                "user_id": owner_id,
+                                "episode_id": episode_obj.episode_id,
+                                "message_count": episode_obj.message_count,
+                            },
+                        )
+                        self.event_bus.publish(
+                            "episode_created",
+                            {"user_id": owner_id, "episode": episode_obj},
+                        )
+                        semantic_tasks_scheduled += 1
+
+                    if semantic_tasks_scheduled:
                         result["semantic_generation_scheduled"] = True
                         result["semantic_tasks_scheduled"] = semantic_tasks_scheduled
-                        logger.info(f"Scheduled {semantic_tasks_scheduled} async semantic memory generation tasks for user {owner_id}")
+                        logger.info(
+                            f"Dispatched {semantic_tasks_scheduled} episode_created events for user {owner_id}"
+                        )
                 
                 # Update final buffer size
                 result["buffer_size_after"] = buffer.size()
@@ -736,6 +859,16 @@ class MemorySystem:
             search_time = time.time() - start_time
             logger.info(f"Search_all completed for user {user_id} in {search_time:.2f}s, "
                        f"found {len(episode_results)} episodes and {len(semantic_results)} semantic memories")
+            self.metrics_reporter.report(
+                "search",
+                {
+                    "user_id": user_id,
+                    "query": query,
+                    "episodes": len(episode_results),
+                    "semantic": len(semantic_results),
+                    "duration": search_time,
+                },
+            )
             
             return {
                 "episodic": episode_results,
@@ -753,7 +886,7 @@ class MemorySystem:
         elif search_method == "bm25":
             return self.search_engine.bm25_search.search_episodes(user_id, query, top_k)
         elif search_method == "vector":
-            return self.search_engine.vector_search.search_episodes(user_id, query, top_k)
+            return self.search_engine.chroma_search.search_episodes(user_id, query, top_k)
         elif search_method == "vector_norlift":
             return self.search_engine.search_episodes(user_id, query, top_k, "vector_norlift")
         else:
@@ -766,10 +899,10 @@ class MemorySystem:
         elif search_method == "bm25":
             return self.search_engine.bm25_search.search_semantic_memories(user_id, query, top_k)
         elif search_method == "vector":
-            return self.search_engine.vector_search.search_semantic_memories(user_id, query, top_k)
+            return self.search_engine.chroma_search.search_semantic_memories(user_id, query, top_k)
         elif search_method == "vector_norlift":
             # NOR-LIFT 仅用于情景级排序，这里回退为向量检索
-            return self.search_engine.vector_search.search_semantic_memories(user_id, query, top_k)
+            return self.search_engine.chroma_search.search_semantic_memories(user_id, query, top_k)
         else:
             raise ValueError(f"Unknown search method: {search_method}")
     
@@ -796,12 +929,24 @@ class MemorySystem:
                 episode_info = self._create_episode_from_messages(
                     owner_id, messages, "Force episode creation"
                 )
-                
+
                 # If episode creation is successful and semantic memory is enabled, schedule async generation
                 if episode_info and self.config.enable_semantic_memory and "episode_object" in episode_info:
-                    self._schedule_semantic_generation(owner_id, episode_info["episode_object"])
+                    episode_obj = episode_info["episode_object"]
+                    self.metrics_reporter.report(
+                        "episode_created",
+                        {
+                            "user_id": owner_id,
+                            "episode_id": episode_obj.episode_id,
+                            "message_count": episode_obj.message_count,
+                        },
+                    )
+                    self.event_bus.publish(
+                        "episode_created",
+                        {"user_id": owner_id, "episode": episode_obj},
+                    )
                     episode_info["semantic_generation_scheduled"] = True
-                    logger.info(f"Scheduled async semantic memory generation for user {owner_id} (force creation)")
+                    logger.info(f"Published episode_created event for user {owner_id} (force creation)")
                 
                 return episode_info
                 
@@ -953,10 +1098,19 @@ class MemorySystem:
             )
             
             # Save episode
-            episode_id = self.storage["episode"].save_episode(episode)
+            episode_id = self._episode_repository.save(episode)
             
             # Index episode (for search, using incremental update)
+            self._lexical_index.add_episode(owner_id, episode)
+            self._vector_index.add_episode(owner_id, episode)
             self.search_engine.add_episode(owner_id, episode)
+            
+            # 更新episodes缓存
+            cached = self.episode_cache.get(owner_id)
+            if cached is not None:
+                cached = cached + [episode]
+                self.episode_cache.put(owner_id, cached)
+                logger.debug(f"Updated episodes cache for user {owner_id}")
             
             logger.info(f"Created episode {episode_id} for user {owner_id}")
             
@@ -1015,10 +1169,10 @@ class MemorySystem:
         task_id = f"{owner_id}_{new_episode.episode_id}"
         
         # Submit async task
-        future = self._semantic_generation_executor.submit(
+        future = self.semantic_task_manager.submit(
             self._async_generate_semantic_memories,
             owner_id,
-            new_episode
+            new_episode,
         )
         
         # Record task
@@ -1050,8 +1204,15 @@ class MemorySystem:
             logger.info(f"Starting async semantic generation for user {owner_id}, episode {new_episode.episode_id}")
             start_time = time.time()
             
-            # Get all user episodes
-            all_episodes = self.storage["episode"].get_user_episodes(owner_id)
+            # Get all user episodes (使用缓存避免重复磁盘I/O)
+            cached_episodes = self.episode_cache.get(owner_id)
+            if cached_episodes is not None:
+                all_episodes = cached_episodes
+                logger.debug(f"Episodes cache hit for user {owner_id}")
+            else:
+                all_episodes = self._episode_repository.list_by_user(owner_id)
+                self.episode_cache.put(owner_id, all_episodes)
+                logger.debug(f"Episodes cache miss for user {owner_id}, loaded {len(all_episodes)} episodes from storage")
             
             # Exclude newly created episode
             existing_episodes = [ep for ep in all_episodes if ep.episode_id != new_episode.episode_id]
@@ -1059,9 +1220,58 @@ class MemorySystem:
             # If prediction-correction mode is enabled, get existing semantic memories
             existing_semantic_memories = None
             if self.config.enable_prediction_correction:
-                existing_semantic_memories = self.storage["semantic"].list_user_items(owner_id)
-                logger.debug(f"Loaded {len(existing_semantic_memories)} existing semantic memories for prediction-correction")
+                # 使用缓存的语义记忆
+                cache_key = f"semantic_{owner_id}"
+                cache_hit = False
+                
+                # 使用用户级别的锁，不同用户可以并行
+                semantic_lock = self.semantic_embedding_cache.get_user_lock(owner_id)
+                cached_semantics = self.semantic_memory_cache.get(owner_id)
+                if cached_semantics is not None:
+                    existing_semantic_memories = cached_semantics
+                    cache_hit = True
+                    logger.debug(f"Cache hit: Loaded {len(existing_semantic_memories)} semantic memories from cache")
+                
+                if not cache_hit:
+                    # 缓存未命中，从存储加载
+                    existing_semantic_memories = self._semantic_repository.list_by_user(owner_id)
+                    logger.debug(f"Cache miss: Loaded {len(existing_semantic_memories)} semantic memories from storage")
+                    
+                    # 更新缓存
+                    self.semantic_memory_cache.put(owner_id, existing_semantic_memories)
             
+            if existing_semantic_memories is None:
+                existing_semantic_memories = []
+
+            # 构建语义向量缓存，避免重复读取与计算
+            existing_embeddings: Dict[str, List[float]] = self.semantic_embedding_cache.list_user_embeddings(owner_id)
+
+            if existing_semantic_memories:
+                # 尝试从缓存或Chroma中批量获取已有语义的向量
+                missing_ids = {mem.memory_id for mem in existing_semantic_memories if mem.memory_id not in existing_embeddings}
+
+                if missing_ids:
+                    chroma_embeddings = self.search_engine.chroma_search.get_semantic_embeddings(owner_id, list(missing_ids))
+                    if chroma_embeddings:
+                        for mem_id, embedding in chroma_embeddings.items():
+                            if embedding is None:
+                                continue
+                            embedding_list = list(embedding)
+                            self.semantic_embedding_cache.set(owner_id, mem_id, embedding_list)
+                            existing_embeddings[mem_id] = embedding_list
+                            missing_ids.discard(mem_id)
+
+                if missing_ids:
+                    # Fallback: 对仍缺失的语义记忆重新计算向量，一次性批量完成
+                    remaining_pairs = [(mem.memory_id, mem.content) for mem in existing_semantic_memories if mem.memory_id in missing_ids]
+                    if remaining_pairs:
+                        contents = [content for _, content in remaining_pairs]
+                        embed_resp = self.embedding_client.embed_texts(contents)
+                        for (mem_id, _), embedding in zip(remaining_pairs, embed_resp.embeddings):
+                            self.semantic_embedding_cache.set(owner_id, mem_id, embedding)
+                            existing_embeddings[mem_id] = embedding
+                            missing_ids.discard(mem_id)
+
             # Generate semantic memories
             semantic_memories = self.semantic_generator.check_and_generate_semantic_memories(
                 user_id=owner_id,
@@ -1073,24 +1283,43 @@ class MemorySystem:
             # Save semantic memories
             saved_memories = []
             for memory in semantic_memories:
+                # 预先计算新语义的向量，避免重复嵌入
+                new_embedding = self.embedding_client.embed_text(memory.content)
+                
                 # Check for duplicates
-                if not self._is_duplicate_semantic_memory(owner_id, memory):
-                    memory_id = self.storage["semantic"].save_semantic_memory(memory)
-                    
-                    # Exception handling when adding to search index
-                    try:
-                        self.search_engine.add_semantic_memory(owner_id, memory)
-                    except RuntimeError as e:
-                        if "cannot schedule new futures" in str(e):
-                            logger.warning(f"Search engine executor already shut down, skipping index update for memory {memory_id}")
-                        else:
-                            raise e
-                    
-                    saved_memories.append({
-                        "memory_id": memory_id,
-                        "knowledge_type": memory.knowledge_type,
-                        "content": memory.content
-                    })
+                known_embedding_keys = set(existing_embeddings.keys())
+                if self._is_duplicate_semantic_memory(
+                    owner_id,
+                    memory,
+                    existing_memories=existing_semantic_memories,
+                    embedding_cache=existing_embeddings,
+                    new_embedding=new_embedding
+                ):
+                    continue
+
+                memory_id = self._semantic_repository.save(memory)
+                
+                # Exception handling when adding to search index
+                try:
+                    self.search_engine.add_semantic_memory(owner_id, memory, embedding=new_embedding)
+                except Exception as e:
+                    # 捕获所有异常，不让单个索引失败影响整个语义记忆生成
+                    logger.warning(f"Failed to add semantic memory to search index (continuing): {e}")
+                    # 不重新抛出异常，让任务继续完成
+                
+                saved_memories.append({
+                    "memory_id": memory_id,
+                    "knowledge_type": memory.knowledge_type,
+                    "content": memory.content
+                })
+
+                # 更新缓存中的语义记忆与向量
+                self.semantic_memory_cache.put(owner_id, existing_semantic_memories + [memory])
+                self.semantic_embedding_cache.set(owner_id, memory.memory_id, new_embedding)
+                
+                # 保证后续语义去重能感知到新记忆
+                existing_semantic_memories.append(memory)
+                existing_embeddings[memory.memory_id] = new_embedding
             
             generation_time = time.time() - start_time
             
@@ -1100,6 +1329,15 @@ class MemorySystem:
             
             logger.info(f"Async semantic generation completed for user {owner_id}: "
                        f"{len(saved_memories)} memories generated in {generation_time:.2f}s")
+            self.metrics_reporter.report(
+                "semantic_generation",
+                {
+                    "user_id": owner_id,
+                    "episode_id": new_episode.episode_id,
+                    "generated": len(saved_memories),
+                    "duration": generation_time,
+                },
+            )
             
             return saved_memories
             
@@ -1117,13 +1355,17 @@ class MemorySystem:
         """
         try:
             result = future.result()
-            logger.debug(f"Semantic generation task {task_id} completed with {len(result)} memories")
+            logger.info(f"Semantic generation task {task_id} completed successfully with {len(result)} memories")
         except Exception as e:
             logger.error(f"Semantic generation task {task_id} failed: {e}")
+            # 失败的任务也算作"完成"，避免无限等待
         finally:
-            # Clean up completed tasks
+            # 无论成功或失败，都清理任务记录
             with self._semantic_futures_lock:
                 if task_id in self._semantic_generation_futures:
+                    task_info = self._semantic_generation_futures[task_id]
+                    execution_time = time.time() - task_info["started_at"]
+                    logger.debug(f"Cleaning up semantic generation task {task_id} after {execution_time:.2f}s")
                     del self._semantic_generation_futures[task_id]
     
     def get_semantic_generation_status(self, owner_id: str = None) -> Dict[str, Any]:
@@ -1166,8 +1408,15 @@ class MemorySystem:
                 
                 all_tasks.append(status)
             
+            # 只统计真正活跃的任务（运行中或等待中，不包括已完成或失败的）
+            active_count = 0
+            for task in all_tasks:
+                if task["status"] in ["running", "pending"]:
+                    active_count += 1
+            
             return {
-                "active_tasks": len(all_tasks),
+                "active_tasks": active_count,  # 只包含真正活跃的任务
+                "total_tasks": len(all_tasks),
                 "tasks": all_tasks
             }
     
@@ -1183,88 +1432,171 @@ class MemorySystem:
             Whether all tasks were successfully completed
         """
         start_time = time.time()
+        last_log_time = start_time
         
         while time.time() - start_time < timeout:
-            # Get tasks for the specific user
-            user_tasks = []
-            with self._semantic_futures_lock:
-                for task_id, task_info in self._semantic_generation_futures.items():
-                    if task_info["owner_id"] == owner_id:
-                        user_tasks.append(task_info["future"])
+            # Get status for the specific user
+            status = self.get_semantic_generation_status(owner_id)
+            active_tasks = status.get("active_tasks", 0)
             
-            # If there are no tasks, return immediately
-            if not user_tasks:
+            # If there are no active tasks, we're done
+            if active_tasks == 0:
+                logger.debug(f"All semantic generation tasks completed for user {owner_id}")
                 return True
             
-            # Check if all tasks are completed
-            all_done = all(future.done() for future in user_tasks)
-            if all_done:
-                # Check if all tasks were successful
-                all_success = True
-                for future in user_tasks:
-                    try:
-                        future.result(timeout=0)
-                    except Exception:
-                        all_success = False
-                return all_success
+            # 每5秒打印一次进度日志
+            current_time = time.time()
+            if current_time - last_log_time > 5.0:
+                tasks = status.get("tasks", [])
+                running_tasks = [t for t in tasks if t["status"] == "running"]
+                failed_tasks = [t for t in tasks if t["status"] == "failed"]
+                
+                logger.debug(f"Waiting for user {owner_id}: {active_tasks} active, {len(running_tasks)} running, {len(failed_tasks)} failed")
+                last_log_time = current_time
             
             # 短暂等待
-            time.sleep(0.1)
+            time.sleep(0.5)
         
-        logger.warning(f"Timeout waiting for semantic generation tasks for user {owner_id}")
+        # 超时处理：强制清理挂起的任务
+        logger.warning(f"Timeout waiting for semantic generation tasks for user {owner_id}, forcing cleanup...")
+        
+        # 获取并清理超时的任务
+        with self._semantic_futures_lock:
+            timeout_tasks = []
+            for task_id, task_info in list(self._semantic_generation_futures.items()):
+                if task_info["owner_id"] == owner_id:
+                    future = task_info["future"]
+                    if not future.done():
+                        # 尝试取消超时的任务
+                        try:
+                            future.cancel()
+                            logger.warning(f"Cancelled timeout task {task_id}")
+                        except Exception:
+                            pass
+                    timeout_tasks.append(task_id)
+            
+            # 清理超时任务记录
+            for task_id in timeout_tasks:
+                if task_id in self._semantic_generation_futures:
+                    del self._semantic_generation_futures[task_id]
+                    logger.debug(f"Cleaned up timeout task {task_id}")
+        
         return False
     
-    def _is_duplicate_semantic_memory(self, owner_id: str, memory: SemanticMemory) -> bool:
+    def force_complete_semantic_generation(self, owner_id: str = None) -> Dict[str, Any]:
+        """
+        强制完成挂起的语义记忆生成任务
+        
+        Args:
+            owner_id: 用户标识符，如果提供则只处理该用户的任务
+            
+        Returns:
+            完成状态信息
+        """
+        logger.info(f"强制完成语义记忆生成任务，用户: {owner_id or 'all'}")
+        
+        completed_tasks = []
+        cancelled_tasks = []
+        
+        with self._semantic_futures_lock:
+            tasks_to_process = []
+            
+            for task_id, task_info in list(self._semantic_generation_futures.items()):
+                if owner_id and task_info["owner_id"] != owner_id:
+                    continue
+                
+                tasks_to_process.append((task_id, task_info))
+            
+            for task_id, task_info in tasks_to_process:
+                future = task_info["future"]
+                
+                if future.done():
+                    # 任务已完成，清理记录
+                    try:
+                        result = future.result(timeout=0)
+                        completed_tasks.append({
+                            "task_id": task_id,
+                            "user_id": task_info["owner_id"],
+                            "status": "completed",
+                            "result_count": len(result) if isinstance(result, list) else 0
+                        })
+                    except Exception as e:
+                        completed_tasks.append({
+                            "task_id": task_id,
+                            "user_id": task_info["owner_id"],
+                            "status": "failed",
+                            "error": str(e)
+                        })
+                    
+                    del self._semantic_generation_futures[task_id]
+                
+                else:
+                    # 任务未完成，尝试取消
+                    try:
+                        cancelled = future.cancel()
+                        cancelled_tasks.append({
+                            "task_id": task_id,
+                            "user_id": task_info["owner_id"],
+                            "cancelled": cancelled,
+                            "running_time": time.time() - task_info["started_at"]
+                        })
+                        
+                        del self._semantic_generation_futures[task_id]
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to cancel task {task_id}: {e}")
+        
+        result = {
+            "completed_tasks": completed_tasks,
+            "cancelled_tasks": cancelled_tasks,
+            "total_processed": len(completed_tasks) + len(cancelled_tasks)
+        }
+        
+        logger.info(f"强制完成结果: {len(completed_tasks)} 已完成, {len(cancelled_tasks)} 已取消")
+        
+        return result
+    
+    def _is_duplicate_semantic_memory(
+        self,
+        owner_id: str,
+        memory: SemanticMemory,
+        existing_memories: Optional[List[SemanticMemory]] = None,
+        embedding_cache: Optional[Dict[str, List[float]]] = None,
+        new_embedding: Optional[List[float]] = None
+    ) -> bool:
         """
         Check if semantic memory is duplicate (using existing embedding vector, avoiding duplicate API calls)
         
         Args:
             owner_id: User identifier
             memory: Semantic memory
+            existing_memories: 已加载的语义记忆集合，若提供则不再重复读取磁盘
+            embedding_cache: 语义向量缓存，避免重复嵌入
+            new_embedding: 新语义的嵌入向量，避免重复计算
             
         Returns:
             Whether the semantic memory is duplicate
         """
         try:
-            # Check if there are existing semantic memories and embedding vectors
-            if (owner_id not in self.search_engine.vector_search.semantic_embeddings or 
-                owner_id not in self.search_engine.vector_search.semantic_data):
-                return False
-            
-            existing_embeddings = self.search_engine.vector_search.semantic_embeddings[owner_id]
-            existing_memories = self.search_engine.vector_search.semantic_data[owner_id]
-            
-            if len(existing_memories) == 0:
-                return False
-            
-            # Generate embedding for new memory (1 API call)
-            memory_embedding = self.performance_optimizer.cached_call(
-                self.embedding_client.embed_text,
-                f"embed_{hash(memory.content)}",
-                memory.content
+            # ChromaDB不暴露内部embeddings，直接使用fallback方法
+            return self._is_duplicate_semantic_memory_fallback(
+                owner_id,
+                memory,
+                existing_memories=existing_memories,
+                embedding_cache=embedding_cache,
+                new_embedding=new_embedding
             )
-            
-            # Compare with existing embeddings (no additional API calls)
-            memory_embedding_np = np.array(memory_embedding)
-            
-            for i, existing in enumerate(existing_memories):
-                if existing.knowledge_type == memory.knowledge_type:
-                    # Use stored embedding vector directly, no need to regenerate
-                    existing_embedding_np = existing_embeddings[i]
-                    
-                    # Calculate cosine similarity
-                    similarity = self._cosine_similarity_np(memory_embedding_np, existing_embedding_np)
-                    
-                    if similarity > self.config.semantic_similarity_threshold:
-                        logger.debug(f"Found duplicate semantic memory (similarity: {similarity:.3f})")
-                        return True
-            
-            return False
-            
+        
         except Exception as e:
             logger.error(f"Error checking semantic memory duplication: {e}")
             # Fall back to traditional method (for compatibility)
-            return self._is_duplicate_semantic_memory_fallback(owner_id, memory)
+            return self._is_duplicate_semantic_memory_fallback(
+                owner_id,
+                memory,
+                existing_memories=existing_memories,
+                embedding_cache=embedding_cache,
+                new_embedding=new_embedding
+            )
     
     def _cosine_similarity_np(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
         """
@@ -1291,38 +1623,58 @@ class MemorySystem:
             logger.error(f"Error calculating cosine similarity: {e}")
             return 0.0
     
-    def _is_duplicate_semantic_memory_fallback(self, owner_id: str, memory: SemanticMemory) -> bool:
+    def _is_duplicate_semantic_memory_fallback(
+        self,
+        owner_id: str,
+        memory: SemanticMemory,
+        existing_memories: Optional[List[SemanticMemory]] = None,
+        embedding_cache: Optional[Dict[str, List[float]]] = None,
+        new_embedding: Optional[List[float]] = None
+    ) -> bool:
         """
         Fallback method for duplicate detection (for compatibility)
         
         Args:
             owner_id: User identifier
             memory: 语义记忆
+            existing_memories: 可复用的语义记忆列表
+            embedding_cache: 已缓存的语义向量
+            new_embedding: 新语义向量
             
         Returns:
             Whether the semantic memory is duplicate
         """
         try:
             # Use vector similarity to check for duplicates
-            existing_memories = self.storage["semantic"].list_user_items(owner_id)
+            if existing_memories is None:
+                existing_memories = self._semantic_repository.list_by_user(owner_id)
             
             if not existing_memories:
                 return False
             
+            embeddings_lookup = embedding_cache if embedding_cache is not None else {}
+
             # Calculate similarity with existing memories (using cache)
-            memory_embedding = self.performance_optimizer.cached_call(
-                self.embedding_client.embed_text,
-                f"embed_{hash(memory.content)}",
-                memory.content
-            )
+            if new_embedding is not None:
+                memory_embedding = new_embedding
+            else:
+                memory_embedding = self.performance_optimizer.cached_call(
+                    self.embedding_client.embed_text,
+                    f"embed_{hash(memory.content)}",
+                    memory.content
+                )
             
             for existing in existing_memories:
                 if existing.knowledge_type == memory.knowledge_type:
-                    existing_embedding = self.performance_optimizer.cached_call(
-                        self.embedding_client.embed_text,
-                        f"embed_{hash(existing.content)}",
-                        existing.content
-                    )
+                    existing_embedding = embeddings_lookup.get(existing.memory_id)
+                    if existing_embedding is None:
+                        existing_embedding = self.performance_optimizer.cached_call(
+                            self.embedding_client.embed_text,
+                            f"embed_{hash(existing.content)}",
+                            existing.content
+                        )
+                        if embedding_cache is not None:
+                            embeddings_lookup[existing.memory_id] = existing_embedding
                     
                     similarity = self.embedding_client.cosine_similarity(
                         memory_embedding, existing_embedding
@@ -1392,22 +1744,12 @@ class MemorySystem:
                 if owner_id in self.search_engine.bm25_search.semantic_tokenized_texts:
                     del self.search_engine.bm25_search.semantic_tokenized_texts[owner_id]
             
-            if hasattr(self.search_engine, 'vector_search'):
-                # Clear vector search cache
-                if owner_id in self.search_engine.vector_search.episode_data:
-                    del self.search_engine.vector_search.episode_data[owner_id]
-                if owner_id in self.search_engine.vector_search.episode_indices:
-                    del self.search_engine.vector_search.episode_indices[owner_id]
-                if owner_id in self.search_engine.vector_search.episode_embeddings:
-                    del self.search_engine.vector_search.episode_embeddings[owner_id]
-                    
-                # Clear semantic memory vector cache
-                if owner_id in self.search_engine.vector_search.semantic_data:
-                    del self.search_engine.vector_search.semantic_data[owner_id]
-                if owner_id in self.search_engine.vector_search.semantic_indices:
-                    del self.search_engine.vector_search.semantic_indices[owner_id]
-                if owner_id in self.search_engine.vector_search.semantic_embeddings:
-                    del self.search_engine.vector_search.semantic_embeddings[owner_id]
+            if hasattr(self.search_engine, 'chroma_search'):
+                # ChromaDB cache clearing is handled by clear_user_index
+                try:
+                    self.search_engine.chroma_search.clear_user_index(owner_id)
+                except Exception as e:
+                    logger.warning(f"Error clearing ChromaDB cache for {owner_id}: {e}")
             
             logger.info(f"Successfully cleared all caches for user {owner_id}")
             return True
