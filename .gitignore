@@ -193,6 +193,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+web-react/
 
 # 系统文件
 .DS_Store
