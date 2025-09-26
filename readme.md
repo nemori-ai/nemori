@@ -1,291 +1,222 @@
-# 🧠 Nemori: Self-Organizing Agent Memory Inspired by Cognitive Science
-
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-
-> **Nemori** addresses the fundamental challenge of Large Language Model (LLM) amnesia by introducing a novel self-organizing memory architecture inspired by human cognitive principles. Moving beyond passive storage, Nemori enables autonomous agents to actively learn and evolve their knowledge through principled memory formation.
-
-## 🎯 Core Innovation
-
-Nemori implements a **dual-pillar cognitive framework** that transforms raw conversational streams into structured, queryable memory:
-
-### 🔄 Two-Step Alignment Principle
-- **Boundary Alignment**: Autonomously segments conversations into semantically coherent episodes using Event Segmentation Theory
-- **Representation Alignment**: Transforms raw segments into rich episodic narratives inspired by human memory formation
-
-### 🧠 Predict-Calibrate Principle  
-- **Proactive Learning**: Generates predictions about new episodes based on existing knowledge
-- **Knowledge Distillation**: Learns from prediction gaps using Free-energy Principle insights
-- **Adaptive Evolution**: Continuously updates semantic knowledge base through error-driven learning
-
-## 🚀 Quick Start
-
-### Environment Setup with uv
-
-We use [uv](https://github.com/astral-sh/uv) for fast, reliable Python package management.
-
-#### 1. Install uv (macOS)
-
-```bash
-# Using Homebrew
-brew install uv
-
-# Or using curl
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-#### 2. Create and Activate Environment
-
-```bash
-# Clone the repository
-git clone https://github.com/anonymous/nemori-code.git
-cd nemori-code
-
-# Create virtual environment and install dependencies
-uv venv
-source .venv/bin/activate  # On macOS/Linux
-# .venv\Scripts\activate   # On Windows
-
-# Install all dependencies
-uv pip install -e .
-
-# Install optional dependencies for development
-uv pip install -e ".[dev,evaluation]"
-
-# For GPU support (optional)
-uv pip install -e ".[gpu]"
-```
-
-#### 3. Environment Variables
-
-Create a `.env` file in the project root with your API keys:
-
-```bash
-# Required for LLM operations
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Optional: For advanced features
-ANTHROPIC_API_KEY=your_anthropic_key_here
-```
-
-**Note**: You need to manually add these environment variables as shown above. The system doesn't have write access to `.env` files for security reasons.
-
-### Basic Usage
-
-```python
-from src import MemorySystem, MemoryConfig
-from src.models import Message
-
-# Initialize Nemori memory system
-config = MemoryConfig(
-    llm_model="gpt-4o-mini",
-    enable_semantic_memory=True,
-    enable_prediction_correction=True
-)
-
-memory_system = MemorySystem(config)
-
-# Add conversational memory
-messages = [
-    Message(role="user", content="I love hiking in the mountains"),
-    Message(role="assistant", content="That sounds wonderful! What's your favorite trail?"),
-    Message(role="user", content="I really enjoy the Pacific Crest Trail")
-]
-
-# System automatically creates episodes and semantic knowledge
-result = memory_system.add_messages(
-    owner_id="user123",
-    messages=messages
-)
-
-# Retrieve relevant memories
-memories = memory_system.search(
-    owner_id="user123", 
-    query="outdoor activities preferences",
-    top_k_episodes=5,
-    top_k_semantic=10
-)
-```
-
-## 🏗️ Architecture Overview
-
-The Nemori system implements three core computational modules that operationalize our cognitive principles:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Nemori Architecture                          │
-├─────────────────────────────────────────────────────────────────┤
-│  Raw Conversation Stream                                        │
-│           │                                                     │
-│           ▼                                                     │
-│  ┌─────────────────────┐    Two-Step Alignment Principle       │
-│  │ Topic Segmentation  │ ◄─ Boundary Alignment                 │
-│  └─────────────────────┘                                       │
-│           │                                                     │
-│           ▼                                                     │
-│  ┌─────────────────────┐                                       │
-│  │ Episodic Memory     │ ◄─ Representation Alignment           │
-│  │ Generation          │                                       │
-│  └─────────────────────┘                                       │
-│           │                                                     │
-│           ▼                                                     │
-│  ┌─────────────────────┐    Predict-Calibrate Principle        │
-│  │ Semantic Memory     │ ◄─ Proactive Learning                 │
-│  │ Generation          │                                       │
-│  └─────────────────────┘                                       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## 📁 Source Code Structure
-
-The `src/` directory implements Nemori's modular architecture:
-
-```
-src/
-├── __init__.py                    # Main exports
-├── config.py                     # System configuration
-├── core/                         # Core system components
-│   ├── memory_system.py         # Main MemorySystem class
-│   ├── boundary_detector.py     # Topic segmentation (Boundary Alignment)
-│   ├── message_buffer.py        # Conversation buffering
-├── models/                       # Data models
-│   ├── message.py              # Message representation
-│   ├── episode.py              # Episodic memory model
-│   └── semantic.py             # Semantic memory model
-├── generation/                   # Memory generation modules
-│   ├── episode_generator.py    # Episodic memory creation (Representation Alignment)
-│   ├── semantic_generator.py   # Semantic memory creation
-│   ├── prediction_correction_engine.py  # Predict-Calibrate implementation
-│   └── prompts.py              # LLM prompt templates
-├── search/                      # Retrieval systems
-│   ├── vector_search.py        # Dense vector retrieval
-│   ├── bm25_search.py          # Sparse keyword retrieval  
-│   ├── unified_search.py       # Hybrid search engine
-│   └── original_message_search.py  # Raw conversation search
-├── storage/                     # Persistence layer
-│   ├── base_storage.py         # Abstract storage interface
-│   ├── episode_storage.py      # Episodic memory storage
-│   └── semantic_storage.py     # Semantic memory storage
-└── utils/                       # Utility components
-    ├── llm_client.py           # LLM API wrapper
-    ├── embedding_client.py     # Embedding generation
-    └── performance.py          # Performance optimization
-```
-
-### Key Components Explained
-
-#### 🧠 Core System (`src/core/`)
-- **`memory_system.py`**: Central orchestrator implementing the dual-pillar framework
-- **`boundary_detector.py`**: LLM-based intelligent boundary detection for episode segmentation
-- **`message_buffer.py`**: Manages conversational message accumulation and triggering
-
-#### 🎭 Memory Generation (`src/generation/`)
-- **`episode_generator.py`**: Transforms raw conversation segments into narrative episodic memories
-- **`semantic_generator.py`**: Manages semantic knowledge extraction and evolution
-- **`prediction_correction_engine.py`**: Implements the core Predict-Calibrate learning cycle
-
-#### 🔍 Search & Retrieval (`src/search/`)
-- **`unified_search.py`**: Hybrid retrieval combining vector and keyword search
-- **`vector_search.py`**: Dense semantic similarity search using embeddings
-- **`bm25_search.py`**: Sparse keyword-based retrieval for precise matching
-
-## 📊 Evaluation & Benchmarks
-
-Nemori is evaluated on two comprehensive datasets:
-
-- **[LOCOMO](evaluation/readme.md#locomo-evaluation)**: Long-context memory benchmarks (24K avg tokens)
-- **[LongMemEval_S](evaluation/readme.md#longmemeval-evaluation)**: Extended memory evaluation (105K avg tokens)
-
-### Run Evaluations
-
-```bash
-# LOCOMO evaluation workflow
-python evaluation/locomo/add.py
-python evaluation/locomo/search.py  
-python evaluation/locomo/evals.py
-python evaluation/locomo/generate_scores.py
-
-# LongMemEval evaluation workflow
-python evaluation/longmemeval/add.py
-python evaluation/longmemeval/search.py
-python evaluation/longmemeval/evals.py
-```
-
-See the [evaluation README](evaluation/readme.md) for detailed setup and usage instructions.
-
-## 🎯 Key Performance Results
-
-| Method | LLM Score | Token Efficiency | Temporal Reasoning |
-|--------|-----------|------------------|-------------------|
-| **Nemori** | **0.794** | 88% reduction | **0.776** |
-| Full Context | 0.806 | Baseline | 0.693 |
-| RAG-4096 | 0.629 | - | 0.584 |
-| Mem0 | 0.680 | - | 0.598 |
-
-*Results on LoCoMo benchmark with gpt-4.1-mini. Nemori achieves near-optimal performance with significantly reduced token usage.*
-
-## 🛠️ Advanced Configuration
-
-### Memory System Configuration
-
-```python
-config = MemoryConfig(
-    # LLM Settings
-    llm_model="gpt-4o-mini",
-    embedding_model="text-embedding-3-small",
-    
-    # Memory Settings
-    enable_semantic_memory=True,
-    enable_prediction_correction=True,
-    
-    # Boundary Detection
-    boundary_confidence_threshold=0.7,
-    enable_smart_boundary=True,
-    
-    # Episode Settings
-    episode_min_messages=2
-    episode_max_messages=25,
-    
-    # Search Settings
-    search_top_k_episodes=10,
-    search_top_k_semantic=20,
-    
-    # Performance
-    semantic_generation_workers=8,
-    use_faiss=False,
-    batch_size=64
-)
-```
-
-### Storage Options
-
-```python
-# Local file storage (default)
-config.storage_path = "./memories"
-
-# Custom storage backend
-from src.storage import BaseStorage
-config.storage_backend = MyCustomStorage()
-```
-
-## 🔬 Research Background
-
-Nemori addresses fundamental limitations in current Memory-Augmented Generation (MAG) systems:
-
-1. **Arbitrary Granularity**: Most systems use heuristic segmentation (single messages, interaction pairs) that breaks semantic coherence
-2. **Passive Knowledge Extraction**: Current methods rely on simple summarization rather than active learning from prediction errors
-3. **Limited Self-Organization**: Existing approaches lack principled mechanisms for autonomous memory evolution
-
-Our approach draws inspiration from:
-- **Event Segmentation Theory**: For principled boundary detection
-- **Free-energy Principle**: For prediction-error driven learning  
-- **Complementary Learning Systems**: For dual episodic-semantic architecture
-
-### Development Setup
-
-```bash
-# Install development dependencies
-uv pip install -e ".[dev]"
-```
-
+# Nemori Memory System
+#
+# Nemori is a self-organising long-term memory substrate for agentic LLM workflows. It ingests raw multi-turn conversations, segments them into topic-consistent episodes, distils durable semantic knowledge, and exposes a unified search surface for downstream reasoning. The design is inspired by cognitive-science theories (Event Segmentation Theory, Predictive Processing) and implemented with production-ready concurrency, caching, and pluggable storage.
+#
+# - **Language:** Python 3.9+
+# - **License:** MIT
+# - **Core Dependencies:** OpenAI API, ChromaDB, uv (package manager)
+#
+# ---
+#
+# ## 1. Why Nemori
+#
+# Large language models rapidly forget long-horizon context. Nemori introduces two coupled control loops:
+#
+# 1. **Two-Step Alignment**
+#    - *Boundary Alignment* – smart segmentation of buffered dialogue using LLM-powered boundary detection with transitional masking heuristics.
+#    - *Representation Alignment* – conversion of each segment into rich narrative episodes with precise temporal anchors and provenance.
+# 2. **Predict–Calibrate Learning**
+#    - *Predict* – hypothesise new episodes from existing semantic knowledge to surface gaps early.
+#    - *Calibrate* – extract high-value facts from discrepancies and fold them into the semantic knowledge base.
+#
+# The result is a data structure that stays compact, queryable, and behaviourally faithful to the source conversation.
+#
+# ---
+#
+# ## 2. Quick Start
+#
+# ### 2.1. Environment
+#
+# We recommend [uv](https://github.com/astral-sh/uv) for deterministic Python environments.
+#
+# ```bash
+# brew install uv
+#
+# git clone https://github.com/anonymous/nemori-code.git
+# cd nemori-code
+#
+# uv venv
+# source .venv/bin/activate  # Windows: .venv\Scripts\activate
+#
+# uv pip install -e .
+# uv pip install -e ".[dev,evaluation]"
+# ```
+#
+# ### 2.2. Credentials
+#
+# Create a `.env` file in the repo root:
+#
+# ```ini
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=...
+# ```
+#
+# Nemori only reads variables; it never writes secrets to disk.
+#
+# ### 2.3. Minimal Usage
+#
+# ```python
+# from nemori import NemoriMemory, MemoryConfig
+#
+# config = MemoryConfig(
+#     llm_model="gpt-4o-mini",
+#     enable_semantic_memory=True,
+#     enable_prediction_correction=True,
+# )
+#
+# memory = NemoriMemory(config=config)
+#
+# messages = [
+#     {"role": "user", "content": "I started training for a marathon in Seattle."},
+#     {"role": "assistant", "content": "Great! When is the race?"},
+#     {"role": "user", "content": "It is in October."},
+# ]
+#
+# memory.add_messages("user123", messages)
+#
+# answer = memory.search(
+#     user_id="user123",
+#     query="race plans",
+#     top_k_episodes=5,
+#     top_k_semantic=5,
+# )
+# ```
+#
+# Clean up resources via `memory.close()` when finished.
+#
+# ---
+#
+# ## 3. System Architecture
+#
+# ### 3.1. Data Flow
+#
+# ```
+# ┌──────────────┐   ┌──────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+# │ Message Sink │▶──│ Concurrent Buffer │▶──│ Boundary Detector    │▶──│ Episode Generator    │
+# └──────────────┘   │ (per user)        │   │  • LLM + heuristics │   │  • Narrative JSON   │
+#                     │  • size guards   │   │  • caching          │   │  • provenance kept  │
+#                     └──────────────────┘   └─────────────────────┘   │                     │
+#                                                                       ▼
+#                                                            ┌─────────────────────┐
+#                                                            │ Semantic Generator  │
+#                                                            │  • Predict/Correct  │
+#                                                            │  • Fact distillation│
+#                                                            └─────────────────────┘
+#                                                                       ▼
+#                                                            ┌─────────────────────┐
+#                                                            │ Search Engine       │
+#                                                            │  • hybrid BM25/IVF │
+#                                                            │  • original text    │
+#                                                            └─────────────────────┘
+# ```
+#
+# ### 3.2. Key Services
+#
+# | Component | Location | Highlights |
+# |-----------|----------|------------|
+# | `MemorySystem` orchestrator | `src/core/memory_system.py` | Thread-safe per-user processing, metrics, cache-aware search |
+# | Boundary Detection | `src/core/boundary_detector.py` | LLM prompt pipeline with optional masking (`boundary_exclude_threshold`) handled in the buffer manager |
+# | Episodic Storage | `src/storage/episode_storage.py` | JSONL persistence, lock-scoped writes, lazy caches |
+# | Semantic Storage | `src/storage/semantic_storage.py` | Similar guarantees for knowledge statements |
+# | Predict-Calibrate Engine | `src/generation/prediction_correction_engine.py` | Generates predictions, compares with truth, extracts corrections |
+# | Unified Search | `src/search/unified_search.py` | Fuses BM25 + Chroma vector search, exposes episode & semantic channels |
+# | Performance Layer | `src/utils/performance.py` | Sharded LRU cache, thread pools, trace statistics |
+# | Public Facade | `src/api/facade.py` | `NemoriMemory` convenience wrapper for simple integrations |
+#
+# ### 3.3. Configuration Snapshot
+#
+# `MemoryConfig` (see `src/config.py`) centralises run-time behaviour:
+#
+# - Buffer limits: `buffer_size_min`, `buffer_size_max`
+# - Boundary options: `enable_smart_boundary`, `boundary_exclude_last_message`, `boundary_exclude_threshold`
+# - Episode length gates: `episode_min_messages`, `episode_max_messages`
+# - Semantic duplication rules: `semantic_similarity_threshold`
+# - Worker pools: `max_workers`, `semantic_generation_workers`
+# - Index backends: filesystem vs in-memory, Chroma vs BM25
+#
+# Tune these parameters in JSON/YAML by calling `MemoryConfig.from_dict(...)`.
+#
+# ---
+#
+# ## 4. Repository Layout
+#
+# ```
+# src/
+# │
+# ├── api/                 # Facade entry points
+# ├── core/                # Orchestration, buffers, metrics
+# ├── generation/          # Episode + semantic generation, prediction loop
+# ├── models/              # Dataclasses for messages & memories
+# ├── search/              # BM25, vector, hybrid, original text search
+# ├── storage/             # Jsonl storage backends
+# ├── utils/               # LLM client, embeddings, caching utilities
+# └── ...
+#
+# evaluation/
+# ├── locomo/              # LoCoMo benchmark scripts
+# ├── longmemeval/         # Additional long-context evaluation
+# └── readme.md            # Dataset-specific instructions
+#
+# memories/               # Default persistence root (episodes/, semantic/)
+# web-react/              # Lightweight results viewer
+# ```
+#
+# ---
+#
+# ## 5. Running Evaluations
+#
+# ### 5.1. LoCoMo Pipeline
+#
+# ```bash
+# python evaluation/locomo/add.py --config evaluation/locomo/config.json --data dataset/locomo10.json
+# python evaluation/locomo/search.py --config evaluation/locomo/config.json --include-original-messages-top-k 2
+# python evaluation/locomo/evals.py --input_file locomo/results.json --output_file locomo/metrics.json
+# python evaluation/locomo/generate_scores.py
+# ```
+#
+# ### 5.2. Latest LoCoMo Scores
+#
+# | Category | BLEU | F1 | LLM | Count |
+# |----------|------|----|-----|-------|
+# | 1 | 0.3426 | 0.4312 | 0.7730 | 282 |
+# | 2 | 0.5050 | 0.5874 | 0.7632 | 321 |
+# | 3 | 0.2294 | 0.2878 | 0.5521 | 96 |
+# | 4 | 0.4878 | 0.5497 | 0.8716 | 841 |
+#
+# Overall means — BLEU: `0.4487`, F1: `0.5196`, LLM alignment: `0.8110`.
+#
+# ### 5.3. LongMemEval
+#
+# See `evaluation/longmemeval/readme.md` for 100k-token context experiments.
+#
+# ---
+#
+# ## 6. Developing with Nemori
+#
+# - Testing: `pytest`
+# - Linting: `ruff check src`
+# - Type checking: `mypy src`
+# - Bench utilities: `scripts/` contains profiling helpers
+#
+# Use the `NemoriMemory` facade for quick experiments; inject custom storage or LLM clients when integrating into larger systems.
+#
+# ---
+#
+# ## 7. Troubleshooting
+#
+# | Symptom | Likely Cause | Mitigation |
+# |---------|--------------|------------|
+# | No episodes emitted | Boundary threshold masking too aggressively | Increase `boundary_exclude_threshold` or disable last-message exclusion |
+# | Missing timestamps in LoCoMo prompts | Run `evaluation/locomo/search.py` after the hydration patch (timestamps now lifted from metadata) |
+# | Empty search responses | User indices not loaded | Trigger ingestion, or call `NemoriMemory._memory_system.load_user_data_and_indices(user)` |
+# | High latency | Chroma cold start | Preload collections via `load_user_data_and_indices_for_method` |
+#
+# ---
+#
+# ## 8. Contributing
+#
+# 1. Fork and create a feature branch.
+# 2. Add or update tests.
+# 3. Submit a PR outlining architectural impact (boundary logic, storage schema, etc.).
+#
+# Nemori is actively evolving toward multi-agent deployments. Feedback and contributions are welcome.
