@@ -30,7 +30,7 @@ class MemoryConfig:
     boundary_confidence_threshold: float = 0  # Boundary detection confidence threshold
     enable_smart_boundary: bool = True           # Enable smart boundary detection
     boundary_exclude_last_message: bool = True   # Exclude last message during boundary detection
-    boundary_exclude_threshold: int = 2          # Minimum buffer size to trigger exclusion of last message
+    boundary_exclude_threshold: int = 10       # Minimum buffer size to trigger exclusion of last message
     
     # === Episode Generation Configuration ===
     episode_min_messages: int = 2    # Minimum number of messages for an episode

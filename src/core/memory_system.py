@@ -825,9 +825,11 @@ class MemorySystem:
         start_time = time.time()
         
         try:
-            # Use default values from configuration
-            top_k_episodes = top_k_episodes or self.config.search_top_k_episodes
-            top_k_semantic = top_k_semantic or self.config.search_top_k_semantic
+            # Use default values from configuration only if None is passed
+            if top_k_episodes is None:
+                top_k_episodes = self.config.search_top_k_episodes
+            if top_k_semantic is None:
+                top_k_semantic = self.config.search_top_k_semantic
             
             # Ensure user data and indices are loaded
             if use_optimized_loading:
@@ -881,6 +883,10 @@ class MemorySystem:
     
     def _search_episodes_by_method(self, user_id: str, query: str, top_k: int, search_method: str):
         """Search episodes by search method"""
+        # Handle top_k=0 case: return empty list
+        if top_k == 0:
+            return []
+        
         if search_method == "hybrid":
             return self.search_engine.search_episodes(user_id, query, top_k)
         elif search_method == "bm25":
@@ -894,6 +900,10 @@ class MemorySystem:
     
     def _search_semantic_by_method(self, user_id: str, query: str, top_k: int, search_method: str):
         """Search semantic memories by search method"""
+        # Handle top_k=0 case: return empty list
+        if top_k == 0:
+            return []
+        
         if search_method == "hybrid":
             return self.search_engine.search_semantic_memories(user_id, query, top_k)
         elif search_method == "bm25":

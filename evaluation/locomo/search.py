@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -14,8 +15,11 @@ from dotenv import load_dotenv
 from jinja2 import Template
 from openai import OpenAI
 from tqdm import tqdm
+import random
 
 from nemori import MemoryConfig, NemoriMemory
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -69,15 +73,25 @@ def load_config(path: Path) -> MemoryConfig:
     return MemoryConfig.from_dict(data)
 
 
-def format_memory_lines(memories: List[Dict[str, Any]], include_original: bool = False) -> str:
+def format_memory_lines(
+    memories: List[Dict[str, Any]], include_original_limit: int = 0
+) -> str:
     lines: List[str] = []
-    for item in memories:
+    for idx, item in enumerate(memories):
         timestamp = item.get("timestamp") or item.get("created_at") or ""
         content = item.get("content", "")
         lines.append(f"- [{timestamp}] {content}")
-        if include_original and item.get("original_messages"):
+        if (
+            include_original_limit > 0
+            and idx < include_original_limit
+            and item.get("original_messages")
+        ):
+            lines.append("    Original Messages:")
             for msg in item["original_messages"]:
                 lines.append(f"    • {msg.get('role', 'user')}: {msg.get('content', '')}")
+    a = random.randint(0, 100)
+    if a == 1:
+        print("\n".join(lines))
     return "\n".join(lines)
 
 
@@ -129,8 +143,14 @@ class LocomoSearcher:
     def answer(self, question: str, memories: Dict[str, List[Dict[str, Any]]]) -> str:
         if not self.openai_client:
             return ""
-        episodic = format_memory_lines(memories.get("episodic", []), include_original=True)
-        semantic = format_memory_lines(memories.get("semantic", []), include_original=False)
+        episodic = format_memory_lines(
+            memories.get("episodic", []),
+            include_original_limit=self.include_original_messages_top_k,
+        )
+        semantic = format_memory_lines(
+            memories.get("semantic", []),
+            include_original_limit=0,
+        )
         prompt = ANSWER_PROMPT.render(
             question=question,
             episodic=episodic,
@@ -142,6 +162,74 @@ class LocomoSearcher:
             temperature=0.0,
         )
         return response.choices[0].message.content if response and response.choices else ""
+
+    def _hydrate_episode_results(
+        self,
+        memory: NemoriMemory,
+        user_id: str,
+        episodes: List[Dict[str, Any]],
+    ) -> None:
+        if not episodes:
+            return
+
+        memory_system = getattr(memory, "_memory_system", None)
+        if memory_system is None:
+            return
+
+        repository = getattr(memory_system, "_episode_repository", None)
+        episode_cache: Dict[str, Any] = {}
+
+        for idx, item in enumerate(episodes):
+            metadata = item.get("metadata") or {}
+            if "timestamp" not in item and metadata.get("timestamp"):
+                item["timestamp"] = metadata["timestamp"]
+            if "created_at" not in item and metadata.get("created_at"):
+                item["created_at"] = metadata["created_at"]
+
+            if (
+                idx < self.include_original_messages_top_k
+                and not item.get("original_messages")
+            ):
+                episode_id = item.get("episode_id") or metadata.get("episode_id")
+                if not episode_id or repository is None:
+                    continue
+
+                episode_obj = None
+                try:
+                    if hasattr(repository, "get_episode"):
+                        episode_obj = repository.get_episode(episode_id, user_id)  # type: ignore[attr-defined]
+                    else:
+                        if not episode_cache:
+                            episodes_for_user = repository.list_by_user(user_id)
+                            episode_cache = {
+                                ep.episode_id: ep for ep in episodes_for_user
+                            }
+                        episode_obj = episode_cache.get(episode_id)
+                except Exception as exc:  # pragma: no cover - best effort hydration
+                    logger.debug(
+                        "Failed to hydrate episode %s for user %s: %s",
+                        episode_id,
+                        user_id,
+                        exc,
+                    )
+                    continue
+
+                if episode_obj is None:
+                    continue
+
+                item.setdefault("original_messages", episode_obj.original_messages)
+                item.setdefault("timestamp", episode_obj.timestamp.isoformat())
+                item.setdefault("created_at", episode_obj.created_at.isoformat())
+                item.setdefault("content", episode_obj.content)
+                item.setdefault("title", episode_obj.title)
+
+    def _hydrate_semantic_results(self, semantic_results: List[Dict[str, Any]]) -> None:
+        for item in semantic_results:
+            metadata = item.get("metadata") or {}
+            if "timestamp" not in item and metadata.get("timestamp"):
+                item["timestamp"] = metadata["timestamp"]
+            if "created_at" not in item and metadata.get("created_at"):
+                item["created_at"] = metadata["created_at"]
 
     def search(self, memory: NemoriMemory, user_id: str, question: str) -> Dict[str, List[Dict[str, Any]]]:
         return memory.search(
@@ -162,6 +250,8 @@ class LocomoSearcher:
                 for qa in item.get("qa", []):
                     question = qa.get("question", "")
                     memories = self.search(memory, user_id, question)
+                    self._hydrate_episode_results(memory, user_id, memories.get("episodic", []))
+                    self._hydrate_semantic_results(memories.get("semantic", []))
                     response = self.answer(question, memories)
                     flattened = flatten_results(memories, self.include_original_messages_top_k)
                     record = {

@@ -13,9 +13,16 @@ from tqdm import tqdm
 
 from nemori import NemoriMemory, MemoryConfig
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import ThreadPoolExecutor
+import threading
+import logging
 
 load_dotenv()
+
+# Suppress verbose logging from libraries
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("chromadb").setLevel(logging.WARNING)
 
 
 def load_config(path: Path) -> MemoryConfig:
@@ -122,32 +129,85 @@ def process_single_conversation(
     batch_size: int,
     wait_timeout: float,
     tracker: Dict[str, Any],
+    tracker_lock: threading.Lock,
+    position: int = 0,
+    verbose: bool = False,
 ) -> None:
     conversation = item.get("conversation", {})
     speaker_a = conversation.get("speaker_a", "speaker_a")
     user_id = f"{speaker_a}_{idx}"
     messages = build_messages(conversation)
 
+    # Track result
+    result = {"user_id": user_id, "success": False, "message_count": len(messages), "error": None}
+    
     if not messages:
-        print(f"[DEBUG] conversation {idx} for user {user_id} has 0 messages; no episode will be created")
-    else:
-        print(f"[DEBUG] conversation {idx} for user {user_id} has {len(messages)} messages")
+        result["error"] = "No messages"
+        with tracker_lock:
+            tracker[user_id] = result
+        return
 
     memory = NemoriMemory(config=config)
+    
+    # Create progress bar for this user's message processing
+    chunks = list(batched(messages, batch_size))
+    total_chunks = len(chunks)
+    
+    # Use a progress bar if verbose mode is enabled and we have messages to process
+    if verbose and (total_chunks > 1 or len(messages) > 20):
+        pbar = tqdm(
+            total=len(messages),
+            desc=f"  [{idx+1:2d}] {speaker_a}",
+            position=position + 1,
+            leave=False,
+            bar_format="{desc:15s}: {percentage:3.0f}%|{bar:30}| {n_fmt:>4}/{total_fmt:<4} msgs",
+            ncols=80,
+            colour='cyan',
+            disable=False  # Ensure it's enabled
+        )
+    else:
+        pbar = None
+    
     try:
-        for chunk in batched(messages, batch_size):
+        # Add messages in batches with progress tracking
+        messages_processed = 0
+        for chunk in chunks:
             memory.add_messages(user_id, chunk)
+            messages_processed += len(chunk)
+            if pbar:
+                pbar.update(len(chunk))
+        
+        if pbar:
+            pbar.close()
+        
+        # Create episode
         episode_info = memory.flush(user_id)
         if episode_info is None:
-            print(f"[DEBUG] conversation {idx} flush returned None for {user_id}")
+            result["error"] = "Failed to create episode"
+            with tracker_lock:
+                tracker[user_id] = result
+            return
+            
+        # Wait for semantic generation
         memory.wait_for_semantic(user_id, timeout=wait_timeout)
+        
+        # Verify file creation
         episodes_dir = Path(config.storage_path) / "episodes"
-        episodes_dir.mkdir(parents=True, exist_ok=True)
         file_path = episodes_dir / f"{user_id}_episodes.jsonl"
-        print(f"[DEBUG] episode file for {user_id} exists after processing? {file_path.exists()}")
+        
+        if file_path.exists():
+            result["success"] = True
+        else:
+            result["error"] = "Episode file not found after processing"
+            
+    except Exception as e:
+        result["error"] = str(e)
+        if pbar:
+            pbar.close()
     finally:
         memory.close()
-    tracker[user_id] = True
+        with tracker_lock:
+            tracker[user_id] = result
 
 
 def process_dataset(
@@ -156,11 +216,45 @@ def process_dataset(
     batch_size: int,
     wait_timeout: float,
     max_workers: int,
+    verbose: bool = False,
 ) -> None:
     tracker: Dict[str, Any] = {}
+    tracker_lock = threading.Lock()
+    
+    print(f"\n🚀 Processing {len(dataset)} conversations with {max_workers} workers...")
+    
+    if verbose:
+        print("─" * 80)
+        # Pre-calculate total messages for each user
+        user_info = []
+        total_messages = 0
+        for idx, item in enumerate(dataset):
+            conversation = item.get("conversation", {})
+            speaker_a = conversation.get("speaker_a", "speaker_a")
+            messages = build_messages(conversation)
+            user_info.append({
+                "user_id": f"{speaker_a}_{idx}",
+                "speaker": speaker_a,
+                "message_count": len(messages)
+            })
+            total_messages += len(messages)
+        
+        # Display user overview
+        print("📋 User Overview:")
+        for info in user_info[:5]:  # Show first 5 users
+            print(f"  • {info['user_id']}: {info['message_count']} messages")
+        if len(user_info) > 5:
+            print(f"  ... and {len(user_info) - 5} more users")
+        print(f"📈 Total messages to process: {total_messages}")
+        print("─" * 80 + "\n")
+    else:
+        print("")  # Just add a blank line for cleaner output
+    
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(
+        # Create futures with position information
+        futures_with_info = []
+        for idx, item in enumerate(dataset):
+            future = executor.submit(
                 process_single_conversation,
                 config,
                 item,
@@ -168,11 +262,51 @@ def process_dataset(
                 batch_size,
                 wait_timeout,
                 tracker,
+                tracker_lock,
+                position=idx if idx < max_workers else idx % max_workers,  # Reuse positions for overflow
+                verbose=verbose,
             )
-            for idx, item in enumerate(dataset)
-        ]
-        for future in tqdm(futures, desc="Conversations"):
-            future.result()
+            futures_with_info.append((future, idx, item))
+        
+        # Main progress bar
+        with tqdm(total=len(futures_with_info), 
+                  desc="Overall", 
+                  position=0,
+                  bar_format="{desc:10s}: {percentage:3.0f}%|{bar:40}| {n_fmt:>2}/{total_fmt:<2} [{elapsed}<{remaining}]",
+                  ncols=80,
+                  colour='green') as main_pbar:
+            
+            for future, idx, item in futures_with_info:
+                try:
+                    future.result()
+                except Exception as e:
+                    # Silently handle exceptions (they're tracked in results)
+                    pass
+                main_pbar.update(1)
+        
+        # Clear the screen a bit for cleaner output
+        print("\n" * 2)
+    
+    # Print summary
+    print("\n" + "=" * 60)
+    print("📊 Processing Summary")
+    print("=" * 60)
+    
+    successful = sum(1 for r in tracker.values() if r.get("success", False))
+    failed = len(tracker) - successful
+    
+    print(f"✅ Successful: {successful}/{len(tracker)}")
+    print(f"❌ Failed: {failed}/{len(tracker)}")
+    
+    if failed > 0:
+        print("\n🔍 Failure Details:")
+        for user_id, result in tracker.items():
+            if not result.get("success", False):
+                error = result.get("error", "Unknown error")
+                msg_count = result.get("message_count", 0)
+                print(f"  - {user_id}: {error} (messages: {msg_count})")
+    
+    print("\n" + "=" * 60)
 
 
 def main() -> None:
@@ -182,6 +316,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--wait-timeout", type=float, default=1800.0)
     parser.add_argument("--max-workers", type=int, default=10)
+    parser.add_argument("--verbose", action="store_true", help="Show detailed progress for each user")
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -191,7 +326,7 @@ def main() -> None:
 
     dataset_path = Path(args.data)
     dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
-    process_dataset(config, dataset, args.batch_size, args.wait_timeout, args.max_workers)
+    process_dataset(config, dataset, args.batch_size, args.wait_timeout, args.max_workers, args.verbose)
 
 
 if __name__ == "__main__":  # pragma: no cover
