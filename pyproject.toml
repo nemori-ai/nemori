@@ -30,7 +30,8 @@ dependencies = [
     "openai>=1.0.0",
     "numpy>=1.24.0",
     "sentence-transformers>=2.2.0",
-    
+    "chromadb>=1.0.0",
+
     # Data processing and utilities
     "tqdm>=4.64.0",
     "python-dotenv>=1.0.0",
@@ -40,7 +41,8 @@ dependencies = [
     # Search and retrieval
     "rank-bm25>=0.2.2",
     "faiss-cpu>=1.7.0",  # For vector search
-    
+    "spacy>=3.7.0",
+
     # NLP evaluation metrics
     "nltk>=3.8.0",
     "bert-score>=0.3.13",

@@ -40,6 +40,10 @@ source .venv/bin/activate      # Windows: .venv\Scripts\activate
 
 uv pip install -e .
 uv pip install -e ".[dev,evaluation]"
+
+# Install spaCy language packs used for BM25 tokenization
+python -m spacy download en_core_web_sm
+python -m spacy download zh_core_web_sm
 ```
 
 ### 2.2 Credentials
@@ -48,8 +52,6 @@ Create a `.env` file in the repo root:
 
 ```ini
 OPENAI_API_KEY=sk-...
-# Optional extras
-ANTHROPIC_API_KEY=...
 ```
 
 Nemori only reads these variables; it never writes secrets to disk.
@@ -68,20 +70,18 @@ config = MemoryConfig(
 memory = NemoriMemory(config=config)
 
 memory.add_messages(
-    owner_id="user123",
+    user_id="user123",
     messages=[
         {"role": "user", "content": "I started training for a marathon in Seattle."},
         {"role": "assistant", "content": "Great! When is the race?"},
         {"role": "user", "content": "It is in October."},
     ],
 )
+memory.flush(user_id)
+memory.wait_for_semantic(user_id)
 
-memories = memory.search(
-    user_id="user123",
-    query="race plans",
-    top_k_episodes=5,
-    top_k_semantic=5,
-)
+results = memory.search(user_id, "race", search_method="vector")
+print("Search results:", results)
 
 memory.close()
 ```
@@ -90,22 +90,7 @@ memory.close()
 
 ## 3. System Architecture
 
-### 3.1 Key services
-
-| Component | Location | Highlights |
-|-----------|----------|------------|
-| `MemorySystem` orchestrator | `src/core/memory_system.py` | Thread-safe per-user processing, cached search, metrics |
-| Boundary detection | `src/core/boundary_detector.py` | LLM prompt pipeline with optional last-message masking (`boundary_exclude_threshold`) |
-| Episodic storage | `src/storage/episode_storage.py` | JSONL persistence, lock-scoped writes, in-memory caches |
-| Semantic storage | `src/storage/semantic_storage.py` | Durable store for knowledge statements |
-| Predict–Calibrate engine | `src/generation/prediction_correction_engine.py` | Generates predictions, extracts corrections |
-| Unified search | `src/search/unified_search.py` | Fuses BM25 and Chroma vector retrieval, exposes episodic + semantic channels |
-| Performance utilities | `src/utils/performance.py` | Sharded LRU cache, worker pools, timing stats |
-| Public facade | `src/api/facade.py` | `NemoriMemory` helper for simple integrations |
-
-### 3.2 Configuration snapshot
-
-`MemoryConfig` (in `src/config.py`) centralises runtime choices such as buffer limits (`buffer_size_min`, `buffer_size_max`), boundary options (`enable_smart_boundary`, `boundary_exclude_threshold`), episode sizing, semantic deduplication, worker pools, and index backends. Instantiate from dicts or JSON via `MemoryConfig.from_dict()`.
+![Nemori system architecture](assets/nemori_system.png)
 
 ---
 
@@ -128,7 +113,6 @@ evaluation/
 └── readme.md            # Dataset instructions
 
 memories/                # Default persistence root (episodes/, semantic/)
-web-react/               # Lightweight results viewer
 ```
 
 ---
@@ -138,10 +122,11 @@ web-react/               # Lightweight results viewer
 ### 5.1 LoCoMo pipeline
 
 ```bash
-python evaluation/locomo/add.py --config evaluation/locomo/config.json --data dataset/locomo10.json
-python evaluation/locomo/search.py --config evaluation/locomo/config.json --include-original-messages-top-k 2
-python evaluation/locomo/evals.py --input_file locomo/results.json --output_file locomo/metrics.json
-python evaluation/locomo/generate_scores.py
+cd evaluation
+python locomo/add.py
+python locomo/search.py
+python locomo/evals.py
+python locomo/generate_scores.py
 ```
 
 ### 5.2 Latest LoCoMo scores
@@ -153,7 +138,12 @@ python evaluation/locomo/generate_scores.py
 | 3 | 0.2294 | 0.2878 | 0.5521 | 96 |
 | 4 | 0.4878 | 0.5497 | 0.8716 | 841 |
 
-Overall means: BLEU **0.4487**, F1 **0.5196**, LLM alignment **0.8110**.
+Overall means: BLEU **0.4487**, F1 **0.5196**, LLM alignment **0.8110**, with only **3K** context tokens. 
+
+
+### 5.3 Old MVP LoCoMo scores:
+
+![LoCoMo LLM score comparison](assets/locomo-scores.png)
 
 ### 5.3 LongMemEval
 
@@ -176,9 +166,6 @@ Use the `NemoriMemory` facade for experiments and inject custom storage or LLM c
 
 | Symptom | Likely cause | Mitigation |
 |---------|--------------|------------|
-| Few episodes emitted | `boundary_exclude_threshold` too low, masking endings | Increase threshold or disable `boundary_exclude_last_message` |
-| Missing timestamps / raw text during LoCoMo search | Hydration step not run | Execute `evaluation/locomo/search.py` with the latest hydration logic and set `--include-original-messages-top-k` > 0 |
-| Empty search responses | Indices not loaded | Call `NemoriMemory._memory_system.load_user_data_and_indices(user_id)` or re-run ingestion |
 | High latency on first query | Chroma cold start | Preload collections via `load_user_data_and_indices_for_method` |
 
 ---
@@ -190,3 +177,9 @@ Use the `NemoriMemory` facade for experiments and inject custom storage or LLM c
 3. Open a PR explaining architectural impact (boundary logic, storage schema, etc.).
 
 Nemori is evolving toward multi-agent deployments. Feedback and collaboration are welcome.
+
+---
+## 9. News
+
+- **2025-09-26** — Released Nemori as fully open source, covering episodic and semantic memory implementations end-to-end.
+- **2025-07-10** — Delivered the MVP of episodic memory generation.

@@ -12,6 +12,7 @@ jinja2>=3.1.0
 # Search and retrieval
 rank-bm25>=0.2.2
 chromadb>=0.4.18
+spacy>=3.7.0
 
 # NLP evaluation metrics
 nltk>=3.8.0
