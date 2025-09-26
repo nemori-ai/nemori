@@ -90,29 +90,7 @@ memory.close()
 
 ## 3. System Architecture
 
-### 3.1 Data flow
-
-```
-┌──────────────┐   ┌──────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
-│ Message Sink │─▶ │ Concurrent Buffer │─▶ │ Boundary Detector    │─▶ │ Episode Generator    │
-└──────────────┘   │ (per user)        │   │  • LLM + heuristics │   │  • narrative JSON   │
-                    │  • size guards   │   │  • caching          │   │  • provenance kept  │
-                    └──────────────────┘   └─────────────────────┘    │                     │
-                                                                       ▼
-                                                           ┌─────────────────────┐
-                                                           │ Semantic Generator  │
-                                                           │  • Predict/Correct  │
-                                                           │  • fact distillation│
-                                                           └─────────────────────┘
-                                                                       ▼
-                                                           ┌─────────────────────┐
-                                                           │ Unified Search      │
-                                                           │  • hybrid BM25/IVF │
-                                                           │  • original text    │
-                                                           └─────────────────────┘
-```
-
-### 3.2 Key services
+### 3.1 Key services
 
 | Component | Location | Highlights |
 |-----------|----------|------------|
@@ -125,7 +103,7 @@ memory.close()
 | Performance utilities | `src/utils/performance.py` | Sharded LRU cache, worker pools, timing stats |
 | Public facade | `src/api/facade.py` | `NemoriMemory` helper for simple integrations |
 
-### 3.3 Configuration snapshot
+### 3.2 Configuration snapshot
 
 `MemoryConfig` (in `src/config.py`) centralises runtime choices such as buffer limits (`buffer_size_min`, `buffer_size_max`), boundary options (`enable_smart_boundary`, `boundary_exclude_threshold`), episode sizing, semantic deduplication, worker pools, and index backends. Instantiate from dicts or JSON via `MemoryConfig.from_dict()`.
 
@@ -212,4 +190,3 @@ Use the `NemoriMemory` facade for experiments and inject custom storage or LLM c
 3. Open a PR explaining architectural impact (boundary logic, storage schema, etc.).
 
 Nemori is evolving toward multi-agent deployments. Feedback and collaboration are welcome.
-
