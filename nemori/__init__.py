@@ -1,29 +1,9 @@
-"""
-Nemori - Nature-inspired Episodic Memory for AI
+"""Public package alias that re-exports the core Nemori API."""
 
-A comprehensive memory framework that transforms various forms of user experiences
-into searchable, narrative episodic memories.
-"""
+from importlib import import_module
 
-__version__ = "0.1.0"
-__author__ = "Nemori Team"
-__description__ = "Nature-inspired Episodic Memory for AI"
+_src = import_module("src")
 
-from .core.builders import EpisodeBuilder
-from .core.data_types import DataType, RawEventData
-from .core.episode import Episode, EpisodeMetadata
-from .episode_manager import EpisodeManager
-from .llm import AnthropicProvider, GeminiProvider, LLMProvider, OpenAIProvider
+__all__ = getattr(_src, "__all__", [])
 
-__all__ = [
-    "DataType",
-    "RawEventData",
-    "Episode",
-    "EpisodeMetadata",
-    "EpisodeBuilder",
-    "LLMProvider",
-    "OpenAIProvider",
-    "AnthropicProvider",
-    "GeminiProvider",
-    "EpisodeManager",
-]
+globals().update({name: getattr(_src, name) for name in __all__})

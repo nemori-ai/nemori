@@ -1,13 +1,16 @@
-### Python template
-# Byte-compiled / optimized / DLL files
+# 环境变量和配置文件
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+*.env
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -28,8 +31,6 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
@@ -52,30 +53,6 @@ coverage.xml
 .pytest_cache/
 cover/
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
 # Jupyter Notebook
 .ipynb_checkpoints
 
@@ -84,33 +61,18 @@ profile_default/
 ipython_config.py
 
 # pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+.python-version
 
 # pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+Pipfile.lock
 
 # poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+poetry.lock
 
 # pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/#use-with-ide
 .pdm.toml
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+# PEP 582
 __pypackages__/
 
 # Celery stuff
@@ -121,7 +83,6 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
 .venv
 env/
 venv/
@@ -153,64 +114,132 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-.idea/
-.vscode/
+# 数据文件和模型文件 (排除配置文件)
+# JSON数据文件 (保留配置文件)
+/evaluation/**/*.json
+/evaluation/**/*.jsonl
+**/memories/**/*.json
+**/memories/**/*.jsonl
+results*.json
+metrics*.json
+*_results.json
+*_metrics.json
+locomo*.json
 
-## Other
-# Cache files
-cache.db*
-.ruff_cache/
+# 其他数据文件
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.csv
+*.tsv
+*.xlsx
+*.xls
 
-# All DS_Store files
+# FAISS 索引文件
+*.faiss
+*.index
+
+# NumPy 数组文件
+*.npy
+*.npz
+
+# 向量数据库目录
+vector_db/
+**/vector_db/
+embeddings/
+**/embeddings/
+
+# 记忆数据目录
+memories/
+**/memories/
+episodes/
+**/episodes/
+semantic/
+**/semantic/
+
+# 评估结果文件
+results*.json
+metrics*.json
+*_results.json
+*_metrics.json
+
+# 日志文件
+*.log
+logs/
+**/logs/
+
+# 临时文件
+*.tmp
+*.temp
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# env
-.env
-.env.*
-!.env.example
+# IDE 文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# playground output or tmp files
-playground/output/
-playground/.tmp/
+# Node.js (如果有前端组件)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+web-react/
 
-# playground demo generated files
-playground/*/
-!playground/*.py
-!playground/*.md
-!playground/*.ipynb
-!playground/dataset/
-playground/*demo*/
-playground/full_demo/
-playground/simple_demo/
-playground/search_debug/
-playground/output_debug/
-playground/jsonl_demo/
+# 系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# demo database files
-*.duckdb
-*.duckdb-wal
-*.duckdb-shm
+# 备份文件
+*.bak
+*.backup
+*.old
 
-# JSONL storage files
-*.jsonl
+# 缓存目录
+.cache/
+**/cache/
+__pycache__/
+**/__pycache__/
 
-# BM25 index files
-bm25_index_*.pkl
+# 测试输出
+test_output/
+**/test_output/
 
-# demo reports
-*_report.json
-comprehensive_report.json
+# 模型检查点
+checkpoints/
+**/checkpoints/
+*.ckpt
+*.pth
+*.pt
 
-# claude local settings
-.claude/
+# API 密钥和敏感信息
+api_keys.txt
+secrets.txt
+credentials.json
+token.txt
 
-# tmp
-.tmp/
+test/
+tests/
+chroma_db/
+**/chroma_db/
+*.sqlite3
+evaluation/evaluation_memories/chroma_db/
 
-# eval workspace
-evaluation/memos/
+report.md
+plan.md
+
+assets/plot_locomo_llm_scores.py
