@@ -77,10 +77,10 @@ evaluation = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/anonymous/nemori"
-Documentation = "https://github.com/anonymous/nemori#readme"
-Repository = "https://github.com/anonymous/nemori.git"
-Issues = "https://github.com/anonymous/nemori/issues"
+Homepage = "https://github.com/nemori-ai/nemori"
+Documentation = "https://github.com/nemori-ai/nemori#readme"
+Repository = "https://github.com/nemori-ai/nemori.git"
+Issues = "https://github.com/nemori-ai/nemori/issues"
 
 [project.scripts]
 nemori-add-locomo = "evaluation.locomo.add:main"

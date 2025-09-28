@@ -1,5 +1,9 @@
 # 🧠 Nemori Memory System
 
+**📄 [Paper](https://arxiv.org/abs/2508.03341)**
+
+> Important: This release is a complete rewrite aligned with the paper and is not compatible with the previous MVP. The legacy MVP is available here: [legacy-mvp branch](https://github.com/nemori-ai/nemori/tree/legacy-mvp)
+
 Nemori is a self-organising long-term memory substrate for agentic LLM workflows. It ingests multi-turn conversations, segments them into topic-consistent episodes, distils durable semantic knowledge, and exposes a unified search surface for downstream reasoning. The implementation combines insights from Event Segmentation Theory and Predictive Processing with production-ready concurrency, caching, and pluggable storage.
 
 - **🐍 Language:** Python 3.9+
@@ -142,8 +146,6 @@ python locomo/generate_scores.py
 
 
 ### 5.3 📈 Previous MVP LoCoMo scores:
-
-> **Note:** For more information, please visit [https://github.com/nemori-ai/nemori/tree/legacy-mvp](https://github.com/nemori-ai/nemori/tree/legacy-mvp)  
 
 ![LoCoMo LLM score comparison](assets/locomo-scores.png)
 
