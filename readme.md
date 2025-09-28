@@ -141,7 +141,9 @@ python locomo/generate_scores.py
 ✨ Overall means: BLEU **0.4487**, F1 **0.5196**, LLM alignment **0.8110**, with only **3K** context tokens. 
 
 
-### 5.3 📈 Old MVP LoCoMo scores:
+### 5.3 📈 Previous MVP LoCoMo scores:
+
+> **Note:** For more information, please visit [https://github.com/nemori-ai/nemori/tree/legacy-mvp](https://github.com/nemori-ai/nemori/tree/legacy-mvp)  
 
 ![LoCoMo LLM score comparison](assets/locomo-scores.png)
 
