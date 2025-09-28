@@ -1,10 +1,14 @@
-# 🧠 Nemori Memory System
+# Nemori Memory System
 
 **📄 [Paper](https://arxiv.org/abs/2508.03341)**
 
 > Important: This release is a complete rewrite aligned with the paper and is not compatible with the previous MVP. The legacy MVP is available here: [legacy-mvp branch](https://github.com/nemori-ai/nemori/tree/legacy-mvp)
 
+<img src="assets/nemori.png" alt="Nemori logo" width="84" margin="8px" align="left">
+
 Nemori is a self-organising long-term memory substrate for agentic LLM workflows. It ingests multi-turn conversations, segments them into topic-consistent episodes, distils durable semantic knowledge, and exposes a unified search surface for downstream reasoning. The implementation combines insights from Event Segmentation Theory and Predictive Processing with production-ready concurrency, caching, and pluggable storage.
+
+<br clear="left">
 
 - **🐍 Language:** Python 3.9+
 - **📜 License:** MIT
@@ -36,14 +40,13 @@ Using [uv](https://github.com/astral-sh/uv) is the easiest way to manage the env
 ```bash
 brew install uv                # or curl -LsSf https://astral.sh/uv/install.sh | sh
 
-git clone https://github.com/anonymous/nemori-code.git
-cd nemori-code
+git clone https://github.com/nemori-ai/nemori.git
+cd nemori
 
 uv venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 
-uv pip install -e .
-uv pip install -e ".[dev,evaluation]"
+uv sync
 
 # Install spaCy language packs used for BM25 tokenization
 python -m spacy download en_core_web_sm
@@ -134,7 +137,7 @@ python locomo/generate_scores.py
 ```
 
 ### 5.2 🏆 Latest LoCoMo scores
-
+![LoCoMo LLM score comparison](assets/locomo_scores.png)
 | Category | BLEU | F1 | LLM | Count |
 |----------|------|----|-----|-------|
 | Multi-Hop | 0.3426 | 0.4312 | 0.7730 | 282 |
@@ -143,11 +146,6 @@ python locomo/generate_scores.py
 | Single-Hop | 0.4878 | 0.5497 | 0.8716 | 841 |
 
 ✨ Overall means: BLEU **0.4487**, F1 **0.5196**, LLM alignment **0.8110**, with only **3K** context tokens. 
-
-
-### 5.3 📈 Previous MVP LoCoMo scores:
-
-![LoCoMo LLM score comparison](assets/locomo-scores.png)
 
 ### 5.3 📚 LongMemEval
 

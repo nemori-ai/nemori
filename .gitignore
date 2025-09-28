@@ -114,12 +114,18 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# 数据文件和模型文件 (排除配置文件)
-# JSON数据文件 (保留配置文件)
-/evaluation/**/*.json
+# Data and model files (excluding configuration files)
+# Ignore JSON data files, but do NOT ignore config.json
+# Exclude all JSON/JSONL files in evaluation except config.json
+/evaluation/**/!(config).json
 /evaluation/**/*.jsonl
+
+# Exclude all JSON/JSONL files in memories directories
 **/memories/**/*.json
 **/memories/**/*.jsonl
+
+# Common result and metric files
+# 常见结果和指标文件
 results*.json
 metrics*.json
 *_results.json
