@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -132,6 +133,7 @@ def process_single_conversation(
     tracker_lock: threading.Lock,
     position: int = 0,
     verbose: bool = False,
+    max_retries: int = 3,
 ) -> None:
     conversation = item.get("conversation", {})
     speaker_a = conversation.get("speaker_a", "speaker_a")
@@ -139,15 +141,46 @@ def process_single_conversation(
     messages = build_messages(conversation)
 
     # Track result
-    result = {"user_id": user_id, "success": False, "message_count": len(messages), "error": None}
+    result = {
+        "user_id": user_id, 
+        "success": False, 
+        "message_count": len(messages), 
+        "error": None,
+        "stage": "initialized",
+        "retries": 0
+    }
     
     if not messages:
         result["error"] = "No messages"
+        result["stage"] = "validation_failed"
         with tracker_lock:
             tracker[user_id] = result
         return
 
-    memory = NemoriMemory(config=config)
+    # 重试逻辑
+    for retry_attempt in range(max_retries):
+        if retry_attempt > 0:
+            # 在重试前等待，避免立即重试导致同样的问题
+            wait_time = retry_attempt * 2  # 递增等待时间：2s, 4s, 6s
+            time.sleep(wait_time)
+            result["retries"] = retry_attempt
+            result["stage"] = f"retry_{retry_attempt}"
+        
+        try:
+            memory = NemoriMemory(config=config)
+            result["stage"] = "memory_created"
+            break  # 成功创建，跳出重试循环
+        except Exception as e:
+            result["error"] = f"Failed to create memory: {e}"
+            result["stage"] = "memory_creation_failed"
+            if retry_attempt == max_retries - 1:
+                # 最后一次重试也失败了
+                with tracker_lock:
+                    tracker[user_id] = result
+                return
+            else:
+                # 还有重试机会，继续
+                continue
     
     # Create progress bar for this user's message processing
     chunks = list(batched(messages, batch_size))
@@ -171,41 +204,75 @@ def process_single_conversation(
     try:
         # Add messages in batches with progress tracking
         messages_processed = 0
-        for chunk in chunks:
-            memory.add_messages(user_id, chunk)
-            messages_processed += len(chunk)
-            if pbar:
-                pbar.update(len(chunk))
+        result["stage"] = "adding_messages"
+        
+        # 添加消息时的重试逻辑
+        for chunk_idx, chunk in enumerate(chunks):
+            for retry in range(max_retries):
+                try:
+                    memory.add_messages(user_id, chunk)
+                    messages_processed += len(chunk)
+                    if pbar:
+                        pbar.update(len(chunk))
+                    break  # 成功，跳出重试循环
+                except Exception as e:
+                    if retry == max_retries - 1:
+                        raise  # 最后一次重试还是失败，抛出异常
+                    time.sleep(0.5 * (retry + 1))  # 短暂等待后重试
         
         if pbar:
             pbar.close()
         
-        # Create episode
-        episode_info = memory.flush(user_id)
+        # Create episode with retry
+        result["stage"] = "flushing_episode"
+        episode_info = None
+        for retry in range(max_retries):
+            try:
+                episode_info = memory.flush(user_id)
+                if episode_info is not None:
+                    break
+                elif retry < max_retries - 1:
+                    time.sleep(1 * (retry + 1))
+            except Exception as e:
+                if retry == max_retries - 1:
+                    raise
+                time.sleep(1 * (retry + 1))
+        
         if episode_info is None:
-            result["error"] = "Failed to create episode"
+            result["error"] = "Failed to create episode (flush returned None after retries)"
+            result["stage"] = "flush_failed"
             with tracker_lock:
                 tracker[user_id] = result
+            memory.close()
             return
             
         # Wait for semantic generation
+        result["stage"] = "waiting_semantic"
         memory.wait_for_semantic(user_id, timeout=wait_timeout)
         
         # Verify file creation
+        result["stage"] = "verifying_files"
         episodes_dir = Path(config.storage_path) / "episodes"
         file_path = episodes_dir / f"{user_id}_episodes.jsonl"
         
         if file_path.exists():
             result["success"] = True
+            result["stage"] = "completed"
         else:
             result["error"] = "Episode file not found after processing"
+            result["stage"] = "file_not_found"
             
     except Exception as e:
-        result["error"] = str(e)
+        result["error"] = f"{type(e).__name__}: {str(e)}"
+        result["stage"] = f"exception_at_{result.get('stage', 'unknown')}"
         if pbar:
             pbar.close()
     finally:
-        memory.close()
+        try:
+            memory.close()
+        except Exception as e:
+            if result["error"] is None:
+                result["error"] = f"Error closing memory: {e}"
         with tracker_lock:
             tracker[user_id] = result
 
@@ -217,6 +284,7 @@ def process_dataset(
     wait_timeout: float,
     max_workers: int,
     verbose: bool = False,
+    max_retries: int = 3,
 ) -> None:
     tracker: Dict[str, Any] = {}
     tracker_lock = threading.Lock()
@@ -265,10 +333,12 @@ def process_dataset(
                 tracker_lock,
                 position=idx if idx < max_workers else idx % max_workers,  # Reuse positions for overflow
                 verbose=verbose,
+                max_retries=max_retries,
             )
             futures_with_info.append((future, idx, item))
         
         # Main progress bar
+        failed_immediately = []
         with tqdm(total=len(futures_with_info), 
                   desc="Overall", 
                   position=0,
@@ -280,8 +350,12 @@ def process_dataset(
                 try:
                     future.result()
                 except Exception as e:
-                    # Silently handle exceptions (they're tracked in results)
-                    pass
+                    # Track exceptions that weren't caught inside the worker
+                    conversation = item.get("conversation", {})
+                    speaker_a = conversation.get("speaker_a", "speaker_a")
+                    user_id = f"{speaker_a}_{idx}"
+                    failed_immediately.append((user_id, str(e)))
+                    print(f"\n⚠️  [{idx+1}] {user_id} failed with exception: {e}")
                 main_pbar.update(1)
         
         # Clear the screen a bit for cleaner output
@@ -294,9 +368,16 @@ def process_dataset(
     
     successful = sum(1 for r in tracker.values() if r.get("success", False))
     failed = len(tracker) - successful
+    not_tracked = len(dataset) - len(tracker)
+    retried = sum(1 for r in tracker.values() if r.get("retries", 0) > 0)
+    total_retries = sum(r.get("retries", 0) for r in tracker.values())
     
-    print(f"✅ Successful: {successful}/{len(tracker)}")
-    print(f"❌ Failed: {failed}/{len(tracker)}")
+    print(f"✅ Successful: {successful}/{len(dataset)}")
+    print(f"❌ Failed: {failed}/{len(dataset)}")
+    if not_tracked > 0:
+        print(f"⚠️  Not tracked: {not_tracked}/{len(dataset)} (异常退出)")
+    if retried > 0:
+        print(f"🔄 Retried: {retried} users ({total_retries} total retry attempts)")
     
     if failed > 0:
         print("\n🔍 Failure Details:")
@@ -304,7 +385,23 @@ def process_dataset(
             if not result.get("success", False):
                 error = result.get("error", "Unknown error")
                 msg_count = result.get("message_count", 0)
-                print(f"  - {user_id}: {error} (messages: {msg_count})")
+                stage = result.get("stage", "unknown")
+                retry_count = result.get("retries", 0)
+                print(f"  - {user_id}: {error}")
+                print(f"    └─ Stage: {stage}, Messages: {msg_count}, Retries: {retry_count}")
+    
+    if failed_immediately:
+        print("\n💥 Immediate Exceptions (在worker外部抛出):")
+        for user_id, error in failed_immediately:
+            print(f"  - {user_id}: {error}")
+    
+    # 显示成功但有重试的用户
+    if retried > 0:
+        print("\n🔄 Successfully Recovered After Retry:")
+        for user_id, result in tracker.items():
+            if result.get("success", False) and result.get("retries", 0) > 0:
+                retry_count = result.get("retries", 0)
+                print(f"  - {user_id}: {retry_count} retry(ies)")
     
     print("\n" + "=" * 60)
 
@@ -316,6 +413,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--wait-timeout", type=float, default=1800.0)
     parser.add_argument("--max-workers", type=int, default=10)
+    parser.add_argument("--max-retries", type=int, default=3, help="max retries for each step")
     parser.add_argument("--verbose", action="store_true", help="Show detailed progress for each user")
     args = parser.parse_args()
 
@@ -326,7 +424,7 @@ def main() -> None:
 
     dataset_path = Path(args.data)
     dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
-    process_dataset(config, dataset, args.batch_size, args.wait_timeout, args.max_workers, args.verbose)
+    process_dataset(config, dataset, args.batch_size, args.wait_timeout, args.max_workers, args.verbose, args.max_retries)
 
 
 if __name__ == "__main__":  # pragma: no cover
