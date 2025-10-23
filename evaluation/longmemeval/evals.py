@@ -29,7 +29,7 @@ class Grade(BaseModel):
 class LongMemEvalEvaluator:
     """LongMemEval Result Evaluator"""
     
-    def __init__(self, model="gpt-4o-mini", max_concurrent=10):
+    def __init__(self, model=os.getenv("OPENAI_MODEL"), max_concurrent=10):
         """
         Initialize evaluator
         

@@ -8,6 +8,7 @@ import time
 from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class EmbeddingResponse:
 class EmbeddingClient:
     """Embedding vector client"""
     
-    def __init__(self, api_key: str, model: str = "text-embedding-3-small", base_url: Optional[str] = None):
+    def __init__(self, api_key: str, model: str = os.getenv("OPENAI_EMBEDDING_MODEL"), base_url: Optional[str] = None):
         """
         Initialize embedding client
         
@@ -54,7 +55,7 @@ class EmbeddingClient:
     
     def _get_embedding_dimension(self) -> int:
         """Get embedding dimension"""
-        if "text-embedding-3-small" in self.model:
+        if os.getenv("OPENAI_EMBEDDING_MODEL") in self.model:
             return 1536
         elif "text-embedding-3-large" in self.model:
             return 3072

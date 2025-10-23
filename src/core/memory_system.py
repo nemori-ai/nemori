@@ -91,12 +91,14 @@ class MemorySystem:
 
         self.llm_client = llm_client or (providers.llm_client if providers else LLMClient(
             api_key=self.config.openai_api_key,
-            model=self.config.llm_model
+            model=self.config.llm_model,
+            base_url=config.openai_base_url
         ))
 
         self.embedding_client = embedding_client or (providers.embedding_client if providers else EmbeddingClient(
             api_key=self.config.openai_api_key,
-            model=self.config.embedding_model
+            model=self.config.embedding_model,
+            base_url=config.openai_base_url
         ))
 
         if providers is None:

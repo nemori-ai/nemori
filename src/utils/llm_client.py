@@ -8,6 +8,7 @@ import time
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class LLMResponse:
 class LLMClient:
     """Language model client"""
     
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini", base_url: Optional[str] = None):
+    def __init__(self, api_key: str, model: str = os.getenv("OPENAI_MODEL"), base_url: Optional[str] = None):
         """
         Initialize LLM client
         

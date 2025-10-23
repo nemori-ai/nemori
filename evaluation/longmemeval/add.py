@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class LongMemEvalMemorySystemAdd:
     def __init__(self, data_path, batch_size=5,
                  storage_path="./longmemeval_memories",
-                 model="gpt-4o-mini",
+                 model=os.getenv("OPENAI_MODEL"),
                  language="en",
                  enable_semantic_memory=True,
                  semantic_generation_workers=8,  # New: Number of semantic generation worker threads
@@ -80,7 +80,7 @@ class LongMemEvalMemorySystemAdd:
         self.config = MemoryConfig(
             # LLM and Embedding settings
             llm_model=model,
-            embedding_model="text-embedding-3-small",
+            embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL"),
             embedding_dimension=1536,
             
             # Storage settings
@@ -578,7 +578,7 @@ def main():
         data_path="./dataset/longmemeval_s.json",
         batch_size=1,
         storage_path="./longmemeval_memories_v3",
-        model="gpt-4o-mini",
+        model=os.getenv("OPENAI_MODEL"),
         language="en",
         enable_semantic_memory=True,
         semantic_generation_workers=8,
@@ -612,7 +612,7 @@ if __name__ == "__main__":
                         help="Disable semantic memory generation")
     parser.add_argument("--storage_path", type=str, default="./longmemeval_memories",
                         help="Storage path for memories")
-    parser.add_argument("--model", type=str, default="gpt-4o-mini",
+    parser.add_argument("--model", type=str, default=os.getenv("OPENAI_MODEL"),
                         help="LLM model to use")
     parser.add_argument("--language", type=str, default="en",
                         help="Language setting (en or zh)")

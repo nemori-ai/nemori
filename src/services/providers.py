@@ -49,10 +49,12 @@ class DefaultProviders:
         self.llm_client = llm_client or LLMClient(
             api_key=config.openai_api_key,
             model=config.llm_model,
+            base_url=config.openai_base_url
         )
         self.embedding_client = embedding_client or EmbeddingClient(
             api_key=config.openai_api_key,
             model=config.embedding_model,
+            base_url=config.openai_base_url
         )
         self._episode_repo: Optional[EpisodeRepository] = None
         self._semantic_repo: Optional[SemanticRepository] = None
@@ -62,9 +64,12 @@ class DefaultProviders:
         self._boundary: Optional[BoundaryDetector] = None
         self._episode_gen: Optional[EpisodeGenerator] = None
         self._semantic_gen: Optional[SemanticGenerator] = None
-        self._storage_backend = getattr(config, "storage_backend", "filesystem")
-        self._vector_backend = getattr(config, "vector_index_backend", "chroma")
-        self._lexical_backend = getattr(config, "lexical_index_backend", "bm25")
+        self._storage_backend = getattr(
+            config, "storage_backend", "filesystem")
+        self._vector_backend = getattr(
+            config, "vector_index_backend", "chroma")
+        self._lexical_backend = getattr(
+            config, "lexical_index_backend", "bm25")
 
     # Storage -----------------------------------------------------------------
     def episode_repository(self) -> EpisodeRepository:
@@ -72,7 +77,8 @@ class DefaultProviders:
             if self._storage_backend == "memory":
                 self._episode_repo = InMemoryEpisodeRepository()
             else:
-                self._episode_repo = EpisodeStorageRepository(EpisodeStorage(self.config.storage_path))
+                self._episode_repo = EpisodeStorageRepository(
+                    EpisodeStorage(self.config.storage_path))
         return self._episode_repo
 
     def semantic_repository(self) -> SemanticRepository:
@@ -80,7 +86,8 @@ class DefaultProviders:
             if self._storage_backend == "memory":
                 self._semantic_repo = InMemorySemanticRepository()
             else:
-                self._semantic_repo = SemanticStorageRepository(SemanticStorage(self.config.storage_path))
+                self._semantic_repo = SemanticStorageRepository(
+                    SemanticStorage(self.config.storage_path))
         return self._semantic_repo
 
     # Indices -----------------------------------------------------------------
@@ -89,7 +96,8 @@ class DefaultProviders:
             if self._lexical_backend == "memory":
                 self._bm25 = InMemoryLexicalIndex()
             else:
-                self._bm25 = Bm25Index(BM25Search(language=self.config.language))
+                self._bm25 = Bm25Index(BM25Search(
+                    language=self.config.language))
         return self._bm25
 
     def vector_index(self) -> VectorIndex:
@@ -97,7 +105,8 @@ class DefaultProviders:
             if self._vector_backend == "memory":
                 self._vector_index = InMemoryVectorIndex()
             else:
-                self._chroma_engine = ChromaSearchEngine(self.embedding_client, self.config)
+                self._chroma_engine = ChromaSearchEngine(
+                    self.embedding_client, self.config)
                 self._vector_index = ChromaVectorIndex(self._chroma_engine)
         return self._vector_index  # type: ignore[return-value]
 
@@ -109,7 +118,8 @@ class DefaultProviders:
 
     def episode_generator(self) -> EpisodeGenerator:
         if self._episode_gen is None:
-            self._episode_gen = EpisodeGeneratorImpl(self.llm_client, self.config)
+            self._episode_gen = EpisodeGeneratorImpl(
+                self.llm_client, self.config)
         return self._episode_gen
 
     def semantic_generator(self) -> SemanticGenerator:

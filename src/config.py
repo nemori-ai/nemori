@@ -15,12 +15,12 @@ class MemoryConfig:
     storage_path: str = "./memories"
     
     # === Model Configuration ===
-    llm_model: str = "gpt-4o-mini"
-    embedding_model: str = "text-embedding-3-small"
+    llm_model: str = os.getenv("OPENAI_MODEL")
+    embedding_model: str = os.getenv("OPENAI_EMBEDDING_MODEL")
     embedding_dimension: int = 1536
     
     # === Language Configuration ===
-    language: str = "en"  # "en" for English, "zh" for Chinese
+    language: str = os.getenv("LANGUAGE")  # "en" for English, "zh" for Chinese
     
     # === Buffer Configuration ===
     buffer_size_min: int = 2       # Minimum buffer size
@@ -79,6 +79,7 @@ class MemoryConfig:
     
     # === Environment Variable Configuration ===
     openai_api_key: Optional[str] = field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
+    openai_base_url:Optional[str]=field(default_factory=lambda: os.getenv("OPENAI_BASE_URL"))
     
     # === Prediction-Correction Configuration ===
     max_statements_for_prediction: int = 10      # Maximum number of statements for prediction
@@ -87,6 +88,8 @@ class MemoryConfig:
     
     def __post_init__(self):
         """Configuration validation"""
+        if not self.openai_base_url:
+            raise ValueError("OpenAI base url is required")
         if not self.openai_api_key:
             raise ValueError("OpenAI API key is required")
         

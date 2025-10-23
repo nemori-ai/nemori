@@ -177,8 +177,8 @@ config = MemoryConfig(
     chroma_collection_prefix="nemori_eval",  # or "nemori_longmem"
     
     # Other settings remain the same
-    llm_model="gpt-4o-mini",
-    embedding_model="text-embedding-3-small"
+    llm_model=os.getenv("OPENAI_MODEL"),
+    embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL")
 )
 ```
 

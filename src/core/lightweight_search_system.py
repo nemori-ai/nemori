@@ -44,6 +44,7 @@ class LightweightSearchSystem:
         # Initialize only essential components
         self.embedding_client = EmbeddingClient(
             api_key=config.openai_api_key,
+            base_url=config.openai_base_url,
             model=config.embedding_model
         )
         

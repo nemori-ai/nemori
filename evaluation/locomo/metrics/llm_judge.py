@@ -10,7 +10,10 @@ import dotenv
 dotenv.load_dotenv()
 
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_BASE_URL")
+)
 
 ACCURACY_PROMPT = """
 Your task is to label an answer to a question as ’CORRECT’ or ’WRONG’. You will be given the following data:
@@ -42,7 +45,7 @@ Just return the label CORRECT or WRONG in a json format with the key as "label".
 def evaluate_llm_judge(question, gold_answer, generated_answer):
     """Evaluate the generated answer against the gold answer using an LLM judge."""
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=os.getenv("OPENAI_MODEL"),
         messages=[
             {
                 "role": "system",
@@ -64,7 +67,8 @@ def evaluate_llm_judge(question, gold_answer, generated_answer):
 
 def main():
     """Main function to evaluate RAG results using LLM judge."""
-    parser = argparse.ArgumentParser(description="Evaluate RAG results using LLM judge")
+    parser = argparse.ArgumentParser(
+        description="Evaluate RAG results using LLM judge")
     parser.add_argument(
         "--input_file",
         type=str,
@@ -118,7 +122,8 @@ def main():
             print("All categories accuracy:")
             for cat, results in LLM_JUDGE.items():
                 if results:  # Only print if there are results for this category
-                    print(f"  Category {cat}: {np.mean(results):.4f} " f"({sum(results)}/{len(results)})")
+                    print(
+                        f"  Category {cat}: {np.mean(results):.4f} " f"({sum(results)}/{len(results)})")
             print("------------------------------------------")
         index += 1
 

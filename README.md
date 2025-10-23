@@ -15,6 +15,12 @@ Nemori is a self-organising long-term memory substrate for agentic LLM workflows
 - **📦 Key dependencies:** OpenAI API, ChromaDB, uv (optional package manager)
 
 ---
+## Modifications
+
+1. Set `src/generation/prompts.py` as a symbolic link. The original file was moved to `src/generation/prompts_auto.py`, and the prompt was modified to reply in the same language as the input text. A Chinese prompt template (`src/generation/prompts_zh.py`) was also added.
+2. Added `OPENAI_BASE_URL`, `OPENAI_MODEL`, `OPENAI_EMBEDDING_MODEL`, and `LANGUAGE` environment variables. It is now possible to freely modify the OpenAI API endpoint, LLM model, embedding model, and the language used.
+
+---
 
 ## 1. ❓ Why Nemori
 
@@ -55,7 +61,7 @@ python -m spacy download zh_core_web_sm
 
 ### 2.2 🔑 Credentials
 
-Create a `.env` file in the repo root:
+Copy `.env.example` to `.env` from in the repo root:
 
 ```ini
 OPENAI_API_KEY=sk-...
@@ -69,7 +75,7 @@ Nemori only reads these variables; it never writes secrets to disk. 🔒
 from nemori import NemoriMemory, MemoryConfig
 
 config = MemoryConfig(
-    llm_model="gpt-4o-mini",
+    llm_model=os.getenv("OPENAI_MODEL"),
     enable_semantic_memory=True,
     enable_prediction_correction=True,
 )

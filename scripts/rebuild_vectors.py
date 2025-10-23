@@ -3,6 +3,10 @@
 Rebuild FAISS/embedding artifacts for episodic and semantic memories.
 """
 
+from src.utils.embedding_client import EmbeddingClient
+from src.search.vector_search import VectorSearch
+from src.models import Episode, SemanticMemory
+from src.config import MemoryConfig
 import argparse
 import json
 import shutil
@@ -14,11 +18,6 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from src.config import MemoryConfig
-from src.models import Episode, SemanticMemory
-from src.search.vector_search import VectorSearch
-from src.utils.embedding_client import EmbeddingClient
 
 
 def load_jsonl(path: Path, model_cls):
@@ -49,7 +48,8 @@ def rebuild(storage_root: Path) -> None:
 
     embedding_client = EmbeddingClient(
         api_key=os.getenv("OPENAI_API_KEY"),
-        model="text-embedding-3-small"
+        base_url=os.getenv("OPENAI_BASE_URL"),
+        model=os.getenv("OPENAI_EMBEDDING_MODEL")
     )
     vector_search = VectorSearch(
         embedding_client=embedding_client,
@@ -87,7 +87,8 @@ def rebuild(storage_root: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Rebuild vector indices for Nemori memories")
+    parser = argparse.ArgumentParser(
+        description="Rebuild vector indices for Nemori memories")
     parser.add_argument(
         "storage",
         nargs="?",

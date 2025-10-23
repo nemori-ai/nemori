@@ -3,7 +3,7 @@
   "chroma_persist_directory": "./evaluation_memories/chroma_db",
   "chroma_collection_prefix": "nemori_eval",
   "llm_model": "gpt-4.1-mini",
-  "embedding_model": "text-embedding-3-small",
+  "embedding_model": os.getenv("OPENAI_EMBEDDING_MODEL"),
   "language": "en",
   "buffer_size_min": 1,
   "buffer_size_max": 20,
