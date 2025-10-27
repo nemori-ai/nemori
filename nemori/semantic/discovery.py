@@ -100,42 +100,89 @@ class ContextAwareSemanticDiscoveryEngine:
         related_episodes_result = await self.retrieval_service.search_episodic_memories(
             owner_id=episode.owner_id, query=episode_query, limit=3 #self.topk // 2# Increase limit to get more candidates
         )
-
-        # Handle the search result properly - it might be EpisodeSearchResult or direct episodes list
-        if hasattr(related_episodes_result, 'episodes'):
-            related_episodes = related_episodes_result.episodes
-        else:
-            related_episodes = related_episodes_result if related_episodes_result else []
-
-        # # Only filter out current episode if we actually found some episodes
-        # # 只有在实际找到episodes的情况下才过滤当前episode
-        # filtered_episodes = []
-        # if related_episodes:
-        #     for ep in related_episodes:
-        #         if ep.episode_id != episode.episode_id:
-        #             filtered_episodes.append(ep)
-        #     print(f"   ✅ Found {len(related_episodes)} total episodes, {len(filtered_episodes)} historical episodes (excluding current)")
-            
-        #     # If we filtered out everything, it means we only found the current episode
-        #     if len(related_episodes) > 0 and len(filtered_episodes) == 0:
-        #         print(f"   ⚠️ Only found current episode in search results - no historical episodes available")
-        # else:
-        #     print(f"   ✅ Found {len(related_episodes)} episodes (none to filter)")
+        # 步骤 3: 提取并统一数据类型 (这是核心修复)
+        # ----------------------------------------------------
+        # V V V V V V V  治本的关键修改  V V V V V V V
+        # ----------------------------------------------------
         
-        # # Log some details about found episodes for debugging
-        # if filtered_episodes:
-        #     print(f"   📝 Sample historical episodes:")
-        #     for i, ep in enumerate(filtered_episodes[:2]):  # Show first 2
-        #         content_preview = ep.content[:50] + "..." if len(ep.content) > 50 else ep.content
-        #         print(f"      {i+1}. {ep.episode_id}: {content_preview}")
-        # else:
-        #     print(f"   ⚠️ No historical episodes available for context")
+        raw_episodes = []
+        if hasattr(related_episodes_result, 'episodes'):
+            raw_episodes = related_episodes_result.episodes
+        elif related_episodes_result:
+            raw_episodes = related_episodes_result
 
+        uniform_episodes = []
+        if raw_episodes:
+            for item in raw_episodes:
+                if isinstance(item, Episode):
+                    # 如果已经是 Episode 对象，直接添加
+                    uniform_episodes.append(item)
+                elif isinstance(item, dict):
+                    # 如果是字典，则实例化为 Episode 对象
+                    try:
+                        # 使用字典解包来创建 Episode 实例
+                        # 这要求字典的键与 Episode 的 __init__ 参数名匹配
+                        uniform_episodes.append(Episode(**item))
+                    except TypeError as e:
+                        print(f"   ⚠️ Warning: Failed to instantiate Episode from dict due to TypeError: {e}. Dict keys: {item.keys()}. Skipping item.")
+                else:
+                    print(f"   ⚠️ Warning: Found an unexpected type in episodic search results: {type(item)}. Skipping item.")
+        
+        print(f"   🛠️  Unified {len(uniform_episodes)} items into Episode objects.")
+
+        # 步骤 4: 过滤掉当前正在处理的 episode
+        # 这一步也很重要，一个片段的上下文不应该包含它自己
+        filtered_episodes = [
+            ep for ep in uniform_episodes if ep.episode_id != episode.episode_id
+        ]
+        
+        print(f"   ✅ Found {len(uniform_episodes)} total episodes, returning {len(filtered_episodes)} historical episodes for context.")
+        
+        # ----------------------------------------------------
+        # ^ ^ ^ ^ ^ ^ ^  治本的关键修改结束  ^ ^ ^ ^ ^ ^ ^
+        # ----------------------------------------------------
+        
         return {
             "related_semantic_memories": related_semantics,
-            "related_historical_episodes": related_episodes,
+            "related_historical_episodes": filtered_episodes, # 返回经过处理和过滤的列表
             "current_episode": episode,
         }
+        # # Handle the search result properly - it might be EpisodeSearchResult or direct episodes list
+        # if hasattr(related_episodes_result, 'episodes'):
+        #     related_episodes = related_episodes_result.episodes
+        # else:
+        #     related_episodes = related_episodes_result if related_episodes_result else []
+
+        # # # Only filter out current episode if we actually found some episodes
+        # # # 只有在实际找到episodes的情况下才过滤当前episode
+        # # filtered_episodes = []
+        # # if related_episodes:
+        # #     for ep in related_episodes:
+        # #         if ep.episode_id != episode.episode_id:
+        # #             filtered_episodes.append(ep)
+        # #     print(f"   ✅ Found {len(related_episodes)} total episodes, {len(filtered_episodes)} historical episodes (excluding current)")
+            
+        # #     # If we filtered out everything, it means we only found the current episode
+        # #     if len(related_episodes) > 0 and len(filtered_episodes) == 0:
+        # #         print(f"   ⚠️ Only found current episode in search results - no historical episodes available")
+        # # else:
+        # #     print(f"   ✅ Found {len(related_episodes)} episodes (none to filter)")
+        
+        # # # Log some details about found episodes for debugging
+        # # if filtered_episodes:
+        # #     print(f"   📝 Sample historical episodes:")
+        # #     for i, ep in enumerate(filtered_episodes[:2]):  # Show first 2
+        # #         content_preview = ep.content[:50] + "..." if len(ep.content) > 50 else ep.content
+        # #         print(f"      {i+1}. {ep.episode_id}: {content_preview}")
+        # # else:
+        # #     print(f"   ⚠️ No historical episodes available for context")
+
+        # return {
+        #     "related_semantic_memories": related_semantics,
+        #     "related_historical_episodes": related_episodes,
+        #     "current_episode": episode,
+        # }
+
 
     async def _reconstruct_with_context(self, episode: Episode, context: dict[str, Any]) -> str:
         """
@@ -171,30 +218,53 @@ class ContextAwareSemanticDiscoveryEngine:
     def _build_reconstruction_prompt(self, episode: Episode, context: dict[str, Any]) -> str:
         """Build prompt for content reconstruction."""
         related_context = ""
-        if context:
-            # Convert context to JSON-serializable format
-            serializable_context = {
-                "related_semantic_memories": [
-                    {"key": node.key, "value": node.value, "context": node.context} for node in context.get("related_semantic_memories", [])
-                ],
-                "related_episodes_memories": [
-                    {"title": ep.title, "content": ep.content} for ep in context.get("related_historical_episodes", [])
-                ],
-                "current_episode": (
-                    {"title": context["current_episode"].title, "content": context["current_episode"].content}
-                    if "current_episode" in context
-                    else None
-                ),
-            }
-            related_context = (
-                f"\n{json.dumps(serializable_context, indent=2, ensure_ascii=False)}\n"
-            )
+        try:
+            if context:
+                # Convert context to JSON-serializable format
+                serializable_context = {
+                    "related_semantic_memories": [
+                        {"key": node.key, "value": node.value, "context": node.context} for node in context.get("related_semantic_memories", [])
+                    ],
+                    "related_episodes_memories": [
+                        {"title": ep.title, "content": ep.content} for ep in context.get("related_historical_episodes", [])
+                    ],
+                    "current_episode": (
+                        {"title": context["current_episode"].title, "content": context["current_episode"].content}
+                        if "current_episode" in context
+                        else None
+                    ),
+                }
+                related_context = (
+                    f"\n{json.dumps(serializable_context, indent=2, ensure_ascii=False)}\n"
+                )
+        except:
+            print("error!!!!!! context:",context)
 #         return f"""You are an expert at reconstructing original conversations from episodic summaries.
 # 您是从情景摘要重建原始对话的专家。
 
 # Given this related episodes memories and related semantic memories:
 # 给定以下相关的情景记忆和语义记忆：
 # {related_context}
+
+# Please reconstruct what the original conversation might have looked like, using your general world knowledge.
+# 请使用您的通用世界知识重建原始对话可能的样子。
+
+# Important guidelines | 重要准则:
+# 1. Use only common knowledge that a typical LLM would know | 只使用典型大语言模型会知道的常识
+# 2. Make reasonable assumptions for missing details | 对缺失细节做合理假设
+# 3. Focus on factual reconstruction, not creative interpretation | 专注于事实重建，而非创意解释
+# 4. Maintain the same conversation structure and flow | 保持相同的对话结构和流程
+
+# Return the reconstructed conversation:
+# 返回重建的对话："""
+#         return f"""You are an expert at reconstructing original conversations from episodic summaries.
+# 您是从情景摘要重建原始对话的专家。
+
+# Given this episodic memory:
+# 给定以下情景记忆：
+# Title: {episode.title}
+# Summary: {episode.summary}
+# Content: {episode.content}{related_context}
 
 # Please reconstruct what the original conversation might have looked like, using your general world knowledge.
 # 请使用您的通用世界知识重建原始对话可能的样子。
@@ -223,14 +293,83 @@ Important guidelines
 4. Maintain the same conversation structure and flow 
 
 Return the reconstructed conversation:
-"""
-
+返回重建的对话："""
     def _build_knowledge_gap_analysis_prompt(
         self, original: str, reconstructed: str, episode: Episode, context: dict[str, Any]
     ) -> str:
         """Build prompt for knowledge gap analysis."""
+#         return f"""
+# You are a meticulous, high-fidelity knowledge analyst. Your mission is to perform a detailed comparison between an 'Original Content' block, which represents private domain truth, and a 'Reconstructed Content' block, which is an attempt to summarize or infer that truth.
 
-        return f"""You are an expert at identifying private domain knowledge gaps.
+# 您是一名一丝不苟的高保真知识分析师。您的任务是详细比较“原始内容”（代表私域真理）和“重建内容”（尝试总结或推断该真理）之间的差异。
+
+# Your goal is to precisely identify pieces of private, non-public knowledge that are present in the original but are either missing, incorrectly stated, over-generalized, or inferred without sufficient evidence in the reconstruction.
+
+# 您的目标是精确识别出原始内容中存在的，但在重建内容中缺失、陈述错误、过度泛化或在证据不足的情况下被推断出来的私域、非公开知识。
+
+# Original content | 原始内容:
+# {original}
+
+# Reconstructed content | 重建内容:
+# {reconstructed}
+# Please identify specific pieces of information that exist in the original but are missing or incorrectly assumed in the reconstruction. These represent private domain knowledge.
+# 请识别原始内容中存在但在重建中缺失或错误假设的具体信息。这些代表私域知识。
+
+# Focus on | 关注:
+# 1. Proper names, project names, specific terminology | 专有名词、项目名称、特定术语
+# 2. Personal preferences, habits, and characteristics | 个人偏好、习惯和特征
+# 3. Specific facts, dates, numbers that differ | 具体的事实、日期、数字差异
+# 4. Context-specific meanings and interpretations | 上下文特定的含义和解释
+# 53.  Focus on the loss of fidelity and the introduction of assumptions. | 专注于保真度的损失和假设的引入。
+
+# Return your analysis in JSON format:
+# 以 JSON 格式返回分析：
+# {{
+#     "knowledge_gaps": [
+#         {{  
+#             "analysis": "A brief explanation of WHY this is a knowledge gap. Explain the nature of the mismatch (e.g., generalization, assumption, factual error).",
+#             "key": "specific identifier or topic",
+#             "value": "the correct private knowledge",
+#             "context": "surrounding context from original",
+#             "gap_type": "proper_noun|personal_fact|specific_detail|contextual_meaning",
+#             "confidence": 0.0-1.0
+#         }}
+#     ]
+# }}"""
+#         return f"""You are an expert at identifying private domain knowledge gaps.
+# 您是识别私域知识差距的专家。
+
+# Original content | 原始内容:
+# {original}
+
+# Reconstructed content (using general LLM knowledge) | 重建内容（使用通用大语言模型知识）:
+# {reconstructed}
+
+# Please identify specific pieces of information that exist in the original but are missing or incorrectly assumed in the reconstruction. These represent private domain knowledge.
+# 请识别原始内容中存在但在重建中缺失或错误假设的具体信息。这些代表私域知识。
+
+# Focus on | 关注:
+# 1. Proper names, project names, specific terminology | 专有名词、项目名称、特定术语
+# 2. Personal preferences, habits, and characteristics | 个人偏好、习惯和特征
+# 3. Specific facts, dates, numbers that differ | 具体的事实、日期、数字差异
+# 4. Context-specific meanings and interpretations | 上下文特定的含义和解释
+
+# Return your analysis in JSON format:
+# 以 JSON 格式返回分析：
+# {{
+#     "knowledge_gaps": [
+#         {{
+#             "key": "specific identifier or topic",
+#             "value": "the correct private knowledge",
+#             "context": "surrounding context from original",
+#             "gap_type": "proper_noun|personal_fact|specific_detail|contextual_meaning",
+#             "confidence": 0.0-1.0
+#         }}
+#     ]
+# }}"""
+    
+        return f"""You are an expert at identifying private domain knowledge gaps. Your primary goal is to find what specific, private information the general LLM is missing, based only on the provided original content.
+您是识别私域知识差距的专家。您的首要目标是仅根据提供的原始内容，找出通用大语言模型所缺乏的特定私域信息。
 
 Original content 
 {original}
@@ -238,44 +377,53 @@ Original content
 Reconstructed content (using general LLM knowledge) 
 {reconstructed}
 
+Task | 任务:
 Please identify specific pieces of information that exist in the original but are missing or incorrectly assumed in the reconstruction. These represent private domain knowledge.
+请识别原始内容中存在但在重建中缺失或错误假设的具体信息。这些代表私域知识。
 
-## CRITICAL: Focus on HIGH-VALUE Knowledge Only
 
-Extract ONLY knowledge that passes these criteria:
-- **Persistence Test**: Will this still be true in 6 months?
-- **Specificity Test**: Does it contain concrete, searchable information?
-- **Utility Test**: Can this help predict future user needs or preferences?
-- **Independence Test**: Can this be understood without the conversation context?
+关键：仅关注高价值知识
 
-## HIGH-VALUE Knowledge Categories (EXTRACT THESE):
-1. **Identity & Background**: Names, professions, companies, education
-2. **Persistent Preferences**: Favorite books/movies/tools, long-term likes/dislikes  
-3. **Technical Details**: Technologies, versions, methodologies, architectures
-4. **Relationships**: Family, colleagues, team members, mentors
-5. **Goals & Plans**: Career objectives, learning goals, project plans
-6. **Beliefs & Values**: Principles, philosophies, strong opinions
-7. **Habits & Patterns**: Regular activities, workflows, schedules
+仅提取符合以下标准的知识：
 
-## LOW-VALUE Knowledge (SKIP THESE):
-- Temporary emotions or reactions
-- Single conversation acknowledgments
-- Vague statements without specifics
-- Context-dependent information
+   持久性测试：该信息在6个月后是否依然有效？
+   具体性测试：它是否包含具体、可搜索的信息？
+   实用性测试：它是否有助于预测未来的用户需求或偏好？
+   独立性测试：脱离对话上下文后，该信息是否仍能被理解？
 
-## Guidelines:
-1. Each statement should be self-contained and atomic
-2. Include ALL specific details (names, versions, titles)
-3. Use present tense for persistent facts
-4. Focus on facts that help understand the user long-term
-5. DO NOT include time/date information in the statement
-6. Quality over quantity - fewer valuable statements are better
+高价值知识类别（提取这些）：
 
-## Examples:
-GOOD: "Caroline's favorite book is 'Becoming Nicole' by Amy Ellis Nutt"
-GOOD: "The user works at ByteDance as a senior ML engineer"
-BAD: "The user thanked the assistant"
-BAD: "The user was happy about the response"
+1.  身份与背景：姓名、职业、公司、教育背景
+2.  长期偏好：喜欢的书籍/电影/工具，长期的好恶
+3.  技术细节：技术、版本、方法论、架构
+4.  人际关系：家庭、同事、团队成员、导师
+5.  目标与计划：职业目标、学习目标、项目计划
+6.  信念与价值观：原则、理念、鲜明观点
+7.  习惯与模式：常规活动、工作流程、日程安排
+
+低价值知识（忽略这些）：
+
+   暂时性的情绪或反应
+   单次对话中的确认或回应
+   缺乏细节的模糊陈述
+   依赖于上下文的信息
+
+指导原则：
+
+1.  每条知识陈述应自成一体且不可再分。
+2.  包含所有具体细节（姓名、版本、标题等）。
+3.  对于长期不变的事实，使用现在时态。
+4.  专注于有助于长期理解用户的事实。
+5.  陈述中不要包含时间/日期信息。
+6.  质量优于数量——少数几条有价值的陈述胜过大量无价值的陈述。
+
+示例：
+
+好的示例：“卡罗琳最喜欢的书是艾米·埃利斯·纳特（Amy Ellis Nutt）的《成为妮可》（Becoming Nicole）”
+好的示例：“该用户在字节跳动（ByteDance）担任高级机器学习工程师”
+不好的示例：“用户感谢了助手”
+不好的示例：“用户对回复感到满意”
+
 Return your analysis in JSON format:
 {{
     "knowledge_gaps": [

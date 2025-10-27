@@ -441,10 +441,12 @@ class EmbeddingRetrievalProvider(RetrievalProvider):
                 index["embeddings"].append(embedding)
                 index["episode_id_to_index"][episode.episode_id] = embeddings_index
 
+            #await self._rebuild_embedding_index(owner_id)
             # Save index to disk if persistence is enabled
             if self.persistence_enabled:
                 self._save_index_to_disk(owner_id)
 
+                
     async def remove_episode(self, episode_id: str) -> bool:
         """Remove an episode from the index."""
         # Find which user index contains this episode

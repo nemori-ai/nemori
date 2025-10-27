@@ -64,6 +64,15 @@ Please carefully analyze the following aspects to determine if a new episode sho
    - How related is the new substantive content to the previous meaningful discussion?
    - Does it involve completely different events, experiences, or substantial topics?
 
+6. **Value Completion or Insight Achievement** (High Priority):  
+   - Does the newly added message (or sequence) represent a **self-contained meaningful conclusion**, such as:  
+   - A clear decision made ("I've decided to quit my job")  
+   - A personal insight or realization ("Oh! So that’s why I’ve been feeling anxious…")  
+   - Completion of a reflective process ("After thinking it through, I realize I need to set boundaries")  
+   - Resolution of an emotional arc (from confusion → clarity, distress → calm)  
+   - A concrete plan or commitment ("I’ll call my mom tomorrow and talk to her")  
+   - Even if the topic hasn’t changed, **if the new message adds significant closure, insight, or actionable value that stands as a memorable mental event**, it should end the current episode.
+   
 **Special Rules for Common Patterns**:
 - **Greetings + Topic**: "Hey!" followed by actual content should be ONE episode
 - **Transition Phrases**: "By the way", "Oh, also", "Speaking of which" usually continue the same episode unless introducing major topic shifts
@@ -79,6 +88,9 @@ Decision Principles:
 - **Reasonable episode length**: Aim for episodes with 3-20 meaningful exchanges
 - **When in doubt, consider context**: If unsure, keep related content together rather than over-splitting
 
+- **Value closure matters**: An episode should end not only on topic shift, but also when a meaningful insight, decision, or emotional resolution is achieved—even if the conversation stops there.  
+- **Last meaningful utterance deserves preservation**: If the conversation may end after this turn, and the new message contains high episodic value (e.g., insight, decision, resolution), treat it as an episode boundary to ensure it is captured.
+
 Please return your judgment in JSON format:
 {{
     "reasoning": "One sentence summary of your reasoning process",
@@ -93,6 +105,66 @@ Note:
 - Each episode should contain substantive content that stands alone as a meaningful memory unit
 """
 
+
+BOUNDARY_DETECTION_PROMPT = """You are an episodic memory boundary detection expert. You need to determine if the newly added dialogue should end the current episode and start a new one.
+
+Current conversation history:
+{conversation_history}
+
+Time gap information:
+{time_gap_info}
+
+Newly added messages:
+{new_messages}
+
+Please carefully analyze the following aspects to determine if a new episode should begin. Your primary goal is to identify self-contained, memorable units of interaction.
+
+**Core Decision Criteria (Evaluate in this order of priority):**
+
+1.  **Value Completion & Task Resolution (Highest Priority):**
+    *   Has the user's initial question, command, or problem been **fully and comprehensively resolved** by the new messages?
+    *   Does the new message provide a complete, actionable, and conclusive answer that fulfills the user's stated intent?
+    *   **Crucially, if a user asks a question and the new message provides a detailed, definitive answer, this "Question-Answer" pair should be treated as a complete and memorable episode, even if no new topic is introduced.** This signifies the achievement of a specific goal.
+
+2.  **Substantive Topic Change:**
+    *   Do the new messages introduce a completely different substantive topic with meaningful content?
+    *   Is there a clear shift from one specific event, experience, or informational query to a distinctly unrelated one?
+
+3.  **Intent and Purpose Transition:**
+    *   Has the fundamental purpose of the conversation shifted? For example, from information gathering to social chatting, or from planning to reflecting.
+
+4.  **Meaningful Content Assessment:**
+    *   **Focus on Memorable Units:** An episode should represent a coherent "chunk" of memory. Ask yourself: Would a person recall this interaction as a single, complete event (e.g., "the time I asked about gold prices and got the full breakdown")?
+    *   **Ignore trivialities:** Do not segment based on greetings, social pleasantries, or simple confirmations. Focus on the core substance.
+
+5.  **Structural and Temporal Signals:**
+    *   Are there explicit topic transition phrases introducing substantial new content?
+    *   Is there a significant time gap that naturally suggests a new interaction context?
+
+**Special Rules for Common Patterns:**
+
+*   **Query-Response Closure:** A detailed, comprehensive response that fully answers a user's query **is a strong signal to end the episode**. The value has been delivered, and the cognitive "task" is complete.
+*   **Greetings + Topic:** "Hey!" followed by the start of a query is part of the SAME episode.
+*   **Social Closures:** "Thanks!", "Talk to you soon!", "I'm heading out" are natural endings and should remain within the current episode.
+*   **Supportive Responses:** Brief acknowledgments ("Got it," "Okay") typically continue the current episode unless followed by a major topic shift.
+
+**Decision Principles:**
+
+*   **Prioritize Value Delivery:** The completion of a user's goal or the delivery of a complete piece of information is a primary reason to end an episode. Each episode should feel "complete" in its purpose.
+*   **Think in "Memory Chunks":** Structure episodes as a person would naturally recall them. A successfully answered question is a perfect example of a memorable chunk.
+*   **Don't Wait for a Topic Change:** If a task is finished (like providing a detailed price list), the episode can end. The next message, even if it's a "thank you," might logically start a new, albeit short, social-closure episode.
+*   **When in doubt, favor closure:** If a segment feels self-contained and valuable on its own, it's better to mark it as a complete episode rather than merging it with a potentially unrelated future topic.
+
+Please return your judgment in JSON format:
+{{
+    "reasoning": "One sentence summary of your reasoning process",
+    "should_end": true/false,
+    "confidence": 0.0-1.0,
+    "topic_summary": "If should_end = true, summarize the core meaningful topic of the current episode, otherwise leave it blank"
+}}
+
+Note:
+- If conversation history is empty, this is the first message, return false."""
 EPISODE_GENERATION_PROMPT = """
 You are an episodic memory generation expert. Please convert the following conversation into an episodic memory.
 
@@ -137,7 +209,48 @@ If the conversation start time is "March 14, 2024 (Thursday) at 3:00 PM UTC" and
 Return only the JSON object, do not add any other text:
 """
 
+EPISODE_GENERATION_PROMPT = """
+你是一位情景记忆生成专家。请将以下对话转换为一段情景记忆。
 
+对话开始时间: {conversation_start_time}
+对话内容:
+{conversation}
+
+自定义指令:
+{custom_instructions}
+
+重要的时间处理规则:
+- 将提供的“对话开始时间”作为本次对话/情景开始的精确时间。
+- 当对话中提到相对时间（例如，“昨天”，“上周”）时，既要保留原始的相对表述，也要计算出绝对日期。
+- 时间参照的格式应为：“原始相对时间 (绝对日期)” - 例如，“上周 (2023年5月7日)”。
+- 这种双重格式可以同时支持基于绝对时间和相对时间的问题。
+- 所有的绝对时间计算都应基于所提供的开始时间。
+
+请生成一段结构化的情景记忆，并只返回一个包含以下两个字段的JSON对象：
+{{
+    "title": "一个简洁、描述性的标题，能准确概括主题（10-20个词）",
+    "content": "一段详细的、以第三人称叙述的对话事实记录。它必须包含所有重要信息：谁在什么时间参与了对话，讨论了什么，做出了什么决定，表达了什么情感，以及形成了什么计划或结果。请将其写成一个按时间顺序记述实际发生事件的说明，侧重于可观察到的行为和直接陈述，而不是解释性的结论。请使用提供的对话开始时间作为此情景的基础时间。"
+}}
+
+要求:
+1.  标题应具体且易于搜索（包括关键主题/活动）。
+2.  内容必须包含对话中的所有重要信息。
+3.  将对话格式转换为叙事性描述。
+4.  保持时间顺序和因果关系。
+5.  除非明确是第一人称，否则使用第三人称。
+6.  包含有助于关键词搜索的具体细节，特别是具体的活动、地点和物品。
+7.  对于时间参照，请使用双重格式：“相对时间 (绝对日期)”，以支持不同类型的问题。
+8.  在描述决定或行动时，自然地融入其背后的推理或动机。
+9.  为了避免检索时的歧义，请始终使用具体的名字而不是代词。
+
+示例:
+如果对话开始时间是“中国标准时间 2024年3月14日（星期四）下午3:00”，对话内容是关于 Caroline 计划去徒步旅行：
+{{
+    "title": "Caroline 于2024年3月14日的雷尼尔山徒步计划：周末探险规划会议",
+    "content": "在中国标准时间2024年3月14日下午3:00，Caroline 表达了想在这个周末（2024年3月16-17日）去徒步旅行的兴趣并寻求建议。Caroline 特别想去看雷尼尔山的日出，因为听说那里的风景很美。当 Melanie 询问装备时，Caroline 收到了包括徒步靴、保暖衣物（因为山顶很冷）、用于黎明前出发的手电筒、水和高能量食物在内的建议。Caroline 决定在周六早上（2024年3月16日）提早出发去看日出，因为 Caroline 想要体验这座山的全部美景。Caroline 计划邀请朋友一起去探险，这显示了 Caroline 偏爱共享的体验。Caroline 对这次旅行感到非常兴奋，希望能亲近自然，并从工作压力中得到放松。"
+}}
+
+只返回JSON对象，不要添加任何其他文本："""
 class ConversationEpisodeBuilder(EpisodeBuilder):
     """
     Specialized builder for conversation data.
@@ -273,9 +386,10 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         Returns:
             Tuple of (should_end_episode, reason_for_decision, masked_boundary_detected)
         """
-        if not conversation_history or len(conversation_history) <= len(new_messages):
+        # if not conversation_history or len(conversation_history) <= len(new_messages):
+        #     return False, "First messages in conversation", False
+        if not conversation_history:
             return False, "First messages in conversation", False
-
         # Apply smart masking logic
         masked_boundary_detected = False
         analysis_history = conversation_history
@@ -302,7 +416,7 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         prompt = BOUNDARY_DETECTION_PROMPT.format(
             conversation_history=history_text, new_messages=new_text, time_gap_info=time_gap_info
         )
-
+        print("BOUNDARY_DETECTION_PROMPT:",prompt)
         print("[ConversationEpisodeBuilder] Sending boundary prompt to LLM…")
 
         try:
