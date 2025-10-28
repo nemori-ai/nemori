@@ -196,7 +196,8 @@ Extract ONLY high-value, persistent knowledge. Return empty list if none found.
                 temperature=0.2,
                 max_tokens=1024*8,
                 default_response={"statements": []},  # Provide appropriate default response
-                max_retries=4  # Increase retry count
+                max_retries=4,  # Increase retry count
+                category="semantic_coldstart"
             )
             
             # Extract statement list
@@ -324,7 +325,8 @@ Extract ONLY high-value, persistent knowledge. Return empty list if none found.
             prediction = self.llm_client.generate_text_response(
                 prompt=prompt,
                 temperature=getattr(self.config, 'prediction_temperature', 0.3),
-                max_tokens=1024*8
+                max_tokens=1024*8,
+                category="semantic_prediction"
             )
             
             logger.debug(f"Generated prediction for episode: {episode_title[:50]}...")
@@ -378,7 +380,8 @@ Extract ONLY high-value, persistent knowledge. Return empty list if none found.
                 temperature=0.2,
                 max_tokens=1024*8,
                 default_response={"statements": []},
-                max_retries=5
+                max_retries=5,
+                category="semantic_correction"
             )
             
             statements = response.get("statements", [])

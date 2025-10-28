@@ -19,7 +19,6 @@ from ..domain.interfaces import (
     SemanticRepository,
     VectorIndex,
     LexicalIndex,
-    BoundaryDetector as BoundaryDetectorInterface,
     EpisodeGenerator as EpisodeGeneratorInterface,
     SemanticGenerator as SemanticGeneratorInterface,
 )
@@ -56,7 +55,6 @@ class MemorySystem:
         semantic_repository: Optional[SemanticRepository] = None,
         vector_index: Optional[VectorIndex] = None,
         lexical_index: Optional[LexicalIndex] = None,
-        boundary_detector: Optional[BoundaryDetectorInterface] = None,
         episode_generator: Optional[EpisodeGeneratorInterface] = None,
         semantic_generator: Optional[SemanticGeneratorInterface] = None,
         metrics_reporter: Optional[MetricsReporter] = None,
@@ -82,7 +80,6 @@ class MemorySystem:
                 semantic_repository,
                 vector_index,
                 lexical_index,
-                boundary_detector,
                 episode_generator,
                 semantic_generator,
             )
@@ -106,7 +103,6 @@ class MemorySystem:
             from ..search.bm25_search import BM25Search
             from ..generation.episode_generator import EpisodeGenerator
             from ..generation.semantic_generator import SemanticGenerator
-            from ..core.boundary_detector import BoundaryDetector
             from ..infrastructure.repositories import EpisodeStorageRepository, SemanticStorageRepository
             from ..infrastructure.indices import Bm25Index, ChromaVectorIndex
 
@@ -114,7 +110,6 @@ class MemorySystem:
             providers_semantic_repo = SemanticStorageRepository(SemanticStorage(self.config.storage_path))
             providers_vector_index = ChromaVectorIndex(ChromaSearchEngine(self.embedding_client, self.config))
             providers_lexical_index = Bm25Index(BM25Search(language=self.language))
-            providers_boundary = BoundaryDetector(self.llm_client, self.config)
             providers_episode_gen = EpisodeGenerator(self.llm_client, self.config)
             providers_semantic_gen = SemanticGenerator(
                 self.llm_client,
@@ -127,7 +122,6 @@ class MemorySystem:
             providers_semantic_repo = providers.semantic_repository()
             providers_vector_index = providers.vector_index()
             providers_lexical_index = providers.lexical_index()
-            providers_boundary = providers.boundary_detector()
             providers_episode_gen = providers.episode_generator()
             providers_semantic_gen = providers.semantic_generator()
 
@@ -135,7 +129,6 @@ class MemorySystem:
         self._semantic_repository = semantic_repository or providers_semantic_repo
         self._vector_index = vector_index or providers_vector_index
         self._lexical_index = lexical_index or providers_lexical_index
-        self._boundary_detector = boundary_detector or providers_boundary
         self._episode_generator = episode_generator or providers_episode_gen
         self._semantic_generator = semantic_generator or providers_semantic_gen
         
@@ -146,9 +139,6 @@ class MemorySystem:
             max_workers=self.config.max_workers,
             num_cache_shards=40  # Increase shard count to reduce contention
         )
-
-        # Public handles for downstream usage
-        self.boundary_detector = self._boundary_detector
         
         # Initialize core components
         self.buffer_manager = MessageBufferManager(self.config)
@@ -193,6 +183,31 @@ class MemorySystem:
         self.episode_cache: PerUserCache[List[Episode]] = PerUserCache(
             ttl_seconds=self._episode_cache_ttl
         )
+        
+        # Initialize batch segmenter and episode merger if enabled
+        self._batch_segmenter = None
+        self._episode_merger = None
+        if self.config.enable_batch_segmentation:
+            from ..generation.batch_segmenter import BatchSegmenter
+            self._batch_segmenter = BatchSegmenter(self.llm_client, self.config)
+            logger.info("Batch segmenter initialized")
+        
+        if self.config.enable_episode_merging:
+            from ..generation.episode_merger import EpisodeMerger
+            # Get the actual storage and search objects
+            episode_storage = getattr(self._episode_repository, '_storage', None)
+            vector_search_backend = getattr(self._vector_index, '_backend', None)
+            if episode_storage and vector_search_backend:
+                self._episode_merger = EpisodeMerger(
+                    llm_client=self.llm_client,
+                    embedding_client=self.embedding_client,
+                    config=self.config,
+                    episode_storage=episode_storage,
+                    vector_search=vector_search_backend
+                )
+                logger.info("Episode merger initialized")
+            else:
+                logger.warning("Episode merger disabled: storage or vector search backend not available")
 
         self.event_bus = EventBus()
         self.event_bus.subscribe("episode_created", self._handle_episode_created_event)
@@ -332,7 +347,128 @@ class MemorySystem:
                 
             except Exception as e:
                 logger.error(f"Error loading user data and indices for {owner_id}: {e}")
-    
+
+    # ------------------------------------------------------------------
+    # Deletion helpers
+    # ------------------------------------------------------------------
+    def delete_episode(self, owner_id: str, episode_id: str, cascade_semantic: bool = True) -> Dict[str, Any]:
+        """Delete a single episode and optionally cascade to semantic memories."""
+        user_lock = self._get_user_processing_lock(owner_id)
+        with user_lock:
+            response = {
+                "status": "not_found",
+                "deleted_semantic_ids": []
+            }
+
+            try:
+                episodes = self._episode_repository.list_by_user(owner_id)
+                target_episode = next((ep for ep in episodes if ep.episode_id == episode_id), None)
+                if not target_episode:
+                    return response
+
+                if not self._episode_repository.delete(owner_id, episode_id):
+                    return response
+
+                response["status"] = "deleted"
+
+                # Remove from indices
+                self._lexical_index.remove_episode(owner_id, episode_id)
+                self._vector_index.remove_episode(owner_id, episode_id)
+                self.search_engine.remove_episode(owner_id, episode_id)
+
+                # Cache invalidation
+                self.episode_cache.invalidate(owner_id)
+                self.performance_optimizer.cache.clear()
+
+                # Cancel pending semantic generation tasks for the episode
+                with self._semantic_futures_lock:
+                    pending = [
+                        task_id for task_id, ctx in self._semantic_generation_futures.items()
+                        if ctx.get("owner_id") == owner_id and ctx.get("episode_id") == episode_id
+                    ]
+                    for task_id in pending:
+                        future = self._semantic_generation_futures[task_id]["future"]
+                        future.cancel()
+                        del self._semantic_generation_futures[task_id]
+
+                removed_semantics = []
+                if cascade_semantic and self.config.enable_semantic_memory:
+                    semantic_memories = self._semantic_repository.list_by_user(owner_id)
+                    for memory in semantic_memories:
+                        if episode_id in memory.source_episodes:
+                            if self._semantic_repository.delete(owner_id, memory.memory_id):
+                                removed_semantics.append(memory.memory_id)
+                                self._lexical_index.remove_semantic(owner_id, memory.memory_id)
+                                self._vector_index.remove_semantic(owner_id, memory.memory_id)
+                                self.search_engine.remove_semantic_memory(owner_id, memory.memory_id)
+
+                if removed_semantics:
+                    response["deleted_semantic_ids"] = removed_semantics
+                # Invalidate semantic caches regardless of cascade to avoid stale data
+                self.semantic_memory_cache.invalidate(owner_id)
+                self.semantic_embedding_cache.invalidate_user(owner_id)
+
+                self.event_bus.publish(
+                    "episode_deleted",
+                    {
+                        "user_id": owner_id,
+                        "episode_id": episode_id,
+                        "cascade_semantic": cascade_semantic,
+                        "deleted_semantic_ids": removed_semantics,
+                    }
+                )
+
+                return response
+
+            except Exception as exc:
+                logger.error(f"Error deleting episode {episode_id} for user {owner_id}: {exc}")
+                response["status"] = "error"
+                response["error"] = str(exc)
+                return response
+
+    def delete_semantic_memory(self, owner_id: str, memory_id: str) -> Dict[str, Any]:
+        """Delete a single semantic memory for a user."""
+        user_lock = self._get_user_processing_lock(owner_id)
+        with user_lock:
+            response = {
+                "status": "not_found"
+            }
+
+            try:
+                memories = self._semantic_repository.list_by_user(owner_id)
+                target = next((mem for mem in memories if mem.memory_id == memory_id), None)
+                if not target:
+                    return response
+
+                if not self._semantic_repository.delete(owner_id, memory_id):
+                    return response
+
+                response["status"] = "deleted"
+
+                self._lexical_index.remove_semantic(owner_id, memory_id)
+                self._vector_index.remove_semantic(owner_id, memory_id)
+                self.search_engine.remove_semantic_memory(owner_id, memory_id)
+
+                self.semantic_memory_cache.invalidate(owner_id)
+                self.semantic_embedding_cache.invalidate_user(owner_id)
+                self.performance_optimizer.cache.clear()
+
+                self.event_bus.publish(
+                    "semantic_memory_deleted",
+                    {
+                        "user_id": owner_id,
+                        "memory_id": memory_id
+                    }
+                )
+
+                return response
+
+            except Exception as exc:
+                logger.error(f"Error deleting semantic memory {memory_id} for user {owner_id}: {exc}")
+                response["status"] = "error"
+                response["error"] = str(exc)
+                return response
+
     def load_user_data_and_indices_for_method(self, owner_id: str, search_method: str = "vector"):
         """
         Load user data and corresponding indices based on search method (optimized version, only loads required indices)
@@ -427,30 +563,38 @@ class MemorySystem:
                     logger.info(f"Detected format migration for user {owner_id}, forcing index rebuild")
                     return True
             
-            if episodes:
-                vector_dir = os.path.join(storage_path, "episodes", "vector_db")
-                embeddings_path = os.path.join(vector_dir, f"{owner_id}_embeddings.npy")
-                
-                if os.path.exists(embeddings_path):
-                    try:
-                        import numpy as np
-                        embeddings = np.load(embeddings_path)
-                        
-                        if len(embeddings) != len(episodes):
-                            logger.info(f"Vector count mismatch for user {owner_id}: {len(embeddings)} vs {len(episodes)}, forcing rebuild")
-                            return True
-                        
-                        embeddings_mtime = os.path.getmtime(embeddings_path)
-                        json_mtime = os.path.getmtime(json_path) if os.path.exists(json_path) else 0
-                        
-                        if json_mtime > embeddings_mtime:
-                            logger.info(f"Data file newer than vector index for user {owner_id}, forcing rebuild")
-                            return True
-                        
-                    except Exception as e:
-                        logger.warning(f"Error checking vector index for user {owner_id}: {e}, forcing rebuild")
-                        return True
-            
+            try:
+                counts = self.search_engine.chroma_search.get_collection_counts(owner_id)
+                if episodes and counts.get("episodes", 0) != len(episodes):
+                    logger.info(
+                        "Episode vector count mismatch for user %s: %s vs %s, forcing rebuild",
+                        owner_id,
+                        counts.get("episodes", 0),
+                        len(episodes)
+                    )
+                    return True
+
+                if (
+                    self.config.enable_semantic_memory
+                    and semantic_memories
+                    and counts.get("semantic", 0) != len(semantic_memories)
+                ):
+                    logger.info(
+                        "Semantic vector count mismatch for user %s: %s vs %s, forcing rebuild",
+                        owner_id,
+                        counts.get("semantic", 0),
+                        len(semantic_memories)
+                    )
+                    return True
+
+            except Exception as exc:
+                logger.warning(
+                    "Error checking Chroma indices for user %s: %s, forcing rebuild",
+                    owner_id,
+                    exc
+                )
+                return True
+
             return False
             
         except Exception as e:
@@ -467,31 +611,18 @@ class MemorySystem:
             semantic_memories: List of semantic memories
         """
         try:
-            vector_dir = os.path.join(self.config.storage_path, "episodes", "vector_db")
-            semantic_vector_dir = os.path.join(self.config.storage_path, "semantic", "vector_db")
-            
-            for dir_path in [vector_dir, semantic_vector_dir]:
-                if os.path.exists(dir_path):
-                    for filename in os.listdir(dir_path):
-                        if filename.startswith(f"{owner_id}.") or filename.startswith(f"{owner_id}_"):
-                            file_path = os.path.join(dir_path, filename)
-                            try:
-                                os.remove(file_path)
-                                logger.debug(f"Removed old vector index file: {file_path}")
-                            except Exception as e:
-                                logger.warning(f"Failed to remove old vector index file {file_path}: {e}")
-            
+            self.search_engine.chroma_search.clear_user_index(owner_id)
+
             if episodes:
                 self.search_engine.chroma_search.index_episodes(owner_id, episodes)
-            
+
             if semantic_memories:
                 self.search_engine.chroma_search.index_semantic_memories(owner_id, semantic_memories)
-            
+
             logger.info(f"Successfully rebuilt vector indices for user {owner_id}")
-            
+
         except Exception as e:
             logger.error(f"Error rebuilding vector indices for user {owner_id}: {e}")
-            # 回退到正常加载
             self.search_engine.chroma_search.load_user_indices(owner_id, episodes, semantic_memories)
     
     @property
@@ -589,87 +720,92 @@ class MemorySystem:
                     "boundary_detections": []
                 }
                 
-                # Batch process messages for efficiency
-                episodes_to_create = []
-                
-                # Process messages one by one (supports boundary detection)
-                for message in message_objects:
-                    # Check if boundary detection is needed
-                    should_create_episode = False
-                    boundary_reason = ""
+                # Check if batch segmentation is enabled
+                if self.config.enable_batch_segmentation and self._batch_segmenter:
+                    # Add all messages to buffer first
+                    buffer.add_messages(message_objects)
                     
-                    if self.config.enable_smart_boundary and not buffer.is_empty():
-                        # Improved boundary detection logic: when buffer message count exceeds threshold, exclude last message
-                        detection_buffer = buffer
-                        if (self.config.boundary_exclude_last_message and 
-                            buffer.size() > self.config.boundary_exclude_threshold):
-                            # Create a temporary buffer, only containing n-1 messages
-                            temp_buffer = MessageBuffer(owner_id=buffer.owner_id)
-                            all_messages = buffer.get_messages()
-                            # Add all messages except the last one
-                            for msg in all_messages[:-1]:
-                                temp_buffer.add_message(msg)
-                            detection_buffer = temp_buffer
-                            logger.debug(f"Using modified buffer for boundary detection: {len(all_messages)-1} messages (excluded last message as transition)")
-                        
-                        # Perform boundary detection (using cache)
-                        detection_result = self.performance_optimizer.cached_call(
-                            self.boundary_detector.detect_boundary,
-                            f"boundary_detection_{owner_id}_{buffer.size()}",  # Update cache key to distinguish different buffer states
-                            detection_buffer, [message]
-                        )
-                        
-                        result["boundary_detections"].append(detection_result)
-                        
-                        if detection_result.get("should_end", False):
-                            should_create_episode = True
-                            boundary_reason = detection_result.get("reason", "Intelligent boundary detection")
+                    # Check if batch threshold is reached
+                    should_process, reason = self._batch_segmenter.should_create_episode(buffer.size())
                     
-                    # Check buffer size limit
-                    elif buffer.size() >= self.config.buffer_size_max:
-                        should_create_episode = True
-                        boundary_reason = "Buffer reached maximum size"
+                    if should_process:
+                        # Process batch with segmentation
+                        created_episodes = self._process_batch_segmentation(owner_id, buffer, reason)
+                        result["episodes_created"] = created_episodes
+                        
+                        # Publish events for semantic generation
+                        semantic_tasks_scheduled = 0
+                        for episode_info in created_episodes:
+                            episode_obj = episode_info.get("episode_object")
+                            if episode_obj is None:
+                                continue
+                            self.metrics_reporter.report(
+                                "episode_created",
+                                {
+                                    "user_id": owner_id,
+                                    "episode_id": episode_obj.episode_id,
+                                    "message_count": episode_obj.message_count,
+                                },
+                            )
+                            self.event_bus.publish(
+                                "episode_created",
+                                {"user_id": owner_id, "episode": episode_obj},
+                            )
+                            semantic_tasks_scheduled += 1
+                        
+                        if semantic_tasks_scheduled:
+                            result["semantic_generation_scheduled"] = True
+                            result["semantic_tasks_scheduled"] = semantic_tasks_scheduled
+                            logger.info(
+                                f"Dispatched {semantic_tasks_scheduled} episode_created events for user {owner_id}"
+                            )
+                        
+                        # Clear buffer after processing
+                        buffer.clear()
+                else:
+                    # Fallback: If batch segmentation is disabled, use simple buffer size trigger
+                    logger.warning("Batch segmentation is disabled, using simple buffer size trigger")
+                    buffer.add_messages(message_objects)
                     
-                    # If episode creation is needed, process current buffer first
-                    if should_create_episode and not buffer.is_empty():
-                        episodes_to_create.append({
+                    # Check if buffer reaches max size
+                    if buffer.size() >= self.config.buffer_size_max:
+                        # Create single episode from all messages
+                        episodes_to_create = [{
                             "buffer_messages": buffer.get_messages().copy(),
-                            "boundary_reason": boundary_reason
-                        })
-                        buffer.clear()  # Clear buffer
-                    
-                    # Add new message to buffer
-                    buffer.add_message(message)
-                
-                # Batch create episodes (parallel processing)
-                if episodes_to_create:
-                    created_episodes = self._batch_create_episodes(owner_id, episodes_to_create)
-                    result["episodes_created"] = created_episodes
-                    semantic_tasks_scheduled = 0
-                    for episode_info in created_episodes:
-                        episode_obj = episode_info.get("episode_object")
-                        if episode_obj is None:
-                            continue
-                        self.metrics_reporter.report(
-                            "episode_created",
-                            {
-                                "user_id": owner_id,
-                                "episode_id": episode_obj.episode_id,
-                                "message_count": episode_obj.message_count,
-                            },
-                        )
-                        self.event_bus.publish(
-                            "episode_created",
-                            {"user_id": owner_id, "episode": episode_obj},
-                        )
-                        semantic_tasks_scheduled += 1
+                            "boundary_reason": "Buffer reached maximum size"
+                        }]
+                        
+                        created_episodes = self._batch_create_episodes(owner_id, episodes_to_create)
+                        result["episodes_created"] = created_episodes
+                        
+                        # Publish events for semantic generation
+                        semantic_tasks_scheduled = 0
+                        for episode_info in created_episodes:
+                            episode_obj = episode_info.get("episode_object")
+                            if episode_obj is None:
+                                continue
+                            self.metrics_reporter.report(
+                                "episode_created",
+                                {
+                                    "user_id": owner_id,
+                                    "episode_id": episode_obj.episode_id,
+                                    "message_count": episode_obj.message_count,
+                                },
+                            )
+                            self.event_bus.publish(
+                                "episode_created",
+                                {"user_id": owner_id, "episode": episode_obj},
+                            )
+                            semantic_tasks_scheduled += 1
 
-                    if semantic_tasks_scheduled:
-                        result["semantic_generation_scheduled"] = True
-                        result["semantic_tasks_scheduled"] = semantic_tasks_scheduled
-                        logger.info(
-                            f"Dispatched {semantic_tasks_scheduled} episode_created events for user {owner_id}"
-                        )
+                        if semantic_tasks_scheduled:
+                            result["semantic_generation_scheduled"] = True
+                            result["semantic_tasks_scheduled"] = semantic_tasks_scheduled
+                            logger.info(
+                                f"Dispatched {semantic_tasks_scheduled} episode_created events for user {owner_id}"
+                            )
+                        
+                        buffer.clear()
                 
                 # Update final buffer size
                 result["buffer_size_after"] = buffer.size()
@@ -744,6 +880,146 @@ class MemorySystem:
                         continue
         
         return created_episodes
+    
+    def _process_batch_segmentation(
+        self,
+        owner_id: str,
+        buffer: MessageBuffer,
+        reason: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Process batch with intelligent segmentation and concurrent generation.
+        
+        Args:
+            owner_id: User identifier
+            buffer: Message buffer containing messages to segment
+            reason: Reason for triggering batch processing
+            
+        Returns:
+            List of created episodes information
+        """
+        if buffer.is_empty():
+            return []
+        
+        try:
+            # 1. Batch segmentation using LLM
+            buffer_messages = buffer.get_messages()
+            episode_groups = self._batch_segmenter.segment_batch(buffer_messages)
+            
+            logger.info(
+                f"Batch segmentation: {len(buffer_messages)} messages → "
+                f"{len(episode_groups)} episode groups"
+            )
+            
+            # 2. Generate all episodes (可以并发)
+            created_episodes = []
+            
+            for i, indices in enumerate(episode_groups):
+                try:
+                    # Extract messages by indices (1-based → 0-based)
+                    group_messages = [buffer_messages[idx-1] for idx in indices]
+                    
+                    # Generate episode
+                    episode = self.episode_generator.generate_episode(
+                        user_id=owner_id,
+                        messages=group_messages,
+                        boundary_reason=f"Batch segmentation (group {i+1}/{len(episode_groups)})"
+                    )
+                    
+                    # 3. Only check merge for the first episode
+                    if i == 0 and self.config.enable_episode_merging and self._episode_merger:
+                        try:
+                            merged, merged_ep, old_id = self._episode_merger.check_and_merge(
+                                new_episode=episode,
+                                top_k=self.config.merge_top_k,
+                                similarity_threshold=self.config.merge_similarity_threshold
+                            )
+                            
+                            if merged and merged_ep and old_id:
+                                # Use merged episode
+                                episode = merged_ep
+                                
+                                # Delete old episode from storage and indices
+                                self._delete_episode(owner_id, old_id)
+                                
+                                logger.info(
+                                    f"Merged first episode in batch: {episode.episode_id} "
+                                    f"(deleted old: {old_id[:8]}...)"
+                                )
+                        except Exception as e:
+                            logger.warning(f"Episode merge failed for first episode: {e}, saving as new")
+                    
+                    # 4. Save episode
+                    episode_id = self._episode_repository.save(episode)
+                    
+                    # 5. Index episode
+                    self._lexical_index.add_episode(owner_id, episode)
+                    self._vector_index.add_episode(owner_id, episode)
+                    self.search_engine.add_episode(owner_id, episode)
+                    
+                    # Update episodes cache
+                    cached = self.episode_cache.get(owner_id)
+                    if cached is not None:
+                        cached = cached + [episode]
+                        self.episode_cache.put(owner_id, cached)
+                    
+                    # Add to results
+                    created_episodes.append({
+                        "episode_id": episode_id,
+                        "title": episode.title,
+                        "message_count": episode.message_count,
+                        "episode_object": episode
+                    })
+                    
+                    logger.info(
+                        f"Created episode {episode_id} from batch group {i+1}/{len(episode_groups)} "
+                        f"({len(group_messages)} messages)"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error processing episode group {i+1}: {e}")
+                    continue
+            
+            return created_episodes
+            
+        except Exception as e:
+            logger.error(f"Error in batch segmentation processing: {e}")
+            return []
+    
+    def _delete_episode(self, owner_id: str, episode_id: str) -> bool:
+        """
+        Delete an episode from storage and all indices.
+        
+        Args:
+            owner_id: User identifier
+            episode_id: Episode ID to delete
+            
+        Returns:
+            True if successful
+        """
+        try:
+            # Delete from storage
+            episode_storage = getattr(self._episode_repository, '_storage', None)
+            if episode_storage:
+                episode_storage.delete_episode(episode_id, owner_id)
+            
+            # Delete from vector index
+            vector_search = getattr(self._vector_index, '_backend', None)
+            if vector_search:
+                vector_search.remove_episode(owner_id, episode_id)
+            
+            # Delete from lexical index (if supported)
+            # BM25Search doesn't have explicit delete, it rebuilds from storage
+            
+            # Invalidate cache
+            self.episode_cache.invalidate(owner_id)
+            
+            logger.info(f"Deleted episode {episode_id} for user {owner_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error deleting episode {episode_id}: {e}")
+            return False
     
     def search(
         self,

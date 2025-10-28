@@ -16,5 +16,7 @@
   "search_top_k_semantic": 20,
   "storage_backend": "filesystem",
   "vector_index_backend": "chroma",
-  "lexical_index_backend": "bm25"
+  "lexical_index_backend": "bm25",
+  "enable_batch_segmentation": true,
+  "batch_threshold": 20
 }

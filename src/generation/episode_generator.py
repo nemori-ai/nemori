@@ -13,6 +13,16 @@ from .prompts import PromptTemplates
 logger = logging.getLogger(__name__)
 
 
+def _normalize_datetime(dt: datetime) -> datetime:
+    """Convert timezone-aware datetime to naive datetime for comparison."""
+    if dt is None:
+        return datetime.now()
+    if dt.tzinfo is not None:
+        # Convert to UTC and remove timezone info
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 class EpisodeGenerator:
     """Episode generator for creating episodic memories from conversations"""
     
@@ -106,7 +116,8 @@ class EpisodeGenerator:
                     "title": "Episode generation failed",
                     "content": "Unable to generate episode content due to an error.",
                     "timestamp": datetime.now().isoformat()
-                }  # 提供适合的默认响应
+                },  # 提供适合的默认响应
+                category="episode_generation"
             )
             
             # Validate response
@@ -182,9 +193,10 @@ class EpisodeGenerator:
         # Priority 2: Use the earliest message timestamp
         if messages:
             try:
-                earliest_message = min(messages, key=lambda msg: msg.timestamp)
-                logger.debug(f"Using earliest message timestamp: {earliest_message.timestamp}")
-                return earliest_message.timestamp
+                earliest_message = min(messages, key=lambda msg: _normalize_datetime(msg.timestamp))
+                normalized_ts = _normalize_datetime(earliest_message.timestamp)
+                logger.debug(f"Using earliest message timestamp: {normalized_ts}")
+                return normalized_ts
             except (AttributeError, ValueError) as e:
                 logger.warning(f"Error getting message timestamps: {e}")
         

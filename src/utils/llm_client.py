@@ -11,6 +11,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Import TokenCounter for token tracking
+try:
+    from .token_counter import TokenCounter
+    TOKEN_TRACKING_ENABLED = True
+except ImportError:
+    TOKEN_TRACKING_ENABLED = False
+    logger.warning("TokenCounter not available, token tracking disabled")
+
 
 @dataclass
 class LLMResponse:
@@ -54,6 +62,7 @@ class LLMClient:
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
+        category: Optional[str] = None,
         **kwargs
     ) -> LLMResponse:
         """
@@ -63,6 +72,7 @@ class LLMClient:
             messages: Message list
             temperature: Temperature parameter
             max_tokens: Maximum tokens
+            category: Token统计类别（用于跟踪不同类型的LLM调用）
             **kwargs: Other parameters
             
         Returns:
@@ -83,8 +93,19 @@ class LLMClient:
                 
                 response_time = time.time() - start_time
                 
+                response_content = response.choices[0].message.content
+                
+                # Token tracking
+                if TOKEN_TRACKING_ENABLED and category:
+                    try:
+                        # Concatenate all messages as input
+                        input_text = "\n".join([f"{msg.get('role', '')}: {msg.get('content', '')}" for msg in messages])
+                        TokenCounter().add_llm_call(category, input_text, response_content or "")
+                    except Exception as e:
+                        logger.debug(f"Token tracking failed: {e}")
+                
                 return LLMResponse(
-                    content=response.choices[0].message.content,
+                    content=response_content,
                     usage=response.usage.model_dump() if response.usage else {},
                     model=response.model,
                     finish_reason=response.choices[0].finish_reason,
@@ -105,7 +126,8 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: Optional[int] = None,
         default_response: Optional[Dict[str, Any]] = None,
-        max_retries: int = 3
+        max_retries: int = 3,
+        category: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate JSON response
@@ -117,6 +139,7 @@ class LLMClient:
             max_tokens: Maximum tokens
             default_response: Default response to return when parsing fails (optional)
             max_retries: Maximum retry count when JSON parsing fails
+            category: Token统计类别
             
         Returns:
             Parsed JSON object
@@ -134,7 +157,8 @@ class LLMClient:
                 response = self.chat_completion(
                     messages=messages,
                     temperature=temperature,
-                    max_tokens=max_tokens
+                    max_tokens=max_tokens,
+                    category=category
                 )
         
                 # Try to parse JSON
@@ -279,7 +303,8 @@ class LLMClient:
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        category: Optional[str] = None
     ) -> str:
         """
         Generate text response
@@ -289,6 +314,7 @@ class LLMClient:
             system_prompt: System prompt text
             temperature: Temperature parameter
             max_tokens: Maximum tokens
+            category: Token统计类别
             
         Returns:
             Generated text
@@ -303,7 +329,8 @@ class LLMClient:
         response = self.chat_completion(
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            category=category
         )
         
         return response.content

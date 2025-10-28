@@ -7,59 +7,6 @@ from typing import Dict, Any, List
 
 class PromptTemplates:
     """Prompt template management"""
-    
-    # Boundary detection prompt
-    BOUNDARY_DETECTION_PROMPT = """
-You are a dialogue boundary detection expert. You need to determine if the newly added dialogue should end the current episode and start a new one.
-
-Current conversation history:
-{conversation_history}
-
-Newly added messages:
-{new_messages}
-
-Please carefully analyze the following aspects to determine if a new episode should begin:
-
-1. **Topic Change** (Highest Priority):
-   - Do the new messages introduce a completely different topic?
-   - Is there a shift from one specific event to another?
-   - Has the conversation moved from one question to an unrelated new question?
-
-2. **Intent Transition**:
-   - Has the purpose of the conversation changed? (e.g., from casual chat to seeking help, from discussing work to discussing personal life)
-   - Has the core question or issue of the current topic been answered or fully discussed?
-
-3. **Temporal Markers**:
-   - Are there temporal transition markers ("earlier", "before", "by the way", "oh right", "also", etc.)?
-   - Is the time gap between messages more than 30 minutes?
-
-4. **Structural Signals**:
-   - Are there explicit topic transition phrases ("changing topics", "speaking of which", "quick question", etc.)?
-   - Are there concluding statements indicating the current topic is finished?
-
-5. **Content Relevance**:
-   - How related is the new message to the previous discussion? (Consider splitting if relevance < 30%)
-   - Does it involve completely different people, places, or events?
-
-Decision Principles:
-- **Prioritize topic independence**: Each episode should revolve around one core topic or event
-- **When in doubt, split**: When uncertain, lean towards starting a new episode
-- **Maintain reasonable length**: A single episode typically shouldn't exceed 10-15 messages
-
-Please return your judgment in JSON format:
-{{
-    "should_end": true/false,
-    "reason": "Specific reason for the judgment",
-    "confidence": 0.0-1.0,
-    "topic_summary": "If ending, summarize the core topic of the current episode"
-}}
-
-Note:
-- If conversation history is empty, this is the first message, return false
-- When a clear topic change is detected, split even if the conversation flows naturally
-- Each episode should be a self-contained conversational unit that can be understood independently
-"""
-
     # Episode generation prompt
     EPISODE_GENERATION_PROMPT = """
 You are an episodic memory generation expert. Please convert the following conversation into an episodic memory.
@@ -290,14 +237,157 @@ Return ONLY high-value knowledge in JSON format:
 Quality over quantity - extract only knowledge that truly helps understand the user long-term.
 """
 
-    @classmethod
-    def get_boundary_detection_prompt(cls, conversation_history: str, new_messages: str) -> str:
-        """Get boundary detection prompt"""
-        return cls.BOUNDARY_DETECTION_PROMPT.format(
-            conversation_history=conversation_history,
-            new_messages=new_messages
-        )
-    
+    # Batch Segmentation Prompt
+    BATCH_SEGMENTATION_PROMPT = """
+You are an intelligent conversation segmentation expert. Your task is to analyze a batch of messages and group them into coherent episodes.
+
+## Input Messages
+You will receive {count} messages numbered from 1 to {count}:
+
+{messages}
+
+## Your Task
+Analyze these messages and group them into coherent episodes with **HIGH SENSITIVITY** to topic shifts. Be strict and create NEW episodes when detecting:
+
+1. **Topic Change** (Highest Priority):
+   - Do the new messages introduce a completely different topic?
+   - Is there a shift from one specific event to another?
+   - Has the conversation moved from one question to an unrelated new question?
+
+2. **Intent Transition**:
+   - Has the purpose of the conversation changed? (e.g., from casual chat to seeking help, from discussing work to discussing personal life)
+   - Has the core question or issue of the current topic been answered or fully discussed?
+
+3. **Temporal Markers**:
+   - Are there temporal transition markers ("earlier", "before", "by the way", "oh right", "also", etc.)?
+   - Is the time gap between messages more than 30 minutes?
+
+4. **Structural Signals**:
+   - Are there explicit topic transition phrases ("changing topics", "speaking of which", "quick question", etc.)?
+   - Are there concluding statements indicating the current topic is finished?
+
+5. **Content Relevance**:
+   - How related is the new message to the previous discussion? (Consider splitting if relevance < 30%)
+   - Does it involve completely different people, places, or events?
+
+Decision Principles:
+- **Prioritize topic independence**: Each episode should revolve around one core topic or event
+- **When in doubt, split**: When uncertain, lean towards starting a new episode
+- **Maintain reasonable length**: A single episode typically shouldn't exceed 10-15 messages
+
+## Output Format
+Return a JSON object with episodes, where each episode contains:
+- `indices`: List of message numbers (1-based) belonging to this episode
+- `topic`: Brief, specific description of what this episode is about
+
+Example output:
+{{
+    "episodes": [
+        {{
+            "indices": [1, 2, 3, 4],
+            "topic": "Discussion about weekend hiking plans"
+        }},
+        {{
+            "indices": [5, 6, 7],
+            "topic": "Questions about Python programming"
+        }},
+        {{
+            "indices": [8, 9],
+            "topic": "Work schedule discussion"
+        }}
+    ]
+}}
+
+## Important Guidelines
+- Episodes can have non-consecutive indices if messages are interleaved
+- An episode should typically contain 2-15 messages
+- Focus on topical coherence over strict chronological order
+- When in doubt, prefer smaller, more focused episodes
+
+Return only the JSON object, no additional text.
+"""
+
+    # Episode Merge Decision Prompt
+    MERGE_DECISION_PROMPT = """
+You are an episodic memory merge decision expert. Determine if a new episode should be merged with an existing similar episode.
+
+## New Episode
+Time Range: {new_time_range}
+Content: {new_content}
+
+## Candidate Episodes to Merge With
+{candidates}
+
+## Your Task
+Decide whether the new episode should:
+1. **merge**: Merge with one of the candidates (they describe the same event/topic)
+2. **new**: Keep as a separate new episode (it's a distinct event)
+
+## Merge Criteria
+Merge ONLY if:
+- Both episodes describe the SAME event or conversation session
+- They have significant temporal overlap or are very close in time
+- The content is clearly a continuation or different perspective of the same topic
+- Merging would create a more complete picture without mixing different events
+
+Do NOT merge if:
+- They are different events/conversations even if on similar topics
+- They are separated by significant time gaps (>1 hour)
+- They involve different contexts or participants
+
+## Output Format
+Return JSON:
+{{
+    "decision": "merge" or "new",
+    "merge_target_id": "episode_id_to_merge_with" (only if decision is "merge", otherwise null),
+    "reason": "Brief explanation of your decision"
+}}
+
+Return only the JSON object, no additional text.
+"""
+
+    # Episode Merge Content Generation Prompt
+    MERGE_CONTENT_PROMPT = """
+You are an episodic memory merge content generator. Combine two related episodes into a single, coherent episode.
+
+## Original Episode
+Time Range: {original_time_range}
+Title: {original_title}
+Content: {original_content}
+
+## New Episode to Merge
+Time Range: {new_time_range}
+Title: {new_title}
+Content: {new_content}
+
+## Combined Event Details
+{combined_events}
+
+## Your Task
+Generate a merged episode that:
+1. Combines information from both episodes without duplication
+2. Maintains chronological flow of events
+3. Preserves all important details from both episodes
+4. Creates a coherent narrative
+
+## Output Format
+Return JSON with the merged episode content:
+{{
+    "title": "Merged episode title that captures the complete topic",
+    "content": "Detailed narrative combining both episodes chronologically. Include all participants, key decisions, emotions, and outcomes. Use third-person narrative style.",
+    "timestamp": "ISO format timestamp of when the merged episode occurred (use earliest time)"
+}}
+
+## Guidelines
+- Integrate details naturally, don't just concatenate
+- Eliminate redundancy while preserving unique information
+- Maintain temporal coherence in the narrative
+- Use specific details that aid searchability
+- Write in third-person narrative style
+
+Return only the JSON object, no additional text.
+"""
+
     @classmethod
     def get_episode_generation_prompt(cls, conversation: str, boundary_reason: str) -> str:
         """Get episode generation prompt"""
@@ -360,4 +450,42 @@ Quality over quantity - extract only knowledge that truly helps understand the u
             knowledge_statements=formatted_statements
         )
     
+    @classmethod
+    def get_batch_segmentation_prompt(cls, count: int, messages: str) -> str:
+        """Get batch segmentation prompt"""
+        return cls.BATCH_SEGMENTATION_PROMPT.format(
+            count=count,
+            messages=messages
+        )
+    
+    @classmethod
+    def get_merge_decision_prompt(cls, new_time_range: str, new_content: str, candidates: str) -> str:
+        """Get merge decision prompt"""
+        return cls.MERGE_DECISION_PROMPT.format(
+            new_time_range=new_time_range,
+            new_content=new_content,
+            candidates=candidates
+        )
+    
+    @classmethod
+    def get_merge_content_prompt(
+        cls, 
+        original_time_range: str,
+        original_title: str,
+        original_content: str,
+        new_time_range: str,
+        new_title: str,
+        new_content: str,
+        combined_events: str
+    ) -> str:
+        """Get merge content generation prompt"""
+        return cls.MERGE_CONTENT_PROMPT.format(
+            original_time_range=original_time_range,
+            original_title=original_title,
+            original_content=original_content,
+            new_time_range=new_time_range,
+            new_title=new_title,
+            new_content=new_content,
+            combined_events=combined_events
+        )
  

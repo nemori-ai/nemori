@@ -1,6 +1,5 @@
 """
 Episode Original Message Search Engine
-Search engine that builds indexes on the original_messages field in episodes
 """
 
 import json

@@ -474,6 +474,10 @@ class EpisodeStorage(BaseStorage):
                 
         except Exception as e:
             raise Exception(f"Error deleting episode: {e}")
+
+    def delete(self, owner_id: str, episode_id: str) -> bool:
+        """Compatibility helper aligning with repository interface."""
+        return self.delete_episode(episode_id, owner_id)
     
     def get_user_stats(self, owner_id: str) -> Dict[str, Any]:
         """

@@ -451,6 +451,76 @@ class BM25Search:
             logger.warning(f"Falling back to full rebuild for user {user_id}")
             if self.semantic_data.get(user_id):
                 self.index_semantic_memories(user_id, self.semantic_data[user_id])
+
+    def remove_episode(self, user_id: str, episode_id: str) -> bool:
+        """Remove an episode from the BM25 index and rebuild cache structures."""
+        if user_id not in self.episode_data:
+            return False
+
+        episodes = self.episode_data[user_id]
+        tokenized = self.episode_tokenized_texts.get(user_id, [])
+        if not episodes:
+            return False
+
+        new_episodes = []
+        new_tokens = []
+        removed = False
+        for idx, episode in enumerate(episodes):
+            if episode.episode_id == episode_id:
+                removed = True
+                continue
+            new_episodes.append(episode)
+            if idx < len(tokenized):
+                new_tokens.append(tokenized[idx])
+
+        if not removed:
+            return False
+
+        if new_episodes:
+            self.episode_indices[user_id] = BM25Okapi(new_tokens)
+            self.episode_tokenized_texts[user_id] = new_tokens
+            self.episode_data[user_id] = new_episodes
+        else:
+            self.episode_indices.pop(user_id, None)
+            self.episode_tokenized_texts.pop(user_id, None)
+            self.episode_data.pop(user_id, None)
+
+        return True
+
+    def remove_semantic_memory(self, user_id: str, memory_id: str) -> bool:
+        """Remove a semantic memory from the BM25 index and rebuild cache structures."""
+        if user_id not in self.semantic_data:
+            return False
+
+        memories = self.semantic_data[user_id]
+        tokenized = self.semantic_tokenized_texts.get(user_id, [])
+        if not memories:
+            return False
+
+        new_memories = []
+        new_tokens = []
+        removed = False
+        for idx, memory in enumerate(memories):
+            if memory.memory_id == memory_id:
+                removed = True
+                continue
+            new_memories.append(memory)
+            if idx < len(tokenized):
+                new_tokens.append(tokenized[idx])
+
+        if not removed:
+            return False
+
+        if new_memories:
+            self.semantic_indices[user_id] = BM25Okapi(new_tokens)
+            self.semantic_tokenized_texts[user_id] = new_tokens
+            self.semantic_data[user_id] = new_memories
+        else:
+            self.semantic_indices.pop(user_id, None)
+            self.semantic_tokenized_texts.pop(user_id, None)
+            self.semantic_data.pop(user_id, None)
+
+        return True
     
     def clear_user_index(self, user_id: str) -> bool:
         """

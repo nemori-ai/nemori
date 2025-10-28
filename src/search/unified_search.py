@@ -87,6 +87,18 @@ class UnifiedSearchEngine:
             
         except Exception as e:
             logger.error(f"Error indexing semantic memories in unified search: {e}")
+
+    def remove_episode(self, user_id: str, episode_id: str) -> bool:
+        """Remove episode from both lexical and vector indices."""
+        removed_vector = self.chroma_search.remove_episode(user_id, episode_id)
+        removed_bm25 = self.bm25_search.remove_episode(user_id, episode_id)
+        return removed_vector or removed_bm25
+
+    def remove_semantic_memory(self, user_id: str, memory_id: str) -> bool:
+        """Remove semantic memory from both indices."""
+        removed_vector = self.chroma_search.remove_semantic_memory(user_id, memory_id)
+        removed_bm25 = self.bm25_search.remove_semantic_memory(user_id, memory_id)
+        return removed_vector or removed_bm25
     
     def search_episodes(
         self, 

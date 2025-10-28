@@ -30,6 +30,12 @@ class Bm25Index(LexicalIndex):
     def clear(self, user_id: str) -> bool:
         return self._backend.clear_user_index(user_id)
 
+    def remove_episode(self, user_id: str, episode_id: str) -> bool:
+        return self._backend.remove_episode(user_id, episode_id)
+
+    def remove_semantic(self, user_id: str, memory_id: str) -> bool:
+        return self._backend.remove_semantic_memory(user_id, memory_id)
+
 
 class ChromaVectorIndex(VectorIndex):
     def __init__(self, backend: ChromaSearchEngine) -> None:
@@ -49,6 +55,12 @@ class ChromaVectorIndex(VectorIndex):
 
     def clear(self, user_id: str) -> bool:
         return self._backend.clear_user_index(user_id)
+
+    def remove_episode(self, user_id: str, episode_id: str) -> bool:
+        return self._backend.remove_episode(user_id, episode_id)
+
+    def remove_semantic(self, user_id: str, memory_id: str) -> bool:
+        return self._backend.remove_semantic_memory(user_id, memory_id)
 
 
 class InMemoryVectorIndex(VectorIndex):
@@ -102,6 +114,24 @@ class InMemoryVectorIndex(VectorIndex):
             self._semantics.pop(user_id, None)
         return True
 
+    def remove_episode(self, user_id: str, episode_id: str) -> bool:
+        with self._lock:
+            episodes = self._episodes.get(user_id)
+            if not episodes:
+                return False
+            original_len = len(episodes)
+            self._episodes[user_id] = [ep for ep in episodes if ep.episode_id != episode_id]
+            return len(self._episodes[user_id]) != original_len
+
+    def remove_semantic(self, user_id: str, memory_id: str) -> bool:
+        with self._lock:
+            memories = self._semantics.get(user_id)
+            if not memories:
+                return False
+            original_len = len(memories)
+            self._semantics[user_id] = [mem for mem in memories if mem.memory_id != memory_id]
+            return len(self._semantics[user_id]) != original_len
+
 
 class InMemoryLexicalIndex(LexicalIndex):
     def __init__(self) -> None:
@@ -153,3 +183,21 @@ class InMemoryLexicalIndex(LexicalIndex):
             self._episodes.pop(user_id, None)
             self._semantics.pop(user_id, None)
         return True
+
+    def remove_episode(self, user_id: str, episode_id: str) -> bool:
+        with self._lock:
+            episodes = self._episodes.get(user_id)
+            if not episodes:
+                return False
+            original_len = len(episodes)
+            self._episodes[user_id] = [ep for ep in episodes if ep.episode_id != episode_id]
+            return len(self._episodes[user_id]) != original_len
+
+    def remove_semantic(self, user_id: str, memory_id: str) -> bool:
+        with self._lock:
+            memories = self._semantics.get(user_id)
+            if not memories:
+                return False
+            original_len = len(memories)
+            self._semantics[user_id] = [mem for mem in memories if mem.memory_id != memory_id]
+            return len(self._semantics[user_id]) != original_len

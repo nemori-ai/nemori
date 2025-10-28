@@ -8,6 +8,7 @@ import logging
 import threading
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from pathlib import Path
 from .base_storage import BaseStorage
 from ..models import SemanticMemory
 
@@ -131,11 +132,41 @@ class SemanticStorage(BaseStorage):
         except Exception as e:
             logger.error(f"Error saving semantic memory {memory.memory_id}: {e}")
             raise
-    
+
+    def delete_semantic_memory(self, user_id: str, memory_id: str) -> bool:
+        """Delete a semantic memory for a specific user."""
+        file_path = self._get_user_file_path(user_id)
+        file_lock = self._get_user_file_lock(user_id)
+
+        with file_lock:
+            memories = self._load_memories_from_file(file_path)
+            if not memories:
+                return False
+
+            updated_memories = [memory for memory in memories if memory.memory_id != memory_id]
+            if len(updated_memories) == len(memories):
+                return False
+
+            with open(file_path, "w", encoding="utf-8") as handle:
+                for memory in updated_memories:
+                    json.dump(memory.to_dict(), handle, ensure_ascii=False)
+                    handle.write("\n")
+
+            self._memory_index.pop(memory_id, None)
+            if user_id in self._user_index:
+                try:
+                    self._user_index[user_id].remove(memory_id)
+                except ValueError:
+                    pass
+                if not self._user_index[user_id]:
+                    del self._user_index[user_id]
+
+            return True
+
     def save(self, item: SemanticMemory) -> str:
         """Implementation of base save method"""
         return self.save_semantic_memory(item)
-    
+
     def load(self, item_id: str) -> Optional[SemanticMemory]:
         """Implementation of base load method"""
         try:
@@ -157,7 +188,11 @@ class SemanticStorage(BaseStorage):
     
     def delete(self, item_id: str) -> bool:
         """Implementation of base delete method"""
-        return False  # Simplified for now
+        if item_id not in self._memory_index:
+            return False
+        file_path = self._memory_index[item_id]
+        user_id = Path(file_path).stem.replace("_semantic", "")
+        return self.delete_semantic_memory(user_id, item_id)
     
     def list_user_items(self, user_id: str) -> List[SemanticMemory]:
         """Get all semantic memories for a user"""

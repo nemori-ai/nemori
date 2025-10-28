@@ -6,7 +6,6 @@ from typing import Optional
 
 from ..config import MemoryConfig
 from ..domain.interfaces import (
-    BoundaryDetector,
     EpisodeGenerator,
     EpisodeRepository,
     LexicalIndex,
@@ -14,7 +13,6 @@ from ..domain.interfaces import (
     SemanticRepository,
     VectorIndex,
 )
-from ..core.boundary_detector import BoundaryDetector as BoundaryDetectorImpl
 from ..generation.episode_generator import EpisodeGenerator as EpisodeGeneratorImpl
 from ..generation.semantic_generator import SemanticGenerator as SemanticGeneratorImpl
 from ..infrastructure.indices import (
@@ -59,7 +57,6 @@ class DefaultProviders:
         self._bm25: Optional[LexicalIndex] = None
         self._chroma_engine: Optional[ChromaSearchEngine] = None
         self._vector_index: Optional[VectorIndex] = None
-        self._boundary: Optional[BoundaryDetector] = None
         self._episode_gen: Optional[EpisodeGenerator] = None
         self._semantic_gen: Optional[SemanticGenerator] = None
         self._storage_backend = getattr(config, "storage_backend", "filesystem")
@@ -102,11 +99,6 @@ class DefaultProviders:
         return self._vector_index  # type: ignore[return-value]
 
     # Generators ---------------------------------------------------------------
-    def boundary_detector(self) -> BoundaryDetector:
-        if self._boundary is None:
-            self._boundary = BoundaryDetectorImpl(self.llm_client, self.config)
-        return self._boundary
-
     def episode_generator(self) -> EpisodeGenerator:
         if self._episode_gen is None:
             self._episode_gen = EpisodeGeneratorImpl(self.llm_client, self.config)

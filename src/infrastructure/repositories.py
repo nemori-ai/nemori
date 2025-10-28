@@ -24,6 +24,9 @@ class EpisodeStorageRepository(EpisodeRepository):
     def delete_user_data(self, user_id: str) -> bool:
         return self._storage.delete_user_data(user_id)
 
+    def delete(self, user_id: str, episode_id: str) -> bool:
+        return self._storage.delete(user_id, episode_id)
+
 
 class SemanticStorageRepository(SemanticRepository):
     def __init__(self, storage: SemanticStorage) -> None:
@@ -37,6 +40,9 @@ class SemanticStorageRepository(SemanticRepository):
 
     def delete_user_data(self, user_id: str) -> bool:
         return self._storage.delete_user_data(user_id)
+
+    def delete(self, user_id: str, memory_id: str) -> bool:
+        return self._storage.delete_semantic_memory(user_id, memory_id)
 
 
 class InMemoryEpisodeRepository(EpisodeRepository):
@@ -57,6 +63,15 @@ class InMemoryEpisodeRepository(EpisodeRepository):
         with self._lock:
             return self._episodes.pop(user_id, None) is not None
 
+    def delete(self, user_id: str, episode_id: str) -> bool:
+        with self._lock:
+            episodes = self._episodes.get(user_id)
+            if not episodes:
+                return False
+            original_len = len(episodes)
+            self._episodes[user_id] = [ep for ep in episodes if ep.episode_id != episode_id]
+            return len(self._episodes[user_id]) != original_len
+
 
 class InMemorySemanticRepository(SemanticRepository):
     def __init__(self) -> None:
@@ -75,3 +90,12 @@ class InMemorySemanticRepository(SemanticRepository):
     def delete_user_data(self, user_id: str) -> bool:
         with self._lock:
             return self._memories.pop(user_id, None) is not None
+
+    def delete(self, user_id: str, memory_id: str) -> bool:
+        with self._lock:
+            memories = self._memories.get(user_id)
+            if not memories:
+                return False
+            original_len = len(memories)
+            self._memories[user_id] = [mem for mem in memories if mem.memory_id != memory_id]
+            return len(self._memories[user_id]) != original_len

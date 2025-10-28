@@ -404,6 +404,14 @@ def process_dataset(
                 print(f"  - {user_id}: {retry_count} retry(ies)")
     
     print("\n" + "=" * 60)
+    
+    # Print token usage statistics
+    try:
+        from src.utils.token_counter import TokenCounter
+        counter = TokenCounter()
+        counter.print_summary(title="Token Usage Summary (Add Phase)")
+    except Exception as e:
+        print(f"\nNote: Token statistics not available: {e}")
 
 
 def main() -> None:

@@ -10,7 +10,7 @@ Nemori is a self-organising long-term memory substrate for agentic LLM workflows
 
 <br clear="left">
 
-- **🐍 Language:** Python 3.9+
+- **🐍 Language:** Python 3.10+
 - **📜 License:** MIT
 - **📦 Key dependencies:** OpenAI API, ChromaDB, uv (optional package manager)
 
@@ -182,6 +182,6 @@ Nemori is evolving toward multi-agent deployments. Feedback and collaboration ar
 
 ---
 ## 9. 📰 News
-
+- **🎉 2025-10-28** — Upgraded the segmenter component and added token counting functionality for evaluation.
 - **🎉 2025-09-26** — Released Nemori as fully open source, covering episodic and semantic memory implementations end-to-end.
 - **🏁 2025-07-10** — Delivered the MVP of episodic memory generation.

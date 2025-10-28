@@ -20,6 +20,9 @@ class EpisodeRepository(ABC):
     @abstractmethod
     def delete_user_data(self, user_id: str) -> bool: ...
 
+    @abstractmethod
+    def delete(self, user_id: str, episode_id: str) -> bool: ...
+
 
 class SemanticRepository(ABC):
     """Storage abstraction for semantic memories."""
@@ -32,6 +35,9 @@ class SemanticRepository(ABC):
 
     @abstractmethod
     def delete_user_data(self, user_id: str) -> bool: ...
+
+    @abstractmethod
+    def delete(self, user_id: str, memory_id: str) -> bool: ...
 
 
 class VectorIndex(ABC):
@@ -52,6 +58,12 @@ class VectorIndex(ABC):
     @abstractmethod
     def clear(self, user_id: str) -> bool: ...
 
+    @abstractmethod
+    def remove_episode(self, user_id: str, episode_id: str) -> bool: ...
+
+    @abstractmethod
+    def remove_semantic(self, user_id: str, memory_id: str) -> bool: ...
+
 
 class LexicalIndex(ABC):
     """Traditional lexical index (e.g., BM25)."""
@@ -71,10 +83,11 @@ class LexicalIndex(ABC):
     @abstractmethod
     def clear(self, user_id: str) -> bool: ...
 
-
-class BoundaryDetector(ABC):
     @abstractmethod
-    def detect(self, buffer: MessageBuffer, new_messages: Iterable[Message]) -> Dict[str, any]: ...
+    def remove_episode(self, user_id: str, episode_id: str) -> bool: ...
+
+    @abstractmethod
+    def remove_semantic(self, user_id: str, memory_id: str) -> bool: ...
 
 
 class EpisodeGenerator(ABC):

@@ -4,6 +4,7 @@ Semantic Memory Generator
 
 import logging
 import numpy as np
+from datetime import datetime
 from typing import List, Dict, Any, Tuple
 from ..models import SemanticMemory, Episode
 from ..utils import LLMClient, EmbeddingClient
@@ -12,6 +13,16 @@ from .prompts import PromptTemplates
 from .prediction_correction_engine import PredictionCorrectionEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_datetime(dt: datetime) -> datetime:
+    """Convert timezone-aware datetime to naive datetime for comparison."""
+    if dt is None:
+        return datetime.now()
+    if dt.tzinfo is not None:
+        # Convert to UTC and remove timezone info
+        return dt.replace(tzinfo=None)
+    return dt
 
 
 class SemanticGenerator:
@@ -173,7 +184,8 @@ class SemanticGenerator:
                     temperature=0.2,
                     max_tokens=1500,
                     default_response={},  # Default response for single episode mode
-                    max_retries=5
+                    max_retries=5,
+                    category="semantic_direct_extraction"
                 )
                 
                 # Extract all memories from different types
@@ -206,7 +218,8 @@ class SemanticGenerator:
                     temperature=0.2,
                     max_tokens=1024*8,
                     default_response={"statements": []},
-                    max_retries=5
+                    max_retries=5,
+                    category="semantic_batch_extraction"
                 )
                 
                 # Extract statements list
@@ -267,8 +280,8 @@ class SemanticGenerator:
         # Use the earliest episode timestamp for semantic memories
         earliest_timestamp = None
         if source_episodes:
-            earliest_episode = min(source_episodes, key=lambda ep: ep.timestamp)
-            earliest_timestamp = earliest_episode.timestamp
+            earliest_episode = min(source_episodes, key=lambda ep: _normalize_datetime(ep.timestamp))
+            earliest_timestamp = _normalize_datetime(earliest_episode.timestamp)
             logger.debug(f"Using earliest episode timestamp for semantic memories: {earliest_timestamp}")
         
         for content in statements:

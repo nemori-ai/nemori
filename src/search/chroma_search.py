@@ -294,6 +294,38 @@ class ChromaSearchEngine:
         except Exception as e:
             logger.error(f"索引用户 {user_id} 的SemanticMemory失败: {e}")
             raise
+
+    def remove_episode(self, user_id: str, episode_id: str) -> bool:
+        """从用户的Episode集合中移除指定Episode"""
+        collection_name = self._get_episode_collection_name(user_id)
+        try:
+            collection = self.client.get_collection(name=collection_name)
+        except Exception:
+            return False
+
+        try:
+            collection.delete(ids=[episode_id])
+            logger.debug(f"从用户 {user_id} 的Episode集合中删除 {episode_id}")
+            return True
+        except Exception as e:
+            logger.debug(f"删除用户 {user_id} Episode {episode_id} 失败: {e}")
+            return False
+
+    def remove_semantic_memory(self, user_id: str, memory_id: str) -> bool:
+        """从用户的Semantic集合中移除指定语义记忆"""
+        collection_name = self._get_semantic_collection_name(user_id)
+        try:
+            collection = self.client.get_collection(name=collection_name)
+        except Exception:
+            return False
+
+        try:
+            collection.delete(ids=[memory_id])
+            logger.debug(f"从用户 {user_id} 的Semantic集合中删除 {memory_id}")
+            return True
+        except Exception as e:
+            logger.debug(f"删除用户 {user_id} SemanticMemory {memory_id} 失败: {e}")
+            return False
     
     def add_episode(self, user_id: str, episode: Episode):
         """
@@ -469,6 +501,53 @@ class ChromaSearchEngine:
             logger.error(f"搜索用户 {user_id} 的Episode失败: {e}")
             return []
     
+    def search_episodes_by_embedding(self, user_id: str, embedding: List[float], top_k: int = 10) -> List[Dict[str, Any]]:
+        """
+        通过embedding向量搜索Episodes
+        
+        Args:
+            user_id: 用户ID
+            embedding: 查询embedding向量
+            top_k: 返回结果数量
+            
+        Returns:
+            搜索结果列表
+        """
+        try:
+            collection = self._get_episode_collection(user_id)
+            
+            # 检查集合是否为空
+            if collection.count() == 0:
+                logger.debug(f"用户 {user_id} 的Episode集合为空")
+                return []
+            
+            # 执行搜索
+            results = collection.query(
+                query_embeddings=[embedding],
+                n_results=min(top_k, collection.count())
+            )
+            
+            # 处理结果
+            search_results = []
+            for i, doc_id in enumerate(results['ids'][0]):
+                result = {
+                    "episode_id": doc_id,
+                    "title": results['metadatas'][0][i].get('title', ''),
+                    "content": results['documents'][0][i],
+                    "distance": results['distances'][0][i],
+                    "score": 1 - results['distances'][0][i],  # 转换为相似度分数
+                    "metadata": results['metadatas'][0][i],
+                    "type": "episode"
+                }
+                search_results.append(result)
+            
+            logger.debug(f"为用户 {user_id} 通过embedding搜索Episode返回 {len(search_results)} 个结果")
+            return search_results
+            
+        except Exception as e:
+            logger.error(f"通过embedding搜索用户 {user_id} 的Episode失败: {e}")
+            return []
+    
     def search_semantic_memories(self, user_id: str, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """
         搜索SemanticMemory
@@ -518,11 +597,32 @@ class ChromaSearchEngine:
         except Exception as e:
             logger.error(f"搜索用户 {user_id} 的SemanticMemory失败: {e}")
             return []
-    
+
+    def get_collection_counts(self, user_id: str) -> Dict[str, int]:
+        """Return the number of vectors stored per user."""
+        counts = {"episodes": 0, "semantic": 0}
+
+        episode_collection_name = self._get_episode_collection_name(user_id)
+        semantic_collection_name = self._get_semantic_collection_name(user_id)
+
+        try:
+            collection = self.client.get_collection(name=episode_collection_name)
+            counts["episodes"] = collection.count()
+        except Exception:
+            pass
+
+        try:
+            collection = self.client.get_collection(name=semantic_collection_name)
+            counts["semantic"] = collection.count()
+        except Exception:
+            pass
+
+        return counts
+
     def clear_user_index(self, user_id: str) -> bool:
         """
         清除用户的所有索引
-        
+
         Args:
             user_id: 用户ID
             

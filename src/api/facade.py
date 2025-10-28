@@ -83,6 +83,24 @@ class NemoriMemory:
         """Expose system statistics for diagnostics."""
         return self._memory_system.get_stats(user_id)
 
+    def delete_episode(
+        self,
+        user_id: str,
+        episode_id: str,
+        *,
+        cascade_semantic: bool = True,
+    ) -> Dict[str, Any]:
+        """Delete an episode for a user."""
+        return self._memory_system.delete_episode(
+            owner_id=user_id,
+            episode_id=episode_id,
+            cascade_semantic=cascade_semantic,
+        )
+
+    def delete_semantic_memory(self, user_id: str, memory_id: str) -> Dict[str, Any]:
+        """Delete a semantic memory for a user."""
+        return self._memory_system.delete_semantic_memory(user_id, memory_id)
+
     async def asearch(
         self,
         user_id: str,

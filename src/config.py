@@ -26,15 +26,18 @@ class MemoryConfig:
     buffer_size_min: int = 2       # Minimum buffer size
     buffer_size_max: int = 25       # Maximum buffer size
     
-    # === Boundary Detection Configuration ===
-    boundary_confidence_threshold: float = 0  # Boundary detection confidence threshold
-    enable_smart_boundary: bool = True           # Enable smart boundary detection
-    boundary_exclude_last_message: bool = True   # Exclude last message during boundary detection
-    boundary_exclude_threshold: int = 10       # Minimum buffer size to trigger exclusion of last message
+    # === Batch Segmentation Configuration ===
+    enable_batch_segmentation: bool = True       # Enable batch segmentation mode
+    batch_threshold: int = 20                    # Number of messages to trigger batch processing
     
     # === Episode Generation Configuration ===
     episode_min_messages: int = 2    # Minimum number of messages for an episode
     episode_max_messages: int = 25   # Maximum number of messages for an episode
+    
+    # === Episode Merging Configuration ===
+    enable_episode_merging: bool = True          # Enable episode merging
+    merge_similarity_threshold: float = 0.85     # Similarity threshold for merge candidates
+    merge_top_k: int = 5                         # Number of similar episodes to consider for merging
     
     # === Semantic Memory Configuration ===
     enable_semantic_memory: bool = True          # Enable semantic memory
