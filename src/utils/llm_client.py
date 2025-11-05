@@ -57,6 +57,29 @@ class LLMClient:
         self.retry_delay = 1.0
         self.timeout = 30.0
     
+    def _uses_max_completion_tokens(self) -> bool:
+        """
+        Determine if the model uses max_completion_tokens instead of max_tokens
+        
+        Returns:
+            True if model uses max_completion_tokens, False otherwise
+        """
+        # Models that use max_completion_tokens (newer models)
+        new_models = [
+            'gpt-4o',
+            'gpt-4o-mini', 
+            'gpt-5',
+            'o1',
+            'o1-mini',
+            'o1-preview',
+            'o3',
+            'o3-mini'
+        ]
+        
+        # Check if model name starts with any of the new model prefixes
+        model_lower = self.model.lower()
+        return any(model_lower.startswith(prefix) for prefix in new_models)
+    
     def chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -80,14 +103,24 @@ class LLMClient:
         """
         start_time = time.time()
         
+        # Determine which parameter name to use based on model
+        # Newer models (gpt-4o, gpt-5, etc.) use max_completion_tokens
+        # Older models use max_tokens
+        token_param = {}
+        if max_tokens is not None:
+            if self._uses_max_completion_tokens():
+                token_param["max_completion_tokens"] = max_tokens
+            else:
+                token_param["max_tokens"] = max_tokens
+        
         for attempt in range(self.max_retries):
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
                     temperature=temperature,
-                    max_tokens=max_tokens,
                     timeout=self.timeout,
+                    **token_param,
                     **kwargs
                 )
                 
