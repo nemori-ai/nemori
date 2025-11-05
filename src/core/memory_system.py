@@ -88,8 +88,7 @@ class MemorySystem:
 
         self.llm_client = llm_client or (providers.llm_client if providers else LLMClient(
             api_key=self.config.openai_api_key,
-            model=self.config.llm_model,
-            reasoning_effort=self.config.reasoning_effort
+            model=self.config.llm_model
         ))
 
         self.embedding_client = embedding_client or (providers.embedding_client if providers else EmbeddingClient(

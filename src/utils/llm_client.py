@@ -33,7 +33,7 @@ class LLMResponse:
 class LLMClient:
     """Language model client"""
     
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini", base_url: Optional[str] = None, reasoning_effort: Optional[str] = None):
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini", base_url: Optional[str] = None):
         """
         Initialize LLM client
         
@@ -41,13 +41,10 @@ class LLMClient:
             api_key: OpenAI API key
             model: Model name
             base_url: API base URL
-            reasoning_effort: Reasoning effort for reasoning models ("low", "medium", "high")
-                            If not specified, uses "medium" for reasoning models
         """
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
-        self.reasoning_effort = reasoning_effort or "medium"  # Default to medium
         
         # Initialize OpenAI client
         self.client = openai.OpenAI(
@@ -146,11 +143,6 @@ class LLMClient:
         if not self._is_reasoning_model():
             temperature_param["temperature"] = temperature
         
-        # Add reasoning_effort for reasoning models
-        reasoning_param = {}
-        if self._is_reasoning_model() and self.reasoning_effort:
-            reasoning_param["reasoning_effort"] = self.reasoning_effort
-        
         for attempt in range(self.max_retries):
             try:
                 response = self.client.chat.completions.create(
@@ -159,7 +151,6 @@ class LLMClient:
                     timeout=self.timeout,
                     **temperature_param,
                     **token_param,
-                    **reasoning_param,
                     **kwargs
                 )
                 
