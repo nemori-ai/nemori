@@ -18,6 +18,7 @@ class MemoryConfig:
     llm_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimension: int = 1536
+    reasoning_effort: Optional[str] = "medium"  # Reasoning effort for reasoning models: "low", "medium", "high"
     
     # === Language Configuration ===
     language: str = "en"  # "en" for English, "zh" for Chinese

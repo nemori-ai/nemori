@@ -47,6 +47,7 @@ class DefaultProviders:
         self.llm_client = llm_client or LLMClient(
             api_key=config.openai_api_key,
             model=config.llm_model,
+            reasoning_effort=config.reasoning_effort,
         )
         self.embedding_client = embedding_client or EmbeddingClient(
             api_key=config.openai_api_key,
