@@ -33,7 +33,7 @@ class LLMResponse:
 class LLMClient:
     """Language model client"""
     
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini", base_url: Optional[str] = None, reasoning_effort: Optional[str] = None, timeout: Optional[float] = None):
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini", base_url: Optional[str] = None, reasoning_effort: Optional[str] = None):
         """
         Initialize LLM client
         
@@ -43,7 +43,6 @@ class LLMClient:
             base_url: API base URL
             reasoning_effort: Reasoning effort for reasoning models ("low", "medium", "high")
                             If not specified, uses "medium" for reasoning models
-            timeout: Request timeout in seconds. If not specified, uses 120s for reasoning models, 30s for others
         """
         self.api_key = api_key
         self.model = model
@@ -59,12 +58,7 @@ class LLMClient:
         # Configuration parameters
         self.max_retries = 3
         self.retry_delay = 1.0
-        # Set timeout: use provided value, or default to 120s for reasoning models, 30s for others
-        if timeout is not None:
-            self.timeout = timeout
-        else:
-            # Reasoning models need more time
-            self.timeout = 120.0 if model.lower().startswith(('gpt-5', 'o1', 'o3')) else 30.0
+        self.timeout = 30.0
     
     def _uses_max_completion_tokens(self) -> bool:
         """

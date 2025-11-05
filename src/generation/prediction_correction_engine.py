@@ -418,11 +418,6 @@ Extract ONLY high-value, persistent knowledge. Return empty list if none found.
         """
         semantic_memories = []
         
-        # Normalize timestamp to avoid offset-aware/naive comparison issues
-        timestamp = source_episode.timestamp
-        if timestamp and timestamp.tzinfo is not None:
-            timestamp = timestamp.replace(tzinfo=None)
-        
         for statement in statements:
             try:
                 # Create semantic memory
@@ -432,7 +427,7 @@ Extract ONLY high-value, persistent knowledge. Return empty list if none found.
                     knowledge_type="knowledge",  # Use generic type
                     source_episodes=[source_episode.episode_id],
                     confidence=0.9,  # High confidence, learned from actual differences
-                    created_at=timestamp  # Use actual occurrence time of source episode (normalized)
+                    created_at=source_episode.timestamp  # Use actual occurrence time of source episode
                 )
                 
                 # Add metadata
