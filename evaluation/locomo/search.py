@@ -156,11 +156,20 @@ class LocomoSearcher:
             episodic=episodic,
             semantic=semantic,
         )
-        response = self.openai_client.chat.completions.create(
-            model=self.config.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-        )
+        
+        # Check if using reasoning model (gpt-5, o1, etc.) that only supports temperature=1
+        reasoning_models = ['gpt-5', 'o1', 'o1-mini', 'o1-preview', 'o3', 'o3-mini']
+        is_reasoning_model = any(self.config.llm_model.lower().startswith(prefix) for prefix in reasoning_models)
+        
+        # Build parameters - skip temperature for reasoning models
+        params = {
+            "model": self.config.llm_model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if not is_reasoning_model:
+            params["temperature"] = 0.0
+        
+        response = self.openai_client.chat.completions.create(**params)
         return response.choices[0].message.content if response and response.choices else ""
 
     def _hydrate_episode_results(
