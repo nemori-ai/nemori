@@ -80,30 +80,6 @@ class LLMClient:
         model_lower = self.model.lower()
         return any(model_lower.startswith(prefix) for prefix in new_models)
     
-    def _is_reasoning_model(self) -> bool:
-        """
-        Determine if the model is a reasoning model with special restrictions
-        
-        Reasoning models (o1, gpt-5, etc.) have restrictions:
-        - Only support temperature=1 (default)
-        - Don't support system messages
-        - Use max_completion_tokens
-        
-        Returns:
-            True if model is a reasoning model, False otherwise
-        """
-        reasoning_models = [
-            'gpt-5',
-            'o1',
-            'o1-mini',
-            'o1-preview',
-            'o3',
-            'o3-mini'
-        ]
-        
-        model_lower = self.model.lower()
-        return any(model_lower.startswith(prefix) for prefix in reasoning_models)
-    
     def chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -137,19 +113,13 @@ class LLMClient:
             else:
                 token_param["max_tokens"] = max_tokens
         
-        # Reasoning models only support temperature=1 (default)
-        # Don't pass temperature parameter for these models
-        temperature_param = {}
-        if not self._is_reasoning_model():
-            temperature_param["temperature"] = temperature
-        
         for attempt in range(self.max_retries):
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
+                    temperature=temperature,
                     timeout=self.timeout,
-                    **temperature_param,
                     **token_param,
                     **kwargs
                 )
