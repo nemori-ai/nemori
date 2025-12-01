@@ -165,6 +165,55 @@ Please return your judgment in JSON format:
 
 Note:
 - If conversation history is empty, this is the first message, return false."""
+
+
+BOUNDARY_DETECTION_PROMPT = """
+You are an expert in managing episodic memory. Your task is to decide if the "Newly added messages" contain significant new information that should be permanently recorded in memory.
+
+Use the "Retrieved memory context" to understand what is already known about the ongoing conversation.
+
+**Current conversation history:**
+{conversation_history}
+
+**Retrieved memory context (what is already known):**
+{memory_context}
+
+**Newly added messages (the information to evaluate):**
+{new_messages}
+
+**Time gap information:**
+{time_gap_info}
+
+**Your Decision-Making Process:**
+
+1.  **Analyze the "Newly added messages":** What are the key pieces of information, events, decisions, or emotions expressed here?
+
+2.  **Compare with "Retrieved memory context":** Does the new information substantially add to, contradict, or update what is already in the memory?
+    *   **High-value updates include:** New plans, stated intentions, significant emotional shifts, resolutions to problems, new personal details, or concrete decisions.
+    *   **Low-value updates include:** Simple acknowledgments ("okay", "I see"), greetings, farewells, or information that is redundant with the existing memory context.
+
+3.  **Determine the need to update memory:** Based on your comparison, is the new information valuable enough to be recorded for future recall? If someone were to ask about this conversation later, would this new information be essential for a complete understanding?
+
+**Decision Criteria:**
+
+*   Set `"should_end": true` if the new messages contain **new, substantive information** that should be **added to the memory**. This marks the current segment as a complete, memorable episode.
+*   Set `"should_end": false` if the new messages are a direct continuation without significant new insights, are redundant with existing memory, or consist of simple conversational filler.
+
+**JSON Output Format:**
+
+Please return your judgment in JSON format only:
+{{
+    "reasoning": "A brief explanation of why the new information is or is not worth adding to memory, referencing the memory context.",
+    "should_end": true/false,
+    "confidence": 0.0-1.0,
+    "topic_summary": "If should_end = true, provide a brief summary of the new information that should be recorded in memory. Otherwise, leave it blank."
+}}
+
+**Note:**
+- If the conversation history is empty, this is the first message; return `false`.
+- Your primary goal is not to find topic changes, but to identify moments where a meaningful and memorable update to the long-term memory should occur.
+"""
+
 EPISODE_GENERATION_PROMPT = """
 You are an episodic memory generation expert. Please convert the following conversation into an episodic memory.
 
@@ -365,23 +414,24 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
         return title, content, summary
 
     async def _detect_boundary(
-        self, conversation_history: list[dict[str, str]], new_messages: list[dict[str, str]], smart_mask: bool = False
+        self, conversation_history: list[dict[str, str]], new_messages: list[dict[str, str]], memory_context: str, smart_mask: bool = False
     ) -> tuple[bool, str, bool]:
         """
         Detect episode boundary using LLM-based analysis.
 
         Analyzes conversation flow to determine if new messages should trigger
         the creation of a new episode based on topic changes, intent transitions,
-        temporal markers, and content relevance.
+        temporal markers, content relevance, and memory context.
 
         About smart mask:
         When the dialogue length is too long, automatically mask the last sentence (because usually a transitional sentence will affect the granularity of segmentation).
         When masked and segmented, this sentence can be placed in both the preceding and following contexts for better granularity.
 
         Args:
-            conversation_history: Previous messages in the conversation
-            new_messages: Newly added messages to analyze
-            smart_mask: When enabled, automatically mask the last sentence when dialogue > 5 sentences
+            conversation_history: Previous messages in the conversation.
+            new_messages: Newly added messages to analyze.
+            memory_context: Relevant information retrieved from memory based on new_messages.
+            smart_mask: When enabled, automatically mask the last sentence when dialogue > 5 sentences.
 
         Returns:
             Tuple of (should_end_episode, reason_for_decision, masked_boundary_detected)
@@ -414,7 +464,10 @@ class ConversationEpisodeBuilder(EpisodeBuilder):
             return False, "No LLM provider available", masked_boundary_detected
 
         prompt = BOUNDARY_DETECTION_PROMPT.format(
-            conversation_history=history_text, new_messages=new_text, time_gap_info=time_gap_info
+            conversation_history=history_text,
+            new_messages=new_text,
+            time_gap_info=time_gap_info,
+            memory_context=memory_context
         )
         print("BOUNDARY_DETECTION_PROMPT:",prompt)
         print("[ConversationEpisodeBuilder] Sending boundary prompt to LLM…")
