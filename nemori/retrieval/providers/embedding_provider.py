@@ -267,6 +267,17 @@ class EmbeddingRetrievalProvider(RetrievalProvider):
             # 这是保证 episode 和 embedding 一一对应的关键
             new_index_position = len(index["episodes"])
 
+            # 更新episode对象的embedding_vector
+            episode.embedding_vector = embedding
+            
+            # 保存embedding到数据库
+            try:
+                await self.storage_repo.update_episode(episode.episode_id, episode)
+                if (i + 1) % 10 == 0:
+                    print(f"   ✅ Saved embeddings to database for {i + 1} episodes")
+            except Exception as e:
+                print(f"   ⚠️ Failed to save embedding for episode {episode.episode_id}: {e}")
+
             # 填充所有数据结构
             index["episodes"].append(episode)
             index["embeddings"].append(embedding)
@@ -434,6 +445,15 @@ class EmbeddingRetrievalProvider(RetrievalProvider):
                 # Build searchable text and tokenize
                 searchable_text = self._build_searchable_text(episode)
                 embedding = await self._generate_embedding(searchable_text)
+
+                # 更新episode对象的embedding_vector
+                episode.embedding_vector = embedding
+                
+                # 保存embedding到数据库
+                try:
+                    await self.storage_repo.update_episode(episode.episode_id, episode)
+                except Exception as e:
+                    print(f"   ⚠️ Failed to save embedding for episode {episode.episode_id}: {e}")
 
                 # Add to index
                 embeddings_index = len(index["episodes"])

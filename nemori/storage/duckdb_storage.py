@@ -74,7 +74,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
             return False
         try:
             with Session(self.engine) as session:
-                session.exec(select(1))
+                session.execute(select(1))
                 return True
         except Exception:
             return False
@@ -85,15 +85,15 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
 
         with Session(self.engine) as session:
             # Total raw data count
-            stats.total_raw_data = session.exec(select(func.count(RawDataTable.data_id))).one()
+            stats.total_raw_data = session.execute(select(func.count(RawDataTable.data_id))).scalar()
 
             # Processed data count
-            stats.processed_raw_data = session.exec(
+            stats.processed_raw_data = session.execute(
                 select(func.count(RawDataTable.data_id)).where(RawDataTable.processed)
             ).one()
 
             # Count by type
-            type_results = session.exec(
+            type_results = session.execute(
                 select(RawDataTable.data_type, func.count(RawDataTable.data_id)).group_by(RawDataTable.data_type)
             ).all()
 
@@ -110,7 +110,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
                 stats.storage_size_mb = db_path.stat().st_size / (1024 * 1024)
 
             # Temporal stats
-            temporal_result = session.exec(
+            temporal_result = session.execute(
                 select(func.min(RawDataTable.timestamp), func.max(RawDataTable.timestamp))
             ).one()
 
@@ -219,7 +219,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
         data_id = self.validate_id(data_id)
 
         with Session(self.engine) as session:
-            raw_data_row = session.exec(select(RawDataTable).where(RawDataTable.data_id == data_id)).first()
+            raw_data_row = session.execute(select(RawDataTable).where(RawDataTable.data_id == data_id)).first()
 
             if not raw_data_row:
                 return None
@@ -235,7 +235,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
         validated_ids = [self.validate_id(data_id) for data_id in data_ids]
 
         with Session(self.engine) as session:
-            raw_data_rows = session.exec(select(RawDataTable).where(RawDataTable.data_id.in_(validated_ids))).all()
+            raw_data_rows = session.execute(select(RawDataTable).where(RawDataTable.data_id.in_(validated_ids))).all()
 
             # Create mapping for quick lookup
             result_map = {row.data_id: self._row_to_raw_data(row) for row in raw_data_rows}
@@ -308,7 +308,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
             count_stmt = select(func.count(RawDataTable.data_id))
             if conditions:
                 count_stmt = count_stmt.where(and_(*conditions))
-            total_count = session.exec(count_stmt).one()
+            total_count = session.execute(count_stmt).one()
 
             # Apply sorting
             if query.sort_by == SortBy.TIMESTAMP:
@@ -326,7 +326,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
                 stmt = stmt.offset(query.offset)
 
             # Execute query
-            results = session.exec(stmt).all()
+            results = session.execute(stmt).all()
 
             # Convert to RawEventData objects
             data = [self._row_to_raw_data(row) for row in results]
@@ -366,7 +366,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
                         processing_version=data.processing_version,
                     )
                 )
-                session.exec(stmt)
+                session.execute(stmt)
                 session.commit()
                 return True
         except Exception:
@@ -383,7 +383,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
                     .where(RawDataTable.data_id == data_id)
                     .values(processed=True, processing_version=processing_version)
                 )
-                session.exec(stmt)
+                session.execute(stmt)
                 session.commit()
                 return True
         except Exception:
@@ -404,7 +404,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
 
             with Session(self.engine) as session:
                 stmt = delete(RawDataTable).where(RawDataTable.data_id == data_id)
-                session.exec(stmt)
+                session.execute(stmt)
                 session.commit()
                 return True
         except Exception:
@@ -427,7 +427,7 @@ class DuckDBRawDataRepository(RawDataRepository, BaseSQLRepository):
             if limit:
                 stmt = stmt.limit(limit)
 
-            results = session.exec(stmt).all()
+            results = session.execute(stmt).all()
             return [self._row_to_raw_data(row) for row in results]
 
 
@@ -468,7 +468,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
             return False
         try:
             with Session(self.engine) as session:
-                session.exec(select(1))
+                session.execute(select(1))
                 return True
         except Exception:
             return False
@@ -479,10 +479,10 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
 
         with Session(self.engine) as session:
             # Total episodes count
-            stats.total_episodes = session.exec(select(func.count(EpisodeTable.episode_id))).one()
+            stats.total_episodes = session.execute(select(func.count(EpisodeTable.episode_id))).one()
 
             # Count by type
-            type_results = session.exec(
+            type_results = session.execute(
                 select(EpisodeTable.episode_type, func.count(EpisodeTable.episode_id)).group_by(
                     EpisodeTable.episode_type
                 )
@@ -496,7 +496,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
                     pass
 
             # Count by level
-            level_results = session.exec(
+            level_results = session.execute(
                 select(EpisodeTable.level, func.count(EpisodeTable.episode_id)).group_by(EpisodeTable.level)
             ).all()
 
@@ -513,7 +513,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
                 stats.storage_size_mb = db_path.stat().st_size / (1024 * 1024)
 
             # Temporal stats
-            temporal_result = session.exec(
+            temporal_result = session.execute(
                 select(func.min(EpisodeTable.timestamp), func.max(EpisodeTable.timestamp))
             ).one()
 
@@ -639,7 +639,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
         episode_id = self.validate_id(episode_id)
 
         with Session(self.engine) as session:
-            episode_row = session.exec(select(EpisodeTable).where(EpisodeTable.episode_id == episode_id)).first()
+            episode_row = session.execute(select(EpisodeTable).where(EpisodeTable.episode_id == episode_id)).first()
 
             if not episode_row:
                 return None
@@ -655,7 +655,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
         validated_ids = [self.validate_id(episode_id) for episode_id in episode_ids]
 
         with Session(self.engine) as session:
-            episode_rows = session.exec(select(EpisodeTable).where(EpisodeTable.episode_id.in_(validated_ids))).all()
+            episode_rows = session.execute(select(EpisodeTable).where(EpisodeTable.episode_id.in_(validated_ids))).all()
 
             # Create mapping for quick lookup
             result_map = {row.episode_id: self._row_to_episode(row) for row in episode_rows}
@@ -790,7 +790,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
             count_stmt = select(func.count(EpisodeTable.episode_id))
             if conditions:
                 count_stmt = count_stmt.where(and_(*conditions))
-            total_count = session.exec(count_stmt).one()
+            total_count = session.execute(count_stmt).one()
 
             # Apply sorting
             if query.sort_by == SortBy.TIMESTAMP:
@@ -818,7 +818,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
                 stmt = stmt.offset(query.offset)
 
             # Execute query
-            results = session.exec(stmt).all()
+            results = session.execute(stmt).all()
 
             # Convert to Episode objects and calculate relevance
             episodes = []
@@ -919,7 +919,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
                         last_accessed=episode.last_accessed,
                     )
                 )
-                session.exec(stmt)
+                session.execute(stmt)
                 session.commit()
                 return True
         except Exception:
@@ -936,7 +936,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
                     .where(EpisodeTable.episode_id == episode_id)
                     .values(importance_score=importance_score)
                 )
-                session.exec(stmt)
+                session.execute(stmt)
                 session.commit()
                 return True
         except Exception:
@@ -953,7 +953,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
                     .where(EpisodeTable.episode_id == episode_id)
                     .values(recall_count=EpisodeTable.recall_count + 1, last_accessed=datetime.now(UTC))
                 )
-                session.exec(stmt)
+                session.execute(stmt)
                 session.commit()
                 return True
         except Exception:
@@ -986,7 +986,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
                 .join(EpisodeRawDataTable, EpisodeTable.episode_id == EpisodeRawDataTable.episode_id)
                 .where(EpisodeRawDataTable.raw_data_id == raw_data_id)
             )
-            results = session.exec(stmt).all()
+            results = session.execute(stmt).all()
             return [self._row_to_episode(row) for row in results]
 
     async def get_raw_data_for_episode(self, episode_id: str) -> list[str]:
@@ -995,7 +995,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
 
         with Session(self.engine) as session:
             stmt = select(EpisodeRawDataTable.raw_data_id).where(EpisodeRawDataTable.episode_id == episode_id)
-            results = session.exec(stmt).all()
+            results = session.execute(stmt).all()
             return results
 
     async def delete_episode(self, episode_id: str) -> bool:
@@ -1005,10 +1005,10 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
 
             with Session(self.engine) as session:
                 # Delete related data first
-                session.exec(delete(EpisodeRawDataTable).where(EpisodeRawDataTable.episode_id == episode_id))
+                session.execute(delete(EpisodeRawDataTable).where(EpisodeRawDataTable.episode_id == episode_id))
 
                 # Delete the episode
-                session.exec(delete(EpisodeTable).where(EpisodeTable.episode_id == episode_id))
+                session.execute(delete(EpisodeTable).where(EpisodeTable.episode_id == episode_id))
                 session.commit()
                 return True
         except Exception:
@@ -1020,7 +1020,7 @@ class DuckDBEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository
 
         with Session(self.engine) as session:
             # Get old episode IDs
-            old_episode_ids = session.exec(
+            old_episode_ids = session.execute(
                 select(EpisodeTable.episode_id).where(EpisodeTable.timestamp < cutoff_date)
             ).all()
 

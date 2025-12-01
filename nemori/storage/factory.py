@@ -39,7 +39,8 @@ def create_repositories(config: StorageConfig) -> tuple[RawDataRepository, Episo
         UnsupportedBackendError: If the backend type is not supported
         StorageError: If there's an error creating the repositories
     """
-    backend_type = config.backend_type.lower()
+    # Default to PostgreSQL if no backend type specified
+    backend_type = config.backend_type.lower() if config.backend_type else "postgresql"
 
     try:
         if backend_type == "memory":
@@ -83,7 +84,8 @@ def create_raw_data_repository(config: StorageConfig) -> RawDataRepository:
         UnsupportedBackendError: If the backend type is not supported
         StorageError: If there's an error creating the repository
     """
-    backend_type = config.backend_type.lower()
+    # Default to PostgreSQL if no backend type specified
+    backend_type = config.backend_type.lower() if config.backend_type else "postgresql"
 
     try:
         if backend_type == "memory":
@@ -117,7 +119,8 @@ def create_episodic_memory_repository(config: StorageConfig) -> EpisodicMemoryRe
         UnsupportedBackendError: If the backend type is not supported
         StorageError: If there's an error creating the repository
     """
-    backend_type = config.backend_type.lower()
+    # Default to PostgreSQL if no backend type specified
+    backend_type = config.backend_type.lower() if config.backend_type else "postgresql"
 
     try:
         if backend_type == "memory":
@@ -144,7 +147,7 @@ def get_supported_backends() -> list[str]:
     Returns:
         List of supported backend names
     """
-    return ["memory", "duckdb", "postgresql", "jsonl"]
+    return ["postgresql", "duckdb", "memory", "jsonl"]
 
 
 def validate_config(config: StorageConfig) -> None:
@@ -197,6 +200,28 @@ def validate_config(config: StorageConfig) -> None:
 
     if config.embedding_dimensions <= 0:
         raise StorageError("Embedding dimensions must be positive")
+
+
+def create_default_postgresql_config(**kwargs) -> StorageConfig:
+    """
+    Create a default PostgreSQL storage configuration.
+    
+    Uses default values for PostgreSQL connection if not specified.
+
+    Args:
+        **kwargs: Additional StorageConfig parameters
+
+    Returns:
+        StorageConfig configured for PostgreSQL with defaults
+    """
+    return create_postgresql_config(
+        host=kwargs.get("host", "localhost"),
+        port=kwargs.get("port", 5432),
+        database=kwargs.get("database", "nemori"),
+        username=kwargs.get("username", "postgres"),
+        password=kwargs.get("password", None),
+        **{k: v for k, v in kwargs.items() if k not in ["host", "port", "database", "username", "password"]}
+    )
 
 
 def create_postgresql_config(
