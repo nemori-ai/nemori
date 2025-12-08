@@ -280,7 +280,7 @@ class SemanticEmbeddingProvider: #(RetrievalProvider)
     
     async def search(self, query: RetrievalQuery) -> RetrievalResult:
         """
-        Perform embedding-based similarity search on semantic nodes.
+        🚀 pgvector版语义搜索：使用PostgreSQL pgvector进行相似度搜索，避免Python层面的数组计算
         
         Args:
             query: Retrieval query with owner_id, text, and limit
@@ -292,6 +292,45 @@ class SemanticEmbeddingProvider: #(RetrievalProvider)
         query_text = query.text
         limit = min(query.limit, 100)  # Cap at 100 results
         
+        print(f"🚀 Using PostgreSQL pgvector similarity search for semantic nodes (owner: {owner_id})")
+        
+        try:
+            # 如果storage是PostgreSQL存储且支持相似度搜索，直接使用
+            if hasattr(self.semantic_storage, 'similarity_search_semantic_nodes'):
+                # 使用PostgreSQL存储层的相似度搜索方法
+                semantic_nodes = await self.semantic_storage.similarity_search_semantic_nodes(
+                    owner_id=owner_id,
+                    query=query_text,
+                    limit=limit
+                )
+                
+                return RetrievalResult(
+                    episodes=[],
+                    semantic_nodes=semantic_nodes,
+                    total_count=len(semantic_nodes),
+                    metadata={
+                        "pgvector_search": True,
+                        "semantic_search": True,
+                        "query_text": query_text[:50] + "..." if len(query_text) > 50 else query_text,
+                    }
+                )
+            else:
+                # Fallback到原来的本地索引方法
+                print(f"⚠️ PostgreSQL similarity search not available, using local index fallback")
+                return await self._fallback_local_search(query)
+                
+        except Exception as e:
+            print(f"❌ pgvector semantic search failed: {e}, fallback to local search")
+            return await self._fallback_local_search(query)
+    
+    async def _fallback_local_search(self, query: RetrievalQuery) -> RetrievalResult:
+        """
+        Fallback方法：使用本地索引进行搜索（避免数组布尔值比较错误）
+        """
+        owner_id = query.owner_id
+        query_text = query.text
+        limit = min(query.limit, 100)
+        
         # Ensure index exists and is loaded
         await self._ensure_index_ready(owner_id)
         
@@ -302,14 +341,15 @@ class SemanticEmbeddingProvider: #(RetrievalProvider)
         try:
             # Generate query embedding
             query_embedding = await self._generate_embedding(query_text)
-            if not query_embedding:
+            if query_embedding is None or len(query_embedding) == 0:  # 避免数组布尔值比较
                 return RetrievalResult(episodes=[], semantic_nodes=[], total_count=0)
             
             # Calculate similarities
             similarities = []
             for i, node_embedding in enumerate(index["embeddings"]):
-                similarity = self._cosine_similarity(query_embedding, node_embedding)
-                similarities.append((i, similarity))
+                if node_embedding is not None and len(node_embedding) > 0:  # 确保embedding有效
+                    similarity = self._cosine_similarity(query_embedding, node_embedding)
+                    similarities.append((i, similarity))
             
             # Sort by similarity (descending) and take top results
             similarities.sort(key=lambda x: x[1], reverse=True)
@@ -328,11 +368,16 @@ class SemanticEmbeddingProvider: #(RetrievalProvider)
             return RetrievalResult(
                 episodes=[],
                 semantic_nodes=result_nodes,
-                total_count=len(result_nodes)
+                total_count=len(result_nodes),
+                metadata={
+                    "local_index_search": True,
+                    "semantic_search": True,
+                    "query_text": query_text[:50] + "..." if len(query_text) > 50 else query_text,
+                }
             )
         
         except Exception as e:
-            print(f"Error during semantic embedding search: {e}")
+            print(f"Error during semantic embedding search fallback: {e}")
             return RetrievalResult(episodes=[], semantic_nodes=[], total_count=0)
     
     async def _ensure_index_ready(self, owner_id: str) -> None:

@@ -10,8 +10,9 @@ import time
 from typing import Any
 
 import numpy as np
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine, async_sessionmaker
 from sqlmodel import and_, delete, func, or_, select
+import asyncio
 
 from ..core.data_types import RelationshipType, SemanticNode, SemanticRelationship
 from .repository import SemanticMemoryRepository
@@ -35,15 +36,33 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         super().__init__(config)
         self.connection_string = config.connection_string
         self.engine = None
+        self.session_factory = None
         self._initialized = False
         # Initialize OpenAI client for embeddings
         self.openai_client = None
         self._setup_embedding_client(config)
+        # Embedding query cache
+        self._embedding_cache = {}
+        self._cache_ttl = 3600
 
     async def initialize(self) -> None:
         """Initialize the PostgreSQL semantic memory storage."""
-        # Create async engine
-        self.engine = create_async_engine(self.connection_string, echo=False)
+        # Create async engine with larger pool for high concurrency
+        self.engine = create_async_engine(
+            self.connection_string,
+            echo=False,
+            pool_size=50,
+            max_overflow=50,
+            pool_recycle=3600,
+            pool_pre_ping=True,
+        )
+
+        # Create session factory for connection pooling
+        self.session_factory = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
 
         # Initialize base class
         BaseSQLRepository.__init__(self, self.engine)
@@ -71,7 +90,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         if not self._initialized or not self.engine:
             return False
         try:
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 await session.execute(select(func.count(SemanticNodeTable.node_id)))
                 return True
         except Exception:
@@ -81,7 +100,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         """Get semantic memory statistics."""
         stats = StorageStats()
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Count semantic nodes and relationships
             node_count_result = await session.execute(select(func.count(SemanticNodeTable.node_id)))
             node_count = node_count_result.scalar()
@@ -163,40 +182,80 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         # Check for duplicate key
         existing = await self.find_semantic_node_by_key(node.owner_id, node.key)
         if existing and existing.node_id != node.node_id:
-            raise DuplicateKeyError(f"Node with key '{node.key}' already exists for owner '{node.owner_id}'")
+            print(f"⚠️ Duplicate semantic node key '{node.key}' for owner '{node.owner_id}' - updating existing node")
+            # Update existing node instead of raising error
+            updated_node = SemanticNode(
+                node_id=existing.node_id,
+                owner_id=node.owner_id,
+                key=node.key,
+                value=node.value,
+                context=node.context,
+                confidence=max(node.confidence, existing.confidence),  # Keep higher confidence
+                version=node.version,
+                evolution_history=existing.evolution_history + node.evolution_history,
+                created_at=existing.created_at,  # Keep original creation time
+                last_updated=node.last_updated,
+                last_accessed=node.last_accessed,
+                discovery_episode_id=node.discovery_episode_id,
+                discovery_method=node.discovery_method,
+                linked_episode_ids=list(set(existing.linked_episode_ids + node.linked_episode_ids)),
+                evolution_episode_ids=list(set(existing.evolution_episode_ids + node.evolution_episode_ids)),
+                search_keywords=list(set(existing.search_keywords + node.search_keywords)),
+                embedding_vector=node.embedding_vector or existing.embedding_vector,
+                access_count=existing.access_count + 1,
+                relevance_score=max(node.relevance_score, existing.relevance_score),
+                importance_score=max(node.importance_score, existing.importance_score),
+            )
+            await self.update_semantic_node(updated_node)
+            return
 
-        node_row = SemanticNodeTable(
-            node_id=node_id,
-            owner_id=node.owner_id,
-            key=node.key,
-            value=node.value,
-            context=node.context,
-            confidence=node.confidence,
-            version=node.version,
-            evolution_history=json.dumps(node.evolution_history, ensure_ascii=False),
-            created_at=node.created_at,
-            last_updated=node.last_updated,
-            last_accessed=node.last_accessed,
-            discovery_episode_id=node.discovery_episode_id,
-            discovery_method=node.discovery_method,
-            linked_episode_ids=json.dumps(node.linked_episode_ids, ensure_ascii=False),
-            evolution_episode_ids=json.dumps(node.evolution_episode_ids, ensure_ascii=False),
-            search_keywords=json.dumps(node.search_keywords, ensure_ascii=False),
-            embedding_vector=json.dumps(node.embedding_vector, ensure_ascii=False) if node.embedding_vector else None,
-            access_count=node.access_count,
-            relevance_score=node.relevance_score,
-            importance_score=node.importance_score,
-        )
+        # Generate embedding if not present
+        embedding_vector = node.embedding_vector
+        if not embedding_vector and self.openai_client:
+            # Generate embedding from semantic node content
+            embedding_text = f"{node.key}: {node.value} {node.context}"
+            embedding_vector = await self._generate_query_embedding(embedding_text)
+            if embedding_vector:
+                print(f"✅ Generated embedding for semantic node: {node.key[:50]}...")
 
-        async with AsyncSession(self.engine) as session:
-            session.add(node_row)
-            await session.commit()
+        try:
+            node_row = SemanticNodeTable(
+                node_id=node_id,
+                owner_id=node.owner_id,
+                key=node.key,
+                value=node.value,
+                context=node.context,
+                confidence=node.confidence,
+                version=node.version,
+                evolution_history=json.dumps(node.evolution_history, ensure_ascii=False),
+                created_at=node.created_at,
+                last_updated=node.last_updated,
+                last_accessed=node.last_accessed,
+                discovery_episode_id=node.discovery_episode_id,
+                discovery_method=node.discovery_method,
+                linked_episode_ids=json.dumps(node.linked_episode_ids, ensure_ascii=False),
+                evolution_episode_ids=json.dumps(node.evolution_episode_ids, ensure_ascii=False),
+                search_keywords=json.dumps(node.search_keywords, ensure_ascii=False),
+                embedding_vector=embedding_vector if embedding_vector is not None else None,
+                access_count=node.access_count,
+                relevance_score=node.relevance_score,
+                importance_score=node.importance_score,
+            )
+
+            async with self.session_factory() as session:
+                session.add(node_row)
+                await session.commit()
+                print(f"✅ Successfully stored semantic node '{node.key}' for owner '{node.owner_id}'")
+                
+        except Exception as e:
+            print(f"❌ Error storing semantic node '{node.key}' for owner '{node.owner_id}': {e}")
+            raise
 
     async def get_semantic_node_by_id(self, node_id: str) -> SemanticNode | None:
         """Retrieve a semantic node by its ID."""
         node_id = self.validate_id(node_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             node_result = await session.execute(select(SemanticNodeTable).where(SemanticNodeTable.node_id == node_id))
             node_row = node_result.first()
 
@@ -207,7 +266,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
     async def find_semantic_node_by_key(self, owner_id: str, key: str) -> SemanticNode | None:
         """Find semantic node by owner and key combination."""
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             node_result = await session.execute(
                 select(SemanticNodeTable).where(
                     and_(SemanticNodeTable.owner_id == owner_id, SemanticNodeTable.key == key)
@@ -224,7 +283,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         """Update an existing semantic node."""
         node_id = self.validate_id(node.node_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Check if node exists
             existing_result = await session.execute(select(SemanticNodeTable).where(SemanticNodeTable.node_id == node_id))
             existing_row = existing_result.first()
@@ -248,9 +307,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
             existing.linked_episode_ids = json.dumps(node.linked_episode_ids, ensure_ascii=False)
             existing.evolution_episode_ids = json.dumps(node.evolution_episode_ids, ensure_ascii=False)
             existing.search_keywords = json.dumps(node.search_keywords, ensure_ascii=False)
-            existing.embedding_vector = (
-                json.dumps(node.embedding_vector, ensure_ascii=False) if node.embedding_vector else None
-            )
+            existing.embedding_vector = node.embedding_vector if node.embedding_vector is not None else None
             existing.access_count = node.access_count
             existing.relevance_score = node.relevance_score
             existing.importance_score = node.importance_score
@@ -262,7 +319,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         """Delete a semantic node by ID."""
         node_id = self.validate_id(node_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Delete related relationships first
             await session.execute(
                 delete(SemanticRelationshipTable).where(
@@ -279,11 +336,32 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
             return result.rowcount > 0
 
-    async def search_semantic_nodes(self, query: SemanticNodeQuery) -> SemanticSearchResult:
-        """Search semantic nodes with complex query parameters."""
+    async def search_semantic_nodes(self, query: SemanticNodeQuery, _skip_embedding_search: bool = False) -> SemanticSearchResult:
+        """Search semantic nodes with complex query parameters.
+        
+        Args:
+            query: The search query parameters
+            _skip_embedding_search: Internal flag to prevent recursion in fallback scenarios
+        """
         start_time = time.time()
+        
+        # Priority: Use embedding search if text_search is provided (unless we're in a fallback)
+        if query.text_search and self.openai_client and not _skip_embedding_search:
+            print(f"🔄 Using embedding-based similarity search for text: '{query.text_search[:50]}...'")
+            nodes = await self.similarity_search_semantic_nodes(
+                owner_id=query.owner_id,
+                query=query.text_search,
+                limit=query.limit
+            )
+            return SemanticSearchResult(
+                semantic_nodes=nodes,
+                total_nodes=len(nodes),
+                has_more_nodes=False,
+                query_time_ms=(time.time() - start_time) * 1000,
+                query_info={"text_search": query.text_search, "search_type": "embedding"},
+            )
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             stmt = select(SemanticNodeTable).where(SemanticNodeTable.owner_id == query.owner_id)
 
             # Apply filters
@@ -384,47 +462,36 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
     async def similarity_search_semantic_nodes(self, owner_id: str, query: str, limit: int = 10) -> list[SemanticNode]:
         """Search semantic nodes by embedding similarity to query text."""
-        print(f"🔍 Starting semantic similarity search for owner '{owner_id}' with query: '{query[:100]}...'")
         
-        # First, check if we have any semantic nodes at all
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             total_nodes_result = await session.execute(
                 select(func.count(SemanticNodeTable.node_id)).where(SemanticNodeTable.owner_id == owner_id)
             )
             total_nodes = total_nodes_result.scalar()
-            print(f"   📊 Total semantic nodes for owner '{owner_id}': {total_nodes}")
             
             if total_nodes == 0:
-                print(f"   ❌ No semantic nodes found for owner '{owner_id}' - returning empty list")
                 return []
         
         try:
-            # First, try embedding-based similarity search
-            print(f"   🧠 Attempting embedding generation for query...")
             query_embedding = await self._generate_query_embedding(query)
             
             if query_embedding:
-                print(f"   ✅ Generated embedding with {len(query_embedding)} dimensions")
                 return await self._embedding_similarity_search(owner_id, query_embedding, limit)
             else:
-                print(f"   ⚠️ Embedding generation failed, falling back to enhanced text search")
-                # Enhanced fallback strategy with multiple search approaches
                 return await self._enhanced_text_search_fallback(owner_id, query, limit)
                 
         except Exception as e:
-            print(f"   ❌ Error in embedding similarity search, falling back to enhanced text search: {e}")
-            # Enhanced fallback strategy
             return await self._enhanced_text_search_fallback(owner_id, query, limit)
     
     async def _enhanced_text_search_fallback(self, owner_id: str, query: str, limit: int) -> list[SemanticNode]:
         """Enhanced text search fallback with multiple strategies."""
         print(f"   📝 Starting enhanced text search fallback...")
         
-        # Strategy 1: Try direct text search first
+        # Strategy 1: Try direct text search first (skip embedding to prevent recursion)
         search_query = SemanticNodeQuery(
             owner_id=owner_id, text_search=query, limit=limit, sort_by="confidence", sort_order=SortOrder.DESC
         )
-        result = await self.search_semantic_nodes(search_query)
+        result = await self.search_semantic_nodes(search_query, _skip_embedding_search=True)
         
         if result.semantic_nodes:
             print(f"   ✅ Direct text search found {len(result.semantic_nodes)} nodes")
@@ -443,7 +510,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
                 keyword_query = SemanticNodeQuery(
                     owner_id=owner_id, text_search=keyword, limit=limit*2, sort_by="confidence", sort_order=SortOrder.DESC
                 )
-                keyword_result = await self.search_semantic_nodes(keyword_query)
+                keyword_result = await self.search_semantic_nodes(keyword_query, _skip_embedding_search=True)
                 
                 # Add results, avoiding duplicates
                 for node in keyword_result.semantic_nodes:
@@ -458,9 +525,9 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         
         if not final_results:
             print(f"   ⚠️ No results found with any search strategy, returning all nodes for debugging...")
-            # Last resort: return some nodes for debugging
+            # Last resort: return some nodes for debugging (skip embedding)
             all_nodes_query = SemanticNodeQuery(owner_id=owner_id, limit=limit)
-            debug_result = await self.search_semantic_nodes(all_nodes_query)
+            debug_result = await self.search_semantic_nodes(all_nodes_query, _skip_embedding_search=True)
             return debug_result.semantic_nodes
         
         return final_results
@@ -490,7 +557,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
     async def find_semantic_nodes_by_episode(self, episode_id: str) -> list[SemanticNode]:
         """Find all semantic nodes discovered from a specific episode."""
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             node_result = await session.execute(
                 select(SemanticNodeTable).where(SemanticNodeTable.discovery_episode_id == episode_id)
             )
@@ -500,7 +567,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
     async def find_semantic_nodes_by_linked_episode(self, episode_id: str) -> list[SemanticNode]:
         """Find all semantic nodes that have the episode in their linked_episode_ids."""
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Use JSON search for linked episode IDs
             node_result = await session.execute(
                 select(SemanticNodeTable).where(SemanticNodeTable.linked_episode_ids.like(f'%"{episode_id}"%'))
@@ -554,30 +621,33 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
             self.embed_model = None
 
     async def _generate_query_embedding(self, query: str) -> list[float] | None:
-        """Generate embedding for query text."""
+        """Generate embedding for query text with caching."""
         if not self.openai_client:
-            print(f"      ❌ No OpenAI client available for embedding generation")
             return None
         
         if not query.strip():
-            print(f"      ❌ Empty query provided for embedding generation")
             return None
         
         if not self.embed_model:
-            print(f"      ❌ No embed_model configured for embedding generation")
             return None
         
+        import hashlib
+        query_hash = hashlib.md5(query.encode()).hexdigest()
+        
+        if query_hash in self._embedding_cache:
+            embedding, timestamp = self._embedding_cache[query_hash]
+            if time.time() - timestamp < self._cache_ttl:
+                return embedding
+        
         try:
-            print(f"      🔄 Generating embedding using model '{self.embed_model}'...")
             response = await self.openai_client.embeddings.create(
                 model=self.embed_model,
                 input=query
             )
             embedding = response.data[0].embedding
-            print(f"      ✅ Successfully generated embedding with {len(embedding)} dimensions")
+            self._embedding_cache[query_hash] = (embedding, time.time())
             return embedding
         except Exception as e:
-            print(f"      ❌ Error generating query embedding: {e}")
             return None
 
     def _cosine_similarity(self, vec1: list[float], vec2: list[float]) -> float:
@@ -598,36 +668,27 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
             return 0.0
 
     async def _embedding_similarity_search(self, owner_id: str, query_embedding: list[float], limit: int) -> list[SemanticNode]:
-        """Perform embedding-based similarity search."""
-        async with AsyncSession(self.engine) as session:
-            # Get all nodes for the owner with proper column selection to avoid attribute errors
-            node_result = await session.execute(
-                select(SemanticNodeTable).where(SemanticNodeTable.owner_id == owner_id)
+        """Perform embedding-based similarity search using pgvector."""
+        async with self.session_factory() as session:
+            # Use pgvector's native cosine similarity operator (<=>)
+            # ORDER BY embedding_vector <=> query_embedding gives us cosine distance (lower is more similar)
+            stmt = (
+                select(SemanticNodeTable)
+                .where(
+                    and_(
+                        SemanticNodeTable.owner_id == owner_id,
+                        SemanticNodeTable.embedding_vector.isnot(None)
+                    )
+                )
+                .order_by(SemanticNodeTable.embedding_vector.op('<=>')(query_embedding))
+                .limit(limit)
             )
-            node_rows = node_result.fetchall()
             
-            if not node_rows:
-                return []
-            
-            # Calculate similarities for nodes with embeddings
-            similarities = []
-            for node_row_tuple in node_rows:
-                node_row = node_row_tuple[0]  # Extract the actual row from the tuple
-                if hasattr(node_row, 'embedding_vector') and node_row.embedding_vector:
-                    try:
-                        node_embedding = json.loads(node_row.embedding_vector)
-                        similarity = self._cosine_similarity(query_embedding, node_embedding)
-                        similarities.append((node_row, similarity))
-                    except Exception as e:
-                        print(f"Error processing embedding for node {node_row.node_id}: {e}")
-                        continue
-            
-            # Sort by similarity (descending) and take top results
-            similarities.sort(key=lambda x: x[1], reverse=True)
-            top_similarities = similarities[:limit]
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
             
             # Convert to SemanticNode objects
-            return [self._row_to_semantic_node(row) for row, _ in top_similarities]
+            return [self._row_to_semantic_node(row) for row in rows]
 
     async def store_semantic_node_with_embedding(self, node: SemanticNode, content_for_embedding: str | None = None) -> None:
         """Store semantic node and generate embedding if possible."""
@@ -664,7 +725,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
             discovery_episode_id=relationship.discovery_episode_id,
         )
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             session.add(relationship_row)
             await session.commit()
 
@@ -672,7 +733,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         """Retrieve a semantic relationship by its ID."""
         relationship_id = self.validate_id(relationship_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             relationship_result = await session.execute(
                 select(SemanticRelationshipTable).where(SemanticRelationshipTable.relationship_id == relationship_id)
             )
@@ -687,7 +748,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         """Find all relationships and related nodes for a given semantic node."""
         node_id = self.validate_id(node_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Find relationships where this node is source or target
             relationships_result = await session.execute(
                 select(SemanticRelationshipTable).where(
@@ -724,7 +785,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         """Search semantic relationships with complex query parameters."""
         start_time = time.time()
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             stmt = select(SemanticRelationshipTable)
 
             # Apply filters
@@ -792,7 +853,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         """Update an existing semantic relationship."""
         relationship_id = self.validate_id(relationship.relationship_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             existing_result = await session.execute(
                 select(SemanticRelationshipTable).where(SemanticRelationshipTable.relationship_id == relationship_id)
             )
@@ -818,7 +879,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
         """Delete a semantic relationship by ID."""
         relationship_id = self.validate_id(relationship_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             result = await session.execute(
                 delete(SemanticRelationshipTable).where(SemanticRelationshipTable.relationship_id == relationship_id)
             )
@@ -835,7 +896,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
         validated_ids = [self.validate_id(node_id) for node_id in node_ids]
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             node_result = await session.execute(
                 select(SemanticNodeTable).where(SemanticNodeTable.node_id.in_(validated_ids))
             )
@@ -845,7 +906,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
     async def get_all_semantic_nodes_for_owner(self, owner_id: str) -> list[SemanticNode]:
         """Retrieve all semantic nodes for a specific owner."""
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             node_result = await session.execute(
                 select(SemanticNodeTable)
                 .where(SemanticNodeTable.owner_id == owner_id)
@@ -859,7 +920,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
     async def get_semantic_statistics(self, owner_id: str) -> dict[str, Any]:
         """Get statistics about semantic memory for an owner."""
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Count nodes
             node_count_result = await session.execute(
                 select(func.count(SemanticNodeTable.node_id)).where(SemanticNodeTable.owner_id == owner_id)
@@ -902,7 +963,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
 
     async def cleanup_orphaned_relationships(self) -> int:
         """Clean up relationships that reference non-existent nodes."""
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Find relationships with non-existent source nodes
             orphaned_source_result = await session.execute(
                 select(SemanticRelationshipTable.relationship_id)
@@ -954,7 +1015,7 @@ class PostgreSQLSemanticMemoryRepository(SemanticMemoryRepository, BaseSQLReposi
             linked_episode_ids=json.loads(row.linked_episode_ids),
             evolution_episode_ids=json.loads(row.evolution_episode_ids),
             search_keywords=json.loads(row.search_keywords),
-            embedding_vector=json.loads(row.embedding_vector) if row.embedding_vector else None,
+            embedding_vector=row.embedding_vector if row.embedding_vector is not None else None,
             access_count=row.access_count,
             relevance_score=row.relevance_score,
             importance_score=row.importance_score,

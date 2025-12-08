@@ -34,6 +34,10 @@ class UnifiedRetrievalService:
         if self._initialized:
             return
 
+        # Initialize all registered providers
+        for provider in self.providers.values():
+            await provider.initialize()
+
         self._initialized = True
 
     async def close(self) -> None:
@@ -187,19 +191,31 @@ class UnifiedRetrievalService:
         semantic_limit: int = 10,
     ) -> dict[str, Any]:
         """
-        Enhanced query combining episodic and semantic results.
-        结合情景和语义结果的增强查询。
+        Enhanced query combining episodic and semantic results with parallel execution.
+        结合情景和语义结果的增强查询（并行执行）。
         """
         try:
-            results = {
-                "episodes": await self.search_episodic_memories(owner_id, query, episode_limit),
-                "semantic_knowledge": [],
-            }
-
+            import asyncio
+            
+            episodic_task = asyncio.create_task(
+                self.search_episodic_memories(owner_id, query, episode_limit)
+            )
+            
             if include_semantic:
-                results["semantic_knowledge"] = await self.search_semantic_memories(owner_id, query, semantic_limit)
+                semantic_task = asyncio.create_task(
+                    self.search_semantic_memories(owner_id, query, semantic_limit)
+                )
+                episodes, semantic_knowledge = await asyncio.gather(
+                    episodic_task, semantic_task
+                )
+            else:
+                episodes = await episodic_task
+                semantic_knowledge = []
 
-            return results
+            return {
+                "episodes": episodes,
+                "semantic_knowledge": semantic_knowledge,
+            }
 
         except Exception as e:
             print(f"Error in enhanced query: {e}")

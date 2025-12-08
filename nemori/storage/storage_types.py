@@ -88,7 +88,8 @@ class EpisodeQuery:
     topics: list[str] | None = None
 
     # Semantic search
-    embedding_query: list[float] | None = None
+    text_query: str | None = None  # Text query for embedding generation
+    embedding_query: list[float] | None = None  # Pre-computed embedding vector
     similarity_threshold: float | None = None
 
     # Importance and recall
@@ -200,7 +201,7 @@ class StorageConfig:
     # Indexing settings
     enable_full_text_search: bool = True
     enable_semantic_search: bool = True
-    embedding_dimensions: int = 1536  # OpenAI embedding dimensions
+    embedding_dimensions: int = 1024  # OpenAI embedding dimensions
 
     # Retention settings
     max_raw_data_age_days: int | None = None

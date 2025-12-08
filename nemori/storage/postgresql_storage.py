@@ -9,8 +9,10 @@ import json
 import time
 from datetime import datetime, timedelta
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import scoped_session
 from sqlmodel import and_, delete, func, or_, select, update
+import asyncio
 
 from ..core.data_types import DataType, RawEventData
 from ..core.episode import Episode, EpisodeLevel, EpisodeType
@@ -40,16 +42,28 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         super().__init__(config)
         self.connection_string = config.connection_string or "postgresql+asyncpg://localhost/nemori"
         self.engine: AsyncEngine | None = None
+        self.session_factory = None
         self._initialized = False
+        self.openai_client = None
+        self._setup_embedding_client(config)
 
     async def initialize(self) -> None:
         """Initialize the PostgreSQL storage with SQLModel."""
-        # Create async engine
+        # Create async engine with larger pool for high concurrency
         self.engine = create_async_engine(
             self.connection_string,
             echo=False,
-            pool_size=10,
-            max_overflow=0,
+            pool_size=50,
+            max_overflow=50,
+            pool_recycle=3600,
+            pool_pre_ping=True,
+        )
+
+        # Create session factory for connection pooling
+        self.session_factory = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
         )
 
         # Initialize base class
@@ -74,7 +88,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         if not self._initialized or not self.engine:
             return False
         try:
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 await session.execute(select(1))
                 return True
         except Exception:
@@ -84,7 +98,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         """Get storage statistics."""
         stats = StorageStats()
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Total raw data count
             result = await session.execute(select(func.count(RawDataTable.data_id)))
             stats.total_raw_data = result.scalar()
@@ -205,7 +219,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
             processing_version=data.processing_version,
         )
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             session.add(raw_data_row)
             await session.commit()
 
@@ -236,7 +250,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
                 )
             )
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             session.add_all(raw_data_rows)
             await session.commit()
 
@@ -246,7 +260,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         """Retrieve raw event data by ID."""
         data_id = self.validate_id(data_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             result = await session.execute(select(RawDataTable).where(RawDataTable.data_id == data_id))
             raw_data_row = result.scalars().first()
 
@@ -263,7 +277,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         # Validate all IDs
         validated_ids = [self.validate_id(data_id) for data_id in data_ids]
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             result = await session.execute(select(RawDataTable).where(RawDataTable.data_id.in_(validated_ids)))
             raw_data_rows = result.scalars().all()
 
@@ -300,7 +314,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         # Validate inputs
         query.limit, query.offset = self.validate_limit_offset(query.limit, query.offset)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Build base query
             stmt = select(RawDataTable)
             conditions = []
@@ -382,7 +396,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         try:
             data_id = self.validate_id(data_id)
 
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 stmt = (
                     update(RawDataTable)
                     .where(RawDataTable.data_id == data_id)
@@ -410,7 +424,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         try:
             data_id = self.validate_id(data_id)
 
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 stmt = (
                     update(RawDataTable)
                     .where(RawDataTable.data_id == data_id)
@@ -435,7 +449,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         try:
             data_id = self.validate_id(data_id)
 
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 stmt = delete(RawDataTable).where(RawDataTable.data_id == data_id)
                 await session.execute(stmt)
                 await session.commit()
@@ -449,7 +463,7 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
         """Get unprocessed raw event data."""
         limit, _ = self.validate_limit_offset(limit, None)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             stmt = select(RawDataTable).where(~RawDataTable.processed)
 
             if data_type:
@@ -464,6 +478,60 @@ class PostgreSQLRawDataRepository(RawDataRepository, BaseSQLRepository):
             results = result.scalars().all()
             return [self._row_to_raw_data(row) for row in results]
 
+    def _setup_embedding_client(self, config: StorageConfig) -> None:
+        """Setup OpenAI client for embedding generation."""
+        try:
+            api_key = getattr(config, 'openai_api_key', None)
+            base_url = getattr(config, 'openai_base_url', None)
+            embed_model = getattr(config, 'openai_embed_model', None)
+            if not api_key:
+                import os
+                api_key = os.getenv('OPENAI_API_KEY')
+                base_url = os.getenv('OPENAI_BASE_URL')
+                embed_model = os.getenv('OPENAI_EMB_MODEL')
+            
+            if not embed_model:
+                embed_model = "text-embedding-3-small"
+            
+            if api_key or base_url:
+                from openai import AsyncOpenAI
+                self.openai_client = AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=base_url
+                )
+                self.embed_model = embed_model
+                print(f"✅ Initialized OpenAI client for embeddings with model: {embed_model}")
+            else:
+                print("⚠️ No OpenAI API key or base_url provided - embedding search disabled")
+                self.openai_client = None
+                self.embed_model = None
+        except Exception as e:
+            print(f"❌ Warning: Could not initialize OpenAI client: {e}")
+            self.openai_client = None
+            self.embed_model = None
+
+    async def _generate_query_embedding(self, query: str) -> list[float] | None:
+        """Generate embedding for query text."""
+        if not self.openai_client:
+            return None
+        
+        if not query.strip():
+            return None
+        
+        if not self.embed_model:
+            return None
+        
+        try:
+            response = await self.openai_client.embeddings.create(
+                model=self.embed_model,
+                input=query
+            )
+            embedding = response.data[0].embedding
+            return embedding
+        except Exception as e:
+            print(f"❌ Error generating query embedding: {e}")
+            return None
+
 
 class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLRepository):
     """PostgreSQL implementation of episodic memory repository using SQLModel."""
@@ -472,16 +540,28 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         super().__init__(config)
         self.connection_string = config.connection_string or "postgresql+asyncpg://localhost/nemori"
         self.engine: AsyncEngine | None = None
+        self.session_factory = None
         self._initialized = False
+        self.openai_client = None
+        self._setup_embedding_client(config)
 
     async def initialize(self) -> None:
         """Initialize the PostgreSQL storage with SQLModel."""
-        # Create async engine
+        # Create async engine with larger pool for high concurrency
         self.engine = create_async_engine(
             self.connection_string,
             echo=False,
-            pool_size=10,
-            max_overflow=0,
+            pool_size=50,
+            max_overflow=50,
+            pool_recycle=3600,
+            pool_pre_ping=True,
+        )
+
+        # Create session factory for connection pooling
+        self.session_factory = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
         )
 
         # Initialize base class
@@ -506,7 +586,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         if not self._initialized or not self.engine:
             return False
         try:
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 await session.execute(select(1))
                 return True
         except Exception:
@@ -516,7 +596,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         """Get storage statistics."""
         stats = StorageStats()
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Total episodes count
             result = await session.execute(select(func.count(EpisodeTable.episode_id)))
             stats.total_episodes = result.scalar()
@@ -632,6 +712,15 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
     async def store_episode(self, episode: Episode) -> str:
         """Store an episode."""
         episode_id = self.validate_id(episode.episode_id)
+        
+        # Generate embedding if not present
+        embedding_vector = episode.embedding_vector
+        if not embedding_vector and self.openai_client:
+            # Generate embedding from episode content
+            embedding_text = f"{episode.title} {episode.content} {episode.summary}"
+            embedding_vector = await self._generate_query_embedding(embedding_text)
+            if embedding_vector:
+                print(f"✅ Generated embedding for episode: {episode.title[:50]}...")
 
         episode_row = EpisodeTable(
             episode_id=episode_id,
@@ -648,15 +737,13 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
             event_metadata=json.dumps(episode.metadata.to_dict(), ensure_ascii=False),
             structured_data=json.dumps(episode.structured_data, ensure_ascii=False),
             search_keywords=json.dumps(episode.search_keywords, ensure_ascii=False),
-            embedding_vector=(
-                json.dumps(episode.embedding_vector, ensure_ascii=False) if episode.embedding_vector else None
-            ),
+            embedding_vector=embedding_vector if embedding_vector is not None else None,
             recall_count=episode.recall_count,
             importance_score=episode.importance_score,
             last_accessed=episode.last_accessed,
         )
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             session.add(episode_row)
             await session.commit()
 
@@ -687,16 +774,14 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
                     event_metadata=json.dumps(episode.metadata.to_dict(), ensure_ascii=False),
                     structured_data=json.dumps(episode.structured_data, ensure_ascii=False),
                     search_keywords=json.dumps(episode.search_keywords, ensure_ascii=False),
-                    embedding_vector=(
-                        json.dumps(episode.embedding_vector, ensure_ascii=False) if episode.embedding_vector else None
-                    ),
+                    embedding_vector=episode.embedding_vector if episode.embedding_vector is not None else None,
                     recall_count=episode.recall_count,
                     importance_score=episode.importance_score,
                     last_accessed=episode.last_accessed,
                 )
             )
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             session.add_all(episode_rows)
             await session.commit()
 
@@ -706,7 +791,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         """Retrieve an episode by ID."""
         episode_id = self.validate_id(episode_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             result = await session.execute(select(EpisodeTable).where(EpisodeTable.episode_id == episode_id))
             episode_row = result.scalars().first()
 
@@ -723,7 +808,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         # Validate all IDs
         validated_ids = [self.validate_id(episode_id) for episode_id in episode_ids]
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             result = await session.execute(select(EpisodeTable).where(EpisodeTable.episode_id.in_(validated_ids)))
             episode_rows = result.scalars().all()
 
@@ -777,7 +862,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
             metadata=metadata,
             structured_data=json.loads(row.structured_data),
             search_keywords=json.loads(row.search_keywords),
-            embedding_vector=json.loads(row.embedding_vector) if row.embedding_vector else None,
+            embedding_vector=row.embedding_vector if row.embedding_vector is not None else None,
             recall_count=row.recall_count,
             importance_score=row.importance_score,
             last_accessed=row.last_accessed,
@@ -798,8 +883,18 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
 
         # Validate inputs
         query.limit, query.offset = self.validate_limit_offset(query.limit, query.offset)
+        
+        # Priority 1: Generate embedding from text_query if provided and no embedding_query
+        if query.text_query and not query.embedding_query:
+            print(f"🔄 Generating embedding for text_query: '{query.text_query[:50]}...'")
+            query.embedding_query = await self._generate_query_embedding(query.text_query)
+        
+        # Priority 2: Convert text_search to embedding if no text_query and no embedding_query
+        elif query.text_search and not query.embedding_query and not query.text_query:
+            print(f"🔄 Converting text_search to embedding query: '{query.text_search[:50]}...'")
+            query.embedding_query = await self._generate_query_embedding(query.text_search)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Build base query
             stmt = select(EpisodeTable)
             conditions = []
@@ -864,8 +959,22 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
             count_result = await session.execute(count_stmt)
             total_count = count_result.scalar()
 
-            # Apply sorting
-            if query.sort_by == SortBy.TIMESTAMP:
+            # Apply sorting (embedding search takes priority)
+            if query.embedding_query:
+                # embedding_query is already a vector (generated from text_query or provided directly)
+                # Use pgvector's cosine distance operator for semantic search
+                # Filter out episodes without embeddings and optionally apply similarity threshold
+                stmt = stmt.where(EpisodeTable.embedding_vector.isnot(None))
+                stmt = stmt.order_by(EpisodeTable.embedding_vector.op('<=>')(query.embedding_query))
+                
+                # Apply similarity threshold if specified (pgvector uses distance, so lower is better)
+                if query.similarity_threshold:
+                    # Convert similarity threshold to distance threshold (distance = 1 - similarity for cosine)
+                    distance_threshold = 1.0 - query.similarity_threshold
+                    stmt = stmt.where(
+                        EpisodeTable.embedding_vector.op('<=>')(query.embedding_query) <= distance_threshold
+                    )
+            elif query.sort_by == SortBy.TIMESTAMP:
                 if query.sort_order == SortOrder.DESC:
                     stmt = stmt.order_by(EpisodeTable.timestamp.desc())
                 else:
@@ -964,7 +1073,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         try:
             episode_id = self.validate_id(episode_id)
 
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 stmt = (
                     update(EpisodeTable)
                     .where(EpisodeTable.episode_id == episode_id)
@@ -982,11 +1091,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
                         event_metadata=json.dumps(episode.metadata.to_dict(), ensure_ascii=False),
                         structured_data=json.dumps(episode.structured_data, ensure_ascii=False),
                         search_keywords=json.dumps(episode.search_keywords, ensure_ascii=False),
-                        embedding_vector=(
-                            json.dumps(episode.embedding_vector, ensure_ascii=False)
-                            if episode.embedding_vector
-                            else None
-                        ),
+                        embedding_vector=episode.embedding_vector if episode.embedding_vector is not None else None,
                         recall_count=episode.recall_count,
                         importance_score=episode.importance_score,
                         last_accessed=episode.last_accessed,
@@ -1003,7 +1108,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         try:
             episode_id = self.validate_id(episode_id)
 
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 stmt = (
                     update(EpisodeTable)
                     .where(EpisodeTable.episode_id == episode_id)
@@ -1019,7 +1124,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         """Mark an episode as accessed."""
         episode_id = self.validate_id(episode_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             stmt = (
                 update(EpisodeTable)
                 .where(EpisodeTable.episode_id == episode_id)
@@ -1035,7 +1140,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
             episode_id = self.validate_id(episode_id)
             validated_raw_data_ids = [self.validate_id(raw_data_id) for raw_data_id in raw_data_ids]
 
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 link_rows = [
                     EpisodeRawDataTable(episode_id=episode_id, raw_data_id=raw_data_id)
                     for raw_data_id in validated_raw_data_ids
@@ -1050,7 +1155,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         """Get all episodes that were created from specific raw data."""
         raw_data_id = self.validate_id(raw_data_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             stmt = (
                 select(EpisodeTable)
                 .join(EpisodeRawDataTable, EpisodeTable.episode_id == EpisodeRawDataTable.episode_id)
@@ -1064,7 +1169,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         """Get raw data IDs that contributed to an episode."""
         episode_id = self.validate_id(episode_id)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             stmt = select(EpisodeRawDataTable.raw_data_id).where(EpisodeRawDataTable.episode_id == episode_id)
             result = await session.execute(stmt)
             results = result.scalars().all()
@@ -1075,7 +1180,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         try:
             episode_id = self.validate_id(episode_id)
 
-            async with AsyncSession(self.engine) as session:
+            async with self.session_factory() as session:
                 # Delete related data first
                 await session.execute(delete(EpisodeRawDataTable).where(EpisodeRawDataTable.episode_id == episode_id))
 
@@ -1090,7 +1195,7 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
         """Clean up episodes older than specified age."""
         cutoff_date = datetime.now() - timedelta(days=max_age_days)
 
-        async with AsyncSession(self.engine) as session:
+        async with self.session_factory() as session:
             # Get old episode IDs
             result = await session.execute(select(EpisodeTable.episode_id).where(EpisodeTable.timestamp < cutoff_date))
             old_episode_ids = result.scalars().all()
@@ -1101,3 +1206,57 @@ class PostgreSQLEpisodicMemoryRepository(EpisodicMemoryRepository, BaseSQLReposi
                     deleted_count += 1
 
             return deleted_count
+
+    def _setup_embedding_client(self, config: StorageConfig) -> None:
+        """Setup OpenAI client for embedding generation."""
+        try:
+            api_key = getattr(config, 'openai_api_key', None)
+            base_url = getattr(config, 'openai_base_url', None)
+            embed_model = getattr(config, 'openai_embed_model', None)
+            if not api_key:
+                import os
+                api_key = os.getenv('OPENAI_API_KEY')
+                base_url = os.getenv('OPENAI_BASE_URL')
+                embed_model = os.getenv('OPENAI_EMB_MODEL')
+            
+            if not embed_model:
+                embed_model = "text-embedding-3-small"
+            
+            if api_key or base_url:
+                from openai import AsyncOpenAI
+                self.openai_client = AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=base_url
+                )
+                self.embed_model = embed_model
+                print(f"✅ Initialized OpenAI client for embeddings with model: {embed_model}")
+            else:
+                print("⚠️ No OpenAI API key or base_url provided - embedding search disabled")
+                self.openai_client = None
+                self.embed_model = None
+        except Exception as e:
+            print(f"❌ Warning: Could not initialize OpenAI client: {e}")
+            self.openai_client = None
+            self.embed_model = None
+
+    async def _generate_query_embedding(self, query: str) -> list[float] | None:
+        """Generate embedding for query text."""
+        if not self.openai_client:
+            return None
+        
+        if not query.strip():
+            return None
+        
+        if not self.embed_model:
+            return None
+        
+        try:
+            response = await self.openai_client.embeddings.create(
+                model=self.embed_model,
+                input=query
+            )
+            embedding = response.data[0].embedding
+            return embedding
+        except Exception as e:
+            print(f"❌ Error generating query embedding: {e}")
+            return None

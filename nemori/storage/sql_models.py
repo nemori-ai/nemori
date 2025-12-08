@@ -8,6 +8,7 @@ supporting both DuckDB and future PostgreSQL/MySQL implementations.
 from datetime import datetime
 
 from sqlmodel import Column, Field, SQLModel, Text
+from pgvector.sqlalchemy import Vector
 
 
 class RawDataTable(SQLModel, table=True):
@@ -48,7 +49,7 @@ class EpisodeTable(SQLModel, table=True):
     event_metadata: str = Field(sa_column=Column(Text))
     structured_data: str = Field(sa_column=Column(Text))
     search_keywords: str = Field(sa_column=Column(Text))
-    embedding_vector: str | None = Field(default=None, sa_column=Column(Text))
+    embedding_vector: list[float] | None = Field(default=None, sa_column=Column(Vector(1024)))
     recall_count: int = Field(default=0)
     importance_score: float = Field(default=0.0, index=True)
     last_accessed: datetime | None = None
@@ -149,7 +150,7 @@ class SemanticNodeTable(SQLModel, table=True):
     linked_episode_ids: str = Field(default="[]", sa_column=Column(Text))
     evolution_episode_ids: str = Field(default="[]", sa_column=Column(Text))
     search_keywords: str = Field(default="[]", sa_column=Column(Text))
-    embedding_vector: str | None = Field(default=None, sa_column=Column(Text))
+    embedding_vector: list[float] | None = Field(default=None, sa_column=Column(Vector(1024)))
     access_count: int = Field(default=0)
     relevance_score: float = Field(default=0.0)
     importance_score: float = Field(default=0.0)
