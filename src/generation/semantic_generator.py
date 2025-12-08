@@ -3,6 +3,7 @@ Semantic Memory Generator
 """
 
 import logging
+import json
 import numpy as np
 from datetime import datetime
 from typing import List, Dict, Any, Tuple
@@ -53,6 +54,111 @@ class SemanticGenerator:
             logger.info("Semantic generator initialized with Prediction-Correction Engine")
         else:
             logger.info("Semantic generator initialized with traditional method")
+    
+    @staticmethod
+    def _escape_braces(text: Any) -> str:
+        """Escape braces to prevent str.format from treating user text as placeholders."""
+        try:
+            s = str(text)
+        except Exception:
+            return ""
+        return s.replace("{", "{{").replace("}", "}}")
+
+    def decide_semantic_consolidation(
+        self,
+        new_memory: SemanticMemory,
+        candidates: List[Tuple[SemanticMemory, float]]
+    ) -> Dict[str, Any]:
+        """
+        Use LLM to decide NEW / MERGE / CONFLICT_DELETE for a semantic memory.
+        """
+        # No similar candidates -> auto NEW
+        if not candidates:
+            return {"decision": "NEW", "reason": "no candidates"}
+        
+        try:
+            # Format candidates for prompt
+            candidate_lines = []
+            for idx, (mem, score) in enumerate(candidates, 1):
+                safe_content = self._escape_braces(mem.content)
+                candidate_lines.append(
+                    f"- #{idx} ID: {mem.memory_id} | Type: {mem.knowledge_type} | "
+                    f"Score: {score:.3f} | Content: \"{safe_content}\""
+                )
+            candidates_text = "\n".join(candidate_lines)
+            
+            prompt = self.prompts.get_semantic_consolidation_prompt(
+                new_type=new_memory.knowledge_type,
+                new_content=self._escape_braces(new_memory.content),
+                candidates=self._escape_braces(candidates_text)
+            )
+            
+            raw_decision = self.llm_client.generate_json_response(
+                prompt=prompt,
+                temperature=0.2,
+                max_tokens=2000,
+                default_response={"decision": "NEW", "reason": "fallback"},
+                max_retries=3,
+                category="semantic_consolidation"
+            )
+            
+            # 调试：打印原始返回
+            logger.debug(f"LLM raw_decision type: {type(raw_decision)}, content: {str(raw_decision)[:300]}")
+            
+            # 兼容模型返回字符串或非 dict
+            if isinstance(raw_decision, str):
+                try:
+                    raw_decision = json.loads(raw_decision)
+                except Exception:
+                    logger.warning(f"Failed to parse raw_decision string: {raw_decision[:200] if raw_decision else 'empty'}")
+                    return {"decision": "NEW", "reason": "json parse error"}
+
+            if not isinstance(raw_decision, dict):
+                logger.warning(f"raw_decision is not dict: {type(raw_decision)}")
+                return {"decision": "NEW", "reason": "invalid response type"}
+
+            # 调试：打印字典的键
+            logger.debug(f"raw_decision keys: {list(raw_decision.keys())}")
+            
+            # 安全提取 decision 值
+            decision_value = raw_decision.get("decision")
+            if decision_value is None:
+                logger.warning(f"No 'decision' key in response, keys are: {list(raw_decision.keys())}")
+                return {"decision": "NEW", "reason": "missing decision key"}
+            
+            decision_value = str(decision_value).upper()
+
+            if decision_value not in {"NEW", "MERGE", "CONFLICT_DELETE"}:
+                logger.debug(f"Invalid decision value: {decision_value}")
+                return {"decision": "NEW", "reason": "invalid decision value"}
+
+            # 构建规范化的返回值
+            result = {
+                "decision": decision_value,
+                "reason": raw_decision.get("reason", "")
+            }
+            
+            # 仅在 MERGE / CONFLICT_DELETE 时处理 target_ids
+            if decision_value in {"MERGE", "CONFLICT_DELETE"}:
+                target_ids = raw_decision.get("target_ids")
+                if isinstance(target_ids, list):
+                    result["target_ids"] = target_ids
+                else:
+                    result["target_ids"] = []
+            
+            # MERGE 时提取 new_content
+            if decision_value == "MERGE":
+                new_content = raw_decision.get("new_content")
+                if new_content and isinstance(new_content, str):
+                    result["new_content"] = new_content
+
+            return result
+            
+        except Exception as e:
+            import traceback
+            logger.warning(f"Semantic consolidation decision failed, fallback to NEW: {type(e).__name__}: {e}")
+            logger.debug(f"Full traceback:\n{traceback.format_exc()}")
+            return {"decision": "NEW", "reason": "error fallback"}
     
     def check_and_generate_semantic_memories(
         self, 

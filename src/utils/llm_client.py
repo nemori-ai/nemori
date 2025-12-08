@@ -127,7 +127,8 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         default_response: Optional[Dict[str, Any]] = None,
         max_retries: int = 3,
-        category: Optional[str] = None
+        category: Optional[str] = None,
+        response_format: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Generate JSON response
@@ -140,6 +141,7 @@ class LLMClient:
             default_response: Default response to return when parsing fails (optional)
             max_retries: Maximum retry count when JSON parsing fails
             category: Token统计类别
+            response_format: OpenAI response_format (e.g. {"type": "json_object"})
             
         Returns:
             Parsed JSON object
@@ -151,14 +153,20 @@ class LLMClient:
         
         messages.append({"role": "user", "content": prompt})
         
-                # Retry loop
+        # Build extra kwargs for chat_completion
+        extra_kwargs = {}
+        if response_format:
+            extra_kwargs["response_format"] = response_format
+        
+        # Retry loop
         for attempt in range(max_retries):
             try:
                 response = self.chat_completion(
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    category=category
+                    category=category,
+                    **extra_kwargs
                 )
         
                 # Try to parse JSON

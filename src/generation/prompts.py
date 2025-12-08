@@ -388,6 +388,33 @@ Return JSON with the merged episode content:
 Return only the JSON object, no additional text.
 """
 
+    # Semantic Memory Consolidation Prompt (NEW / MERGE / CONFLICT_DELETE)
+    SEMANTIC_CONSOLIDATION_PROMPT = """
+You are a knowledge base maintainer. Decide how to integrate a new semantic memory item with the most similar existing items.
+
+## New Item
+- Type: {new_type}
+- Content: "{new_content}"
+
+## Existing Similar Items
+{candidates}
+
+## Actions (choose exactly one)
+1. NEW: The new item is distinct and should be added as-is.
+2. MERGE: The new item is semantically identical to one or more existing items; return a single canonical phrasing.
+3. CONFLICT_DELETE: The new item contradicts or supersedes existing items; delete the outdated items and keep the new one.
+
+## Output (valid JSON)
+- NEW: {{"decision": "NEW", "reason": "..."}}
+- MERGE: {{"decision": "MERGE", "target_ids": ["id1", "id2"], "new_content": "canonical phrasing (<=100 words)", "reason": "..."}}
+- CONFLICT_DELETE: {{"decision": "CONFLICT_DELETE", "target_ids": ["id1", "id2"], "reason": "..."}}
+
+Rules:
+- Be concise; focus on semantic equality or contradiction, not superficial wording.
+- Only include IDs that appear in candidates.
+- If unsure, choose NEW.
+"""
+
     @classmethod
     def get_episode_generation_prompt(cls, conversation: str, boundary_reason: str) -> str:
         """Get episode generation prompt"""
@@ -487,5 +514,19 @@ Return only the JSON object, no additional text.
             new_title=new_title,
             new_content=new_content,
             combined_events=combined_events
+        )
+
+    @classmethod
+    def get_semantic_consolidation_prompt(
+        cls,
+        new_type: str,
+        new_content: str,
+        candidates: str
+    ) -> str:
+        """Get semantic consolidation prompt"""
+        return cls.SEMANTIC_CONSOLIDATION_PROMPT.format(
+            new_type=new_type,
+            new_content=new_content,
+            candidates=candidates
         )
  

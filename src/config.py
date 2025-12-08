@@ -44,6 +44,7 @@ class MemoryConfig:
     semantic_similarity_threshold: float = 1  # Semantic similarity threshold for duplication detection
     enable_prediction_correction: bool = True    # Enable prediction-correction mode (simplified two-step process only)
     extract_semantic_per_episode: bool = False   # Extract semantic memory immediately for each new episode (single episode mode)
+    semantic_llm_dedup_enabled: bool = True      # Enable LLM-driven NEW/MERGE/CONFLICT_DELETE decisions for semantic memories
     
     # === Search Configuration ===
     search_top_k_episodes: int = 10             # Number of episode memory search results

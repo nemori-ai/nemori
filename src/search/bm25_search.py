@@ -58,18 +58,18 @@ class BM25Search:
                 # Try to load Chinese model, fallback to simple Chinese tokenizer
                 try:
                     nlp = spacy.load("zh_core_web_sm")
-                    logger.info("Loaded Chinese spaCy model")
+                    logger.debug("Loaded Chinese spaCy model")
                 except OSError:
-                    logger.warning("Chinese spaCy model not found, using simple Chinese tokenizer")
+                    logger.debug("Chinese spaCy model not found, using simple Chinese tokenizer")
                     nlp = Chinese()
                     nlp.add_pipe('sentencizer')
             else:
                 # Try to load English model, fallback to simple English tokenizer
                 try:
                     nlp = spacy.load("en_core_web_sm")
-                    logger.info("Loaded English spaCy model")
+                    logger.debug("Loaded English spaCy model")
                 except OSError:
-                    logger.warning("English spaCy model not found, using simple English tokenizer")
+                    logger.debug("English spaCy model not found, using simple English tokenizer")
                     nlp = English()
                     nlp.add_pipe('sentencizer')
             

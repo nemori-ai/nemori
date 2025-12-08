@@ -6,7 +6,7 @@ import os
 import time
 import logging
 import numpy as np
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
@@ -1571,17 +1571,62 @@ class MemorySystem:
             for memory in semantic_memories:
                 # 预先计算新语义的向量，避免重复嵌入
                 new_embedding = self.embedding_client.embed_text(memory.content)
-                
-                # Check for duplicates
-                known_embedding_keys = set(existing_embeddings.keys())
-                if self._is_duplicate_semantic_memory(
-                    owner_id,
-                    memory,
-                    existing_memories=existing_semantic_memories,
-                    embedding_cache=existing_embeddings,
-                    new_embedding=new_embedding
-                ):
-                    continue
+
+                # LLM 决策合并/冲突处理
+                decision = {"decision": "NEW"}
+                candidates_scored: List[Tuple[SemanticMemory, float]] = []
+
+                if self.config.semantic_llm_dedup_enabled:
+                    try:
+                        candidates_scored = self._select_semantic_candidates(
+                            existing_semantic_memories,
+                            existing_embeddings,
+                            new_embedding,
+                            top_k=5
+                        )
+                        decision = self.semantic_generator.decide_semantic_consolidation(
+                            memory,
+                            candidates_scored
+                        ) or {"decision": "NEW"}
+                    except Exception as e:
+                        logger.warning(f"Semantic consolidation failed, fallback to NEW: {e}")
+                        decision = {"decision": "NEW", "reason": "fallback error"}
+                else:
+                    # 回退旧的阈值去重
+                    if self._is_duplicate_semantic_memory(
+                        owner_id,
+                        memory,
+                        existing_memories=existing_semantic_memories,
+                        embedding_cache=existing_embeddings,
+                        new_embedding=new_embedding
+                    ):
+                        continue
+                    decision = {"decision": "NEW"}
+
+                decision_type = (decision.get("decision") or "NEW").upper()
+                target_ids = decision.get("target_ids") or []
+
+                if decision_type in ("MERGE", "CONFLICT_DELETE") and target_ids:
+                    for tid in target_ids:
+                        try:
+                            self.delete_semantic_memory(owner_id, tid)
+                            # 本地缓存同步
+                            existing_semantic_memories = [
+                                mem for mem in existing_semantic_memories if mem.memory_id != tid
+                            ]
+                            if tid in existing_embeddings:
+                                existing_embeddings.pop(tid, None)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete semantic memory {tid}: {e}")
+
+                if decision_type == "MERGE":
+                    merged_content = decision.get("new_content")
+                    if merged_content and isinstance(merged_content, str):
+                        try:
+                            memory.content = merged_content
+                            new_embedding = self.embedding_client.embed_text(memory.content)
+                        except Exception as e:
+                            logger.warning(f"Failed to apply merged content, keeping original: {e}")
 
                 memory_id = self._semantic_repository.save(memory)
                 
@@ -1908,6 +1953,33 @@ class MemorySystem:
         except Exception as e:
             logger.error(f"Error calculating cosine similarity: {e}")
             return 0.0
+    
+    def _select_semantic_candidates(
+        self,
+        existing_semantic_memories: List[SemanticMemory],
+        existing_embeddings: Dict[str, List[float]],
+        new_embedding: List[float],
+        top_k: int = 5
+    ) -> List[Tuple[SemanticMemory, float]]:
+        """
+        Select top-K semantic memory candidates by cosine similarity for LLM consolidation.
+        """
+        try:
+            if not new_embedding:
+                return []
+            results: List[Tuple[SemanticMemory, float]] = []
+            new_vec = np.array(new_embedding, dtype=float)
+            for mem in existing_semantic_memories:
+                emb = existing_embeddings.get(mem.memory_id)
+                if not emb:
+                    continue
+                score = self._cosine_similarity_np(new_vec, np.array(emb, dtype=float))
+                results.append((mem, score))
+            results.sort(key=lambda x: x[1], reverse=True)
+            return results[:top_k]
+        except Exception as e:
+            logger.warning(f"Error selecting semantic candidates: {e}")
+            return []
     
     def _is_duplicate_semantic_memory_fallback(
         self,

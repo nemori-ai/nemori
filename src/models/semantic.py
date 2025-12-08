@@ -49,14 +49,26 @@ class SemanticMemory:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SemanticMemory':
-        """Create semantic memory from dictionary"""
+        """Create semantic memory from dictionary (normalize tz-aware datetimes to naive)."""
+        def _to_naive(dt_value: Any) -> Optional[datetime]:
+            if dt_value is None:
+                return None
+            if isinstance(dt_value, str):
+                try:
+                    dt_value = datetime.fromisoformat(dt_value)
+                except Exception:
+                    return None
+            if isinstance(dt_value, datetime) and dt_value.tzinfo is not None:
+                return dt_value.replace(tzinfo=None)
+            return dt_value if isinstance(dt_value, datetime) else None
+
         return cls(
             memory_id=data.get("memory_id", str(uuid.uuid4())),
             user_id=data["user_id"],
             content=data["content"],
             knowledge_type=data["knowledge_type"],
-            created_at=datetime.fromisoformat(data["created_at"]) if isinstance(data["created_at"], str) else data["created_at"],
-            updated_at=datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None,
+            created_at=_to_naive(data.get("created_at")),
+            updated_at=_to_naive(data.get("updated_at")),
             source_episodes=data.get("source_episodes", []),
             confidence=data.get("confidence", 0.8),
             metadata=data.get("metadata", {}),
