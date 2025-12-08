@@ -18,5 +18,6 @@
   "vector_index_backend": "chroma",
   "lexical_index_backend": "bm25",
   "enable_batch_segmentation": true,
+  "semantic_llm_dedup_enabled": true,
   "batch_threshold": 20
 }
