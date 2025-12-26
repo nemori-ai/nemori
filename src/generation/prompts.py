@@ -389,8 +389,9 @@ Return only the JSON object, no additional text.
 """
 
     # Semantic Memory Consolidation Prompt (NEW / MERGE / CONFLICT_DELETE)
+    # Conservative version: prefer NEW unless absolutely certain
     SEMANTIC_CONSOLIDATION_PROMPT = """
-You are a knowledge base maintainer. Decide how to integrate a new semantic memory item with the most similar existing items.
+You are a conservative knowledge base maintainer. Your default action is NEW unless you are ABSOLUTELY CERTAIN about merging or conflict.
 
 ## New Item
 - Type: {new_type}
@@ -400,19 +401,26 @@ You are a knowledge base maintainer. Decide how to integrate a new semantic memo
 {candidates}
 
 ## Actions (choose exactly one)
-1. NEW: The new item is distinct and should be added as-is.
-2. MERGE: The new item is semantically identical to one or more existing items; return a single canonical phrasing.
-3. CONFLICT_DELETE: The new item contradicts or supersedes existing items; delete the outdated items and keep the new one.
+1. **NEW** (DEFAULT): Add the new item. Choose this if:
+   - The items describe different facts, events, or entities
+   - The items refer to different times, places, or contexts
+   - You have ANY doubt about whether they are truly identical or contradictory
+
+2. **MERGE** (RARE): Only if the new item and existing item(s) express the EXACT SAME fact with just different wording. Example: "User likes coffee" and "The user enjoys coffee" are merge-able.
+
+3. **CONFLICT_DELETE** (VERY RARE): Only if the new item DIRECTLY CONTRADICTS existing item(s) about the SAME specific fact. Example: "User lives in Beijing" vs "User lives in Shanghai" (same attribute, different value).
 
 ## Output (valid JSON)
 - NEW: {{"decision": "NEW", "reason": "..."}}
-- MERGE: {{"decision": "MERGE", "target_ids": ["id1", "id2"], "new_content": "canonical phrasing (<=100 words)", "reason": "..."}}
-- CONFLICT_DELETE: {{"decision": "CONFLICT_DELETE", "target_ids": ["id1", "id2"], "reason": "..."}}
+- MERGE: {{"decision": "MERGE", "target_ids": ["id1"], "new_content": "canonical phrasing (<=100 words)", "reason": "..."}}
+- CONFLICT_DELETE: {{"decision": "CONFLICT_DELETE", "target_ids": ["id1"], "reason": "..."}}
 
-Rules:
-- Be concise; focus on semantic equality or contradiction, not superficial wording.
-- Only include IDs that appear in candidates.
-- If unsure, choose NEW.
+## CRITICAL RULES
+- **Default to NEW** - when in doubt, always choose NEW
+- Similar topics ≠ same fact. "User has a cat" and "User has a dog" are BOTH valid, choose NEW
+- Only MERGE when items are semantically IDENTICAL (just rephrased)
+- Only CONFLICT_DELETE for direct contradictions about the SAME attribute
+- Preserve information richness - losing unique details is worse than having duplicates
 """
 
     @classmethod

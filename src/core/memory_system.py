@@ -902,9 +902,18 @@ class MemorySystem:
             return []
         
         try:
-            # 1. Batch segmentation using LLM
+            # 1. Batch segmentation using LLM (or skip if configured)
             buffer_messages = buffer.get_messages()
-            episode_groups = self._batch_segmenter.segment_batch(buffer_messages)
+            
+            # Check if segmentation should be skipped (for ablation study)
+            if self.config.skip_segmentation:
+                # Treat all messages as a single episode group
+                episode_groups = [list(range(1, len(buffer_messages) + 1))]
+                logger.info(
+                    f"Skipping segmentation: treating {len(buffer_messages)} messages as single episode"
+                )
+            else:
+                episode_groups = self._batch_segmenter.segment_batch(buffer_messages)
             
             logger.info(
                 f"Batch segmentation: {len(buffer_messages)} messages → "
@@ -1963,10 +1972,15 @@ class MemorySystem:
     ) -> List[Tuple[SemanticMemory, float]]:
         """
         Select top-K semantic memory candidates by cosine similarity for LLM consolidation.
+        Only returns candidates above the consolidation threshold.
         """
         try:
             if not new_embedding:
                 return []
+            
+            # Get consolidation threshold (default 0.9 for conservative filtering)
+            threshold = getattr(self.config, 'semantic_consolidation_threshold', 0.9)
+            
             results: List[Tuple[SemanticMemory, float]] = []
             new_vec = np.array(new_embedding, dtype=float)
             for mem in existing_semantic_memories:
@@ -1974,7 +1988,9 @@ class MemorySystem:
                 if not emb:
                     continue
                 score = self._cosine_similarity_np(new_vec, np.array(emb, dtype=float))
-                results.append((mem, score))
+                # Only include candidates above threshold
+                if score >= threshold:
+                    results.append((mem, score))
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:top_k]
         except Exception as e:
