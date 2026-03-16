@@ -1,104 +1,77 @@
-"""Domain-level interface definitions for the Nemori memory system."""
-
+# src/domain/interfaces.py
+"""Domain protocols for the Nemori memory system."""
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Dict, Iterable, List, Optional, Protocol
+from typing import Protocol, runtime_checkable
 
-from ..models import Episode, SemanticMemory, MessageBuffer, Message
-
-
-class EpisodeRepository(ABC):
-    """Storage abstraction for episodic memories."""
-
-    @abstractmethod
-    def save(self, episode: Episode) -> str: ...
-
-    @abstractmethod
-    def list_by_user(self, user_id: str) -> List[Episode]: ...
-
-    @abstractmethod
-    def delete_user_data(self, user_id: str) -> bool: ...
-
-    @abstractmethod
-    def delete(self, user_id: str, episode_id: str) -> bool: ...
+from src.domain.models import Episode, SemanticMemory, Message
 
 
-class SemanticRepository(ABC):
-    """Storage abstraction for semantic memories."""
+@runtime_checkable
+class EpisodeStore(Protocol):
+    """Unified episode persistence + search."""
 
-    @abstractmethod
-    def save(self, memory: SemanticMemory) -> str: ...
-
-    @abstractmethod
-    def list_by_user(self, user_id: str) -> List[SemanticMemory]: ...
-
-    @abstractmethod
-    def delete_user_data(self, user_id: str) -> bool: ...
-
-    @abstractmethod
-    def delete(self, user_id: str, memory_id: str) -> bool: ...
-
-
-class VectorIndex(ABC):
-    """Vector index abstraction for episodic/semantic retrieval."""
-
-    @abstractmethod
-    def add_episode(self, user_id: str, episode: Episode, embedding: Optional[List[float]] = None) -> None: ...
-
-    @abstractmethod
-    def add_semantic(self, user_id: str, memory: SemanticMemory, embedding: Optional[List[float]] = None) -> None: ...
-
-    @abstractmethod
-    def search_episodes(self, user_id: str, query: str, top_k: int) -> List[Dict]: ...
-
-    @abstractmethod
-    def search_semantics(self, user_id: str, query: str, top_k: int) -> List[Dict]: ...
-
-    @abstractmethod
-    def clear(self, user_id: str) -> bool: ...
-
-    @abstractmethod
-    def remove_episode(self, user_id: str, episode_id: str) -> bool: ...
-
-    @abstractmethod
-    def remove_semantic(self, user_id: str, memory_id: str) -> bool: ...
+    async def save(self, episode: Episode) -> None: ...
+    async def get(self, episode_id: str) -> Episode | None: ...
+    async def list_by_user(
+        self, user_id: str, limit: int = 100, offset: int = 0
+    ) -> list[Episode]: ...
+    async def delete(self, episode_id: str) -> None: ...
+    async def delete_by_user(self, user_id: str) -> None: ...
+    async def search_by_vector(
+        self, user_id: str, embedding: list[float], top_k: int
+    ) -> list[Episode]: ...
+    async def search_by_text(
+        self, user_id: str, query: str, top_k: int
+    ) -> list[Episode]: ...
+    async def search_hybrid(
+        self, user_id: str, query: str, embedding: list[float], top_k: int
+    ) -> list[Episode]: ...
 
 
-class LexicalIndex(ABC):
-    """Traditional lexical index (e.g., BM25)."""
+@runtime_checkable
+class SemanticStore(Protocol):
+    """Unified semantic memory persistence + search."""
 
-    @abstractmethod
-    def add_episode(self, user_id: str, episode: Episode) -> None: ...
-
-    @abstractmethod
-    def add_semantic(self, user_id: str, memory: SemanticMemory) -> None: ...
-
-    @abstractmethod
-    def search_episodes(self, user_id: str, query: str, top_k: int) -> List[Dict]: ...
-
-    @abstractmethod
-    def search_semantics(self, user_id: str, query: str, top_k: int) -> List[Dict]: ...
-
-    @abstractmethod
-    def clear(self, user_id: str) -> bool: ...
-
-    @abstractmethod
-    def remove_episode(self, user_id: str, episode_id: str) -> bool: ...
-
-    @abstractmethod
-    def remove_semantic(self, user_id: str, memory_id: str) -> bool: ...
+    async def save(self, memory: SemanticMemory) -> None: ...
+    async def save_batch(self, memories: list[SemanticMemory]) -> None: ...
+    async def get(self, memory_id: str) -> SemanticMemory | None: ...
+    async def list_by_user(
+        self, user_id: str, memory_type: str | None = None
+    ) -> list[SemanticMemory]: ...
+    async def delete(self, memory_id: str) -> None: ...
+    async def delete_by_user(self, user_id: str) -> None: ...
+    async def search_by_vector(
+        self, user_id: str, embedding: list[float], top_k: int
+    ) -> list[SemanticMemory]: ...
+    async def search_by_text(
+        self, user_id: str, query: str, top_k: int
+    ) -> list[SemanticMemory]: ...
+    async def search_hybrid(
+        self, user_id: str, query: str, embedding: list[float], top_k: int
+    ) -> list[SemanticMemory]: ...
 
 
-class EpisodeGenerator(ABC):
-    @abstractmethod
-    def generate(self, user_id: str, messages: List[Message], boundary_reason: str) -> Episode: ...
+@runtime_checkable
+class MessageBufferStore(Protocol):
+    """Persistent message buffer."""
+
+    async def push(self, user_id: str, messages: list[Message]) -> None: ...
+    async def get_unprocessed(self, user_id: str) -> list[Message]: ...
+    async def mark_processed(self, user_id: str, message_ids: list[int]) -> None: ...
+    async def count_unprocessed(self, user_id: str) -> int: ...
 
 
-class SemanticGenerator(ABC):
-    @abstractmethod
-    def generate(self, user_id: str, episode: Episode, existing_episodes: List[Episode], existing_semantics: List[SemanticMemory]) -> List[SemanticMemory]: ...
+@runtime_checkable
+class EmbeddingProvider(Protocol):
+    """Embedding generation protocol."""
+
+    async def embed(self, text: str) -> list[float]: ...
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
 
 
-class DedupStrategy(Protocol):
-    def is_duplicate(self, candidate: SemanticMemory, existing_semantics: List[SemanticMemory]) -> bool: ...
+@runtime_checkable
+class LLMProvider(Protocol):
+    """LLM call protocol."""
+
+    async def complete(self, messages: list[dict], **kwargs: object) -> str: ...
