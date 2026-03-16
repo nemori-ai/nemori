@@ -10,7 +10,10 @@ import dotenv
 dotenv.load_dotenv()
 
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(
+    api_key=os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("LLM_BASE_URL"),
+)
 
 ACCURACY_PROMPT = """
 Your task is to label an answer to a question as ’CORRECT’ or ’WRONG’. You will be given the following data:

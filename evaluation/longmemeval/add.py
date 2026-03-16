@@ -81,7 +81,7 @@ class LongMemEvalMemorySystemAdd:
             # LLM and Embedding settings
             llm_model=model,
             embedding_model="text-embedding-3-small",
-            embedding_dimension=1536,
+            # embedding_dimension auto-detected via probe if not set
             
             # Storage settings
             storage_path=storage_path,

@@ -48,13 +48,14 @@ def rebuild(storage_root: Path) -> None:
     load_dotenv()
 
     embedding_client = EmbeddingClient(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        model="text-embedding-3-small"
+        api_key=os.getenv("EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        model="text-embedding-3-small",
+        base_url=os.getenv("EMBEDDING_BASE_URL"),
     )
     vector_search = VectorSearch(
         embedding_client=embedding_client,
         storage_path=str(storage_root),
-        dimension=1536
+        dimension=embedding_client.embedding_dim,
     )
 
     episodes_dir = storage_root / "episodes"
