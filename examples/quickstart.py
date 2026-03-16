@@ -1,34 +1,31 @@
-"""Minimal example using NemoriMemory facade."""
-
-from datetime import datetime
-
-from nemori import NemoriMemory
+"""Nemori quickstart example."""
+import asyncio
+from nemori import NemoriMemory, MemoryConfig
 
 
-def main() -> None:
-    with NemoriMemory.from_env() as memory:
-        user_id = "example-user"
-        memory.add_messages(
-            user_id,
-            [
-                {
-                    "role": "user",
-                    "content": "I love testing Nemori!",
-                    "timestamp": datetime.now().isoformat(),
-                },
-                {
-                    "role": "assistant",
-                    "content": "Noted. I'll remember that you enjoy testing.",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            ],
-        )
-        memory.flush(user_id)
-        memory.wait_for_semantic(user_id)
+async def main():
+    config = MemoryConfig(
+        dsn="postgresql://localhost/nemori",
+        llm_model="gpt-4o-mini",
+        embedding_model="text-embedding-3-small",
+    )
 
-        results = memory.search(user_id, "testing", search_method="vector")
-        print("Search results:", results)
+    async with NemoriMemory(config=config) as memory:
+        health = await memory.health()
+        print(f"System healthy: {health.healthy}")
+
+        await memory.add_messages("alice", [
+            {"role": "user", "content": "I just moved to Tokyo last month"},
+            {"role": "assistant", "content": "How exciting! How are you finding life in Tokyo?"},
+            {"role": "user", "content": "Love it! The food is amazing, especially ramen"},
+        ])
+
+        episodes = await memory.flush("alice")
+        print(f"Created {len(episodes)} episodes")
+
+        results = await memory.search("alice", "Where does Alice live?")
+        print(results)
 
 
-if __name__ == "__main__":  # pragma: no cover
-    main()
+if __name__ == "__main__":
+    asyncio.run(main())

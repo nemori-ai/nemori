@@ -1,9 +1,20 @@
-"""Public package alias that re-exports the core Nemori API."""
+"""Nemori - Self-organizing agent memory system."""
+from src.api.facade import NemoriMemory
+from src.config import MemoryConfig
+from src.domain.models import Message, Episode, SemanticMemory, HealthResult
+from src.domain.exceptions import NemoriError, DatabaseError, LLMError
+from src.search.unified import SearchMethod, SearchResult
 
-from importlib import import_module
-
-_src = import_module("src")
-
-__all__ = getattr(_src, "__all__", [])
-
-globals().update({name: getattr(_src, name) for name in __all__})
+__all__ = [
+    "NemoriMemory",
+    "MemoryConfig",
+    "Message",
+    "Episode",
+    "SemanticMemory",
+    "HealthResult",
+    "NemoriError",
+    "DatabaseError",
+    "LLMError",
+    "SearchMethod",
+    "SearchResult",
+]
