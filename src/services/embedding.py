@@ -30,6 +30,11 @@ class AsyncEmbeddingClient:
         except Exception as e:
             raise EmbeddingError(f"Embedding failed: {e}") from e
 
+    async def probe_dimension(self) -> int:
+        """Probe actual embedding dimension by sending a test string."""
+        vec = await self.embed("dimension probe")
+        return len(vec)
+
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         try:
             response = await self._client.embeddings.create(

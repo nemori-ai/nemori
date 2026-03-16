@@ -6,16 +6,48 @@ from datetime import datetime
 from typing import Any
 import uuid
 
+# Multimodal content types (OpenAI content array standard)
+ContentPart = dict[str, Any]
+MessageContent = str | list[ContentPart]
+
 
 @dataclass
 class Message:
     """A single conversation message."""
 
     role: str
-    content: str
+    content: MessageContent
     timestamp: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
     message_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def text_content(self, include_placeholders: bool = True) -> str:
+        """Extract text parts only. Used for embedding, search, token counting."""
+        if isinstance(self.content, str):
+            return self.content
+        parts = []
+        for part in self.content:
+            if part.get("type") == "text":
+                parts.append(part["text"])
+            elif part.get("type") == "image_url" and include_placeholders:
+                parts.append("[image]")
+        return " ".join(parts)
+
+    def has_images(self) -> bool:
+        """Check if message contains image content."""
+        if isinstance(self.content, str):
+            return False
+        return any(p.get("type") == "image_url" for p in self.content)
+
+    def image_urls(self) -> list[str]:
+        """Extract image URLs from content array."""
+        if isinstance(self.content, str):
+            return []
+        return [
+            p["image_url"]["url"]
+            for p in self.content
+            if p.get("type") == "image_url"
+        ]
 
     def to_dict(self) -> dict[str, Any]:
         return {

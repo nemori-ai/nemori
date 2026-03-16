@@ -65,6 +65,63 @@ async def test_semantic_generator_returns_memories(mock_orchestrator, mock_embed
 
 
 @pytest.mark.asyncio
+async def test_episode_generator_multimodal(mock_orchestrator, mock_embedding):
+    mock_orchestrator.execute = AsyncMock(return_value=LLMResponse(
+        content='{"title": "Photo Discussion", "content": "User shared a mountain photo.", "timestamp": "2024-01-01T10:00:00"}',
+        model="gpt-4o-mini", usage=TokenUsage(), latency_ms=100, request_id="abc",
+    ))
+    gen = EpisodeGenerator(orchestrator=mock_orchestrator, embedding=mock_embedding)
+    messages = [
+        Message(role="user", content=[
+            {"type": "text", "text": "Look at this mountain!"},
+            {"type": "image_url", "image_url": {"url": "https://example.com/mountain.jpg"}},
+        ]),
+        Message(role="assistant", content="Beautiful view!"),
+    ]
+    episode = await gen.generate("u1", messages, "topic_change")
+    assert isinstance(episode, Episode)
+    # Verify the LLM request contained image content
+    call_args = mock_orchestrator.execute.call_args[0][0]
+    user_msg = call_args.messages[1]
+    assert isinstance(user_msg["content"], list)  # multimodal content array
+
+
+@pytest.mark.asyncio
+async def test_episode_generator_fallback_uses_text_content(mock_orchestrator, mock_embedding):
+    """Fallback should use text_content(), not raw content."""
+    mock_orchestrator.execute = AsyncMock(side_effect=Exception("LLM down"))
+    gen = EpisodeGenerator(orchestrator=mock_orchestrator, embedding=mock_embedding)
+    messages = [
+        Message(role="user", content=[
+            {"type": "text", "text": "Check this"},
+            {"type": "image_url", "image_url": {"url": "https://img.png"}},
+        ]),
+    ]
+    episode = await gen.generate("u1", messages, "test")
+    # Should NOT contain raw list repr in content
+    assert "[{" not in episode.content
+    assert "Check this" in episode.content
+
+
+@pytest.mark.asyncio
+async def test_segmenter_handles_multimodal(mock_orchestrator):
+    mock_orchestrator.execute = AsyncMock(return_value=LLMResponse(
+        content='{"episodes": [{"indices": [1, 2], "topic": "photos"}]}',
+        model="gpt-4o-mini", usage=TokenUsage(), latency_ms=100, request_id="abc",
+    ))
+    seg = BatchSegmenter(orchestrator=mock_orchestrator)
+    messages = [
+        Message(role="user", content=[
+            {"type": "text", "text": "Look at this"},
+            {"type": "image_url", "image_url": {"url": "https://img.png"}},
+        ]),
+        Message(role="assistant", content="Nice!"),
+    ]
+    groups = await seg.segment(messages)
+    assert len(groups) == 1
+
+
+@pytest.mark.asyncio
 async def test_segmenter_returns_groups(mock_orchestrator):
     mock_orchestrator.execute = AsyncMock(return_value=LLMResponse(
         content='{"episodes": [{"indices": [1, 2], "topic": "hiking"}, {"indices": [3, 4], "topic": "work"}]}',

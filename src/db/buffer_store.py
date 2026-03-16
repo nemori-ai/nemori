@@ -1,6 +1,7 @@
 """PostgreSQL implementation of MessageBufferStore."""
 from __future__ import annotations
 
+import json
 import logging
 
 from src.db.connection import DatabaseManager
@@ -19,8 +20,8 @@ class PgMessageBufferStore:
         for msg in messages:
             await self._db.execute(
                 """INSERT INTO message_buffer (user_id, role, content, timestamp)
-                   VALUES ($1, $2, $3, $4)""",
-                user_id, msg.role, msg.content, msg.timestamp,
+                   VALUES ($1, $2, $3::jsonb, $4)""",
+                user_id, msg.role, json.dumps(msg.content), msg.timestamp,
             )
 
     async def get_unprocessed(self, user_id: str) -> list[Message]:
@@ -33,9 +34,13 @@ class PgMessageBufferStore:
         )
         result = []
         for row in rows:
+            content = row["content"]
+            # JSONB returns Python objects directly via asyncpg
+            # If it's a plain string (old data), use as-is
+            # If it's a list (multimodal), use as-is
             msg = Message(
                 role=row["role"],
-                content=row["content"],
+                content=content,
                 timestamp=row["timestamp"],
                 metadata={"buffer_id": row["id"]},
             )

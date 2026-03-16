@@ -26,6 +26,37 @@ class TestMessage:
         assert "message_id" in d
         assert "timestamp" in d
 
+    def test_multimodal_content(self):
+        msg = Message(
+            role="user",
+            content=[
+                {"type": "text", "text": "Look at this"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/img.png"}},
+            ],
+        )
+        assert msg.has_images()
+        assert msg.image_urls() == ["https://example.com/img.png"]
+        assert msg.text_content() == "Look at this [image]"
+        assert msg.text_content(include_placeholders=False) == "Look at this"
+
+    def test_text_only_message_helpers(self):
+        msg = Message(role="user", content="just text")
+        assert not msg.has_images()
+        assert msg.image_urls() == []
+        assert msg.text_content() == "just text"
+
+    def test_multimodal_to_dict_round_trip(self):
+        content = [
+            {"type": "text", "text": "hello"},
+            {"type": "image_url", "image_url": {"url": "https://img.png"}},
+        ]
+        msg = Message(role="user", content=content)
+        d = msg.to_dict()
+        assert d["content"] == content
+        msg2 = Message.from_dict(d)
+        assert msg2.content == content
+        assert msg2.has_images()
+
 
 class TestEpisode:
     def test_create_episode(self):

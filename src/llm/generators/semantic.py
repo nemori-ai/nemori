@@ -13,6 +13,20 @@ from src.llm.prompts import PromptTemplates
 logger = logging.getLogger("nemori")
 
 
+def _extract_text(msg_dict: dict) -> str:
+    """Extract text from a source_message dict, handling both str and content array."""
+    content = msg_dict.get("content", "")
+    if isinstance(content, str):
+        return content
+    parts = []
+    for part in content:
+        if part.get("type") == "text":
+            parts.append(part["text"])
+        elif part.get("type") == "image_url":
+            parts.append("[image]")
+    return " ".join(parts)
+
+
 class SemanticGenerator:
     """Extracts semantic memories from episodes."""
 
@@ -77,7 +91,7 @@ class SemanticGenerator:
 
         # Step 2: Extract deltas
         original = "\n".join(
-            f"{m.get('role', 'unknown')}: {m.get('content', '')}"
+            f"{m.get('role', 'unknown')}: {_extract_text(m)}"
             for m in episode.source_messages
         )
         extract_prompt = PromptTemplates.EXTRACT_KNOWLEDGE_FROM_COMPARISON_PROMPT.format(

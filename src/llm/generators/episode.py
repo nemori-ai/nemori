@@ -13,6 +13,14 @@ from src.llm.prompts import PromptTemplates
 
 logger = logging.getLogger("nemori")
 
+MAX_IMAGES_PER_EPISODE = 10
+
+_MULTIMODAL_GUIDANCE = """If images are included in this conversation:
+1. Use the images to enrich your understanding of what the user was doing or discussing.
+2. Describe the visual context naturally within the narrative.
+3. Do NOT reference technical details like "image_url" or "screenshot #3".
+4. Integrate visual information chronologically with the text conversation."""
+
 
 class EpisodeGenerator:
     """Constructs episode generation prompts and parses LLM responses."""
@@ -29,10 +37,18 @@ class EpisodeGenerator:
         conversation = PromptTemplates.format_conversation(msg_dicts)
         prompt = PromptTemplates.get_episode_generation_prompt(conversation, boundary_reason)
 
+        has_images = any(m.has_images() for m in messages)
+
+        if has_images:
+            # Build multimodal content array
+            user_content = self._build_multimodal_prompt(messages, boundary_reason)
+        else:
+            user_content = prompt  # existing text prompt
+
         request = LLMRequest(
             messages=(
                 {"role": "system", "content": "You are an episodic memory generation expert."},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": user_content},
             ),
             metadata={"generator": "episode", "user_id": user_id},
         )
@@ -76,11 +92,51 @@ class EpisodeGenerator:
             text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
         return json.loads(text)
 
+    def _build_multimodal_prompt(
+        self, messages: list[Message], boundary_reason: str
+    ) -> list[dict]:
+        """Build content array with text prompt + images."""
+        # Format conversation with image markers
+        conversation = self._format_with_image_markers(messages)
+        prompt = PromptTemplates.get_episode_generation_prompt(conversation, boundary_reason)
+
+        # Add multimodal guidance
+        prompt += "\n\n" + _MULTIMODAL_GUIDANCE
+
+        parts: list[dict] = [{"type": "text", "text": prompt}]
+
+        # Attach images (max 10)
+        image_count = 0
+        for msg in messages:
+            for url in msg.image_urls():
+                if image_count >= MAX_IMAGES_PER_EPISODE:
+                    break
+                parts.append({"type": "image_url", "image_url": {"url": url}})
+                image_count += 1
+
+        return parts
+
+    def _format_with_image_markers(self, messages: list[Message]) -> str:
+        """Format conversation text, marking image positions."""
+        lines = []
+        for msg in messages:
+            if isinstance(msg.content, str):
+                lines.append(f"{msg.role}: {msg.content}")
+            else:
+                msg_parts = []
+                for part in msg.content:
+                    if part.get("type") == "text":
+                        msg_parts.append(part["text"])
+                    elif part.get("type") == "image_url":
+                        msg_parts.append("[Image attached]")
+                lines.append(f"{msg.role}: {' '.join(msg_parts)}")
+        return "\n".join(lines)
+
     def _create_fallback(
         self, user_id: str, messages: list[Message], boundary_reason: str
     ) -> Episode:
         """Create a raw episode when LLM generation fails."""
-        conversation = "\n".join(f"{m.role}: {m.content}" for m in messages)
+        conversation = "\n".join(f"{m.role}: {m.text_content()}" for m in messages)
         return Episode(
             user_id=user_id,
             title=f"Conversation ({len(messages)} messages)",

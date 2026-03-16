@@ -2,6 +2,23 @@
 from __future__ import annotations
 
 
+def get_dimension_adaptation_sql(new_dim: int) -> str:
+    """Generate SQL to adapt vector columns to a new dimension."""
+    return f"""
+    DROP INDEX IF EXISTS idx_episodes_embedding;
+    DROP INDEX IF EXISTS idx_semantic_embedding;
+
+    ALTER TABLE episodes ALTER COLUMN embedding TYPE vector({new_dim});
+    ALTER TABLE semantic_memories ALTER COLUMN embedding TYPE vector({new_dim});
+
+    UPDATE episodes SET embedding = NULL WHERE embedding IS NOT NULL;
+    UPDATE semantic_memories SET embedding = NULL WHERE embedding IS NOT NULL;
+
+    CREATE INDEX idx_episodes_embedding ON episodes USING hnsw (embedding vector_cosine_ops);
+    CREATE INDEX idx_semantic_embedding ON semantic_memories USING hnsw (embedding vector_cosine_ops);
+    """
+
+
 def get_migrations(embedding_dimension: int = 1536) -> list[tuple[int, str, str]]:
     dim = embedding_dimension
 
@@ -65,4 +82,7 @@ def get_migrations(embedding_dimension: int = 1536) -> list[tuple[int, str, str]
 
     return [
         (1, "initial schema", initial_schema),
+        (2, "multimodal buffer content", """
+    ALTER TABLE message_buffer ALTER COLUMN content TYPE JSONB USING to_jsonb(content);
+"""),
     ]

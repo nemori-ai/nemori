@@ -38,10 +38,56 @@ class NemoriMemory:
             min_size=self._config.db_pool_min,
             max_size=self._config.db_pool_max,
         )
+
+        # Probe embedding dimension before schema setup
+        try:
+            embedding = AsyncEmbeddingClient(
+                api_key=self._config.embedding_api_key,
+                model=self._config.embedding_model,
+                base_url=self._config.embedding_base_url,
+            )
+            actual_dim = await embedding.probe_dimension()
+            if actual_dim != self._config.embedding_dimension:
+                logger.info(
+                    "Embedding dimension probe: %d (config was %d), adjusting",
+                    actual_dim, self._config.embedding_dimension,
+                )
+                self._config.embedding_dimension = actual_dim
+        except Exception as e:
+            logger.warning("Embedding dimension probe failed: %s. Using config value %d", e, self._config.embedding_dimension)
+
+        # Run migrations with correct dimension
         migrations = get_migrations(self._config.embedding_dimension)
         await self._db.ensure_schema(migrations)
+
+        # Check if dimension adaptation needed on existing DB
+        await self._check_dimension_adaptation()
+
         self._system = await self._build_system()
         return self
+
+    async def _check_dimension_adaptation(self) -> None:
+        """Check if existing vector columns need dimension adaptation."""
+        from src.db.migrations import get_dimension_adaptation_sql
+        try:
+            # Check current column dimension from pg_attribute
+            row = await self._db.fetchrow("""
+                SELECT atttypmod FROM pg_attribute
+                WHERE attrelid = 'episodes'::regclass
+                AND attname = 'embedding'
+            """)
+            if row and row['atttypmod'] > 0:
+                current_dim = row['atttypmod']
+                if current_dim != self._config.embedding_dimension:
+                    logger.warning(
+                        "Vector dimension mismatch: DB has %d, config needs %d. "
+                        "Adapting schema and clearing stale embeddings.",
+                        current_dim, self._config.embedding_dimension,
+                    )
+                    sql = get_dimension_adaptation_sql(self._config.embedding_dimension)
+                    await self._db.execute(sql)
+        except Exception as e:
+            logger.debug("Dimension check skipped: %s", e)
 
     async def __aexit__(self, *exc: Any) -> None:
         if self._system:

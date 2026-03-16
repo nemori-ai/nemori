@@ -324,7 +324,7 @@ Return only the JSON object, no additional text.
 
     @classmethod
     def format_conversation(cls, messages: list) -> str:
-        """Format conversation with timestamp information for episode generation"""
+        """Format conversation with timestamp information for episode generation."""
         lines = []
         for msg in messages:
             if isinstance(msg, dict):
@@ -332,9 +332,18 @@ Return only the JSON object, no additional text.
                 content = msg.get("content", "")
                 timestamp = msg.get("timestamp", "")
 
-                # Include timestamp in the formatted message if available
+                # Handle multimodal content arrays
+                if isinstance(content, list):
+                    text_parts = []
+                    for part in content:
+                        if isinstance(part, dict):
+                            if part.get("type") == "text":
+                                text_parts.append(part["text"])
+                            elif part.get("type") == "image_url":
+                                text_parts.append("[Image attached]")
+                    content = " ".join(text_parts)
+
                 if timestamp:
-                    # Handle both datetime objects and string timestamps
                     if hasattr(timestamp, 'isoformat'):
                         timestamp_str = timestamp.isoformat()
                     else:
