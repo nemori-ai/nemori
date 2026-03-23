@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from nemori.config import MemoryConfig
@@ -99,9 +100,22 @@ class NemoriMemory:
 
     async def add_messages(self, user_id: str, messages: list[dict[str, Any]]) -> None:
         system = self._ensure_system()
-        msg_objects = [
-            Message(role=m["role"], content=m["content"]) for m in messages
-        ]
+        msg_objects = []
+        for m in messages:
+            kwargs: dict[str, Any] = {"role": m["role"], "content": m["content"]}
+            if "timestamp" in m:
+                ts = m["timestamp"]
+                if isinstance(ts, str):
+                    try:
+                        ts = datetime.fromisoformat(ts)
+                    except ValueError as e:
+                        raise ValueError(f"Invalid timestamp format in message: {ts!r}") from e
+                elif not isinstance(ts, datetime):
+                    raise TypeError(f"timestamp must be str or datetime, got {type(ts).__name__}")
+                kwargs["timestamp"] = ts
+            if "metadata" in m:
+                kwargs["metadata"] = m["metadata"]
+            msg_objects.append(Message(**kwargs))
         await system.add_messages(user_id, msg_objects)
 
     async def flush(self, user_id: str) -> list[dict[str, Any]]:

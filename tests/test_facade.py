@@ -50,6 +50,31 @@ async def test_facade_health():
 
 
 @pytest.mark.asyncio
+async def test_facade_add_messages_preserves_timestamp_and_metadata():
+    with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+         patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
+        MockDB.return_value = AsyncMock()
+
+        config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
+        async with NemoriMemory(config=config) as memory:
+            memory._system = AsyncMock()
+            await memory.add_messages("u1", [
+                {
+                    "role": "user",
+                    "content": "hi",
+                    "timestamp": "2023-05-08T13:56:00",
+                    "metadata": {"source": "test"},
+                }
+            ])
+            memory._system.add_messages.assert_called_once()
+            args = memory._system.add_messages.call_args
+            msg = args[0][1][0]  # second positional arg, first message
+            from datetime import datetime
+            assert msg.timestamp == datetime(2023, 5, 8, 13, 56, 0)
+            assert msg.metadata == {"source": "test"}
+
+
+@pytest.mark.asyncio
 async def test_facade_not_initialized_raises():
     memory = NemoriMemory()
     with pytest.raises(RuntimeError, match="not initialized"):
