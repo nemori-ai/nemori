@@ -1,7 +1,9 @@
 {
   "dsn": "postgresql://localhost/nemori",
-  "llm_model": "gpt-4.1-mini",
-  "embedding_model": "text-embedding-3-small",
+  "llm_model": "openai/gpt-4.1-mini",
+  "llm_base_url": "https://openrouter.ai/api/v1",
+  "embedding_model": "openai/text-embedding-3-small",
+  "embedding_base_url": "https://openrouter.ai/api/v1",
   "buffer_size_min": 1,
   "buffer_size_max": 20,
   "episode_min_messages": 1,
@@ -9,7 +11,5 @@
   "enable_semantic_memory": true,
   "enable_prediction_correction": true,
   "search_top_k_episodes": 10,
-  "search_top_k_semantic": 20,
-  "enable_batch_segmentation": true,
-  "batch_threshold": 20
+  "search_top_k_semantic": 20
 }
