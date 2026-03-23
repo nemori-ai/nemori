@@ -139,7 +139,10 @@ class LocomoSearcher:
         self.max_concurrent_answer = max_concurrent_answer
         self.results: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         try:
-            self.openai_client = AsyncOpenAI()
+            self.openai_client = AsyncOpenAI(
+                api_key=config.llm_api_key,
+                base_url=config.llm_base_url,
+            )
         except Exception:
             self.openai_client = None
 
