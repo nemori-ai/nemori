@@ -1,8 +1,8 @@
 """Tests for PgMessageBufferStore."""
 import pytest
 from unittest.mock import AsyncMock
-from src.db.buffer_store import PgMessageBufferStore
-from src.domain.models import Message
+from nemori.db.buffer_store import PgMessageBufferStore
+from nemori.domain.models import Message
 
 
 @pytest.fixture

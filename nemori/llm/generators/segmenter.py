@@ -5,9 +5,9 @@ import json
 import logging
 from typing import Any
 
-from src.domain.models import Message
-from src.llm.orchestrator import LLMOrchestrator, LLMRequest
-from src.llm.prompts import PromptTemplates
+from nemori.domain.models import Message
+from nemori.llm.orchestrator import LLMOrchestrator, LLMRequest
+from nemori.llm.prompts import PromptTemplates
 
 logger = logging.getLogger("nemori")
 

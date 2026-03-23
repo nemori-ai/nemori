@@ -1,15 +1,15 @@
 """Tests for DatabaseManager."""
 import pytest
 from unittest.mock import AsyncMock, patch
-from src.db.connection import DatabaseManager
-from src.domain.exceptions import DatabaseError
+from nemori.db.connection import DatabaseManager
+from nemori.domain.exceptions import DatabaseError
 
 
 @pytest.mark.asyncio
 async def test_init_creates_pool():
     dm = DatabaseManager()
     mock_pool = AsyncMock()
-    with patch("src.db.connection.asyncpg.create_pool", new_callable=AsyncMock, return_value=mock_pool):
+    with patch("nemori.db.connection.asyncpg.create_pool", new_callable=AsyncMock, return_value=mock_pool):
         await dm.init("postgresql://localhost/test")
         assert dm.pool is not None
     await dm.close()
@@ -19,7 +19,7 @@ async def test_init_creates_pool():
 async def test_close_releases_pool():
     dm = DatabaseManager()
     mock_pool = AsyncMock()
-    with patch("src.db.connection.asyncpg.create_pool", new_callable=AsyncMock, return_value=mock_pool):
+    with patch("nemori.db.connection.asyncpg.create_pool", new_callable=AsyncMock, return_value=mock_pool):
         await dm.init("postgresql://localhost/test")
         await dm.close()
         mock_pool.close.assert_called_once()

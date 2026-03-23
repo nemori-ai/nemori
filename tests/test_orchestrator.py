@@ -2,8 +2,8 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock
-from src.llm.orchestrator import LLMOrchestrator, LLMRequest, LLMResponse, TokenUsage
-from src.domain.exceptions import LLMError, TokenBudgetExceeded
+from nemori.llm.orchestrator import LLMOrchestrator, LLMRequest, LLMResponse, TokenUsage
+from nemori.domain.exceptions import LLMError, TokenBudgetExceeded
 
 
 @pytest.fixture

@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from src.domain.models import Episode, SemanticMemory
-from src.domain.interfaces import EpisodeStore, SemanticStore, EmbeddingProvider
+from nemori.domain.models import Episode, SemanticMemory
+from nemori.domain.interfaces import EpisodeStore, SemanticStore, EmbeddingProvider
 
 logger = logging.getLogger("nemori")
 

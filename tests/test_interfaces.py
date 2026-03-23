@@ -1,6 +1,6 @@
 """Tests for domain interface protocols."""
 import pytest
-from src.domain.interfaces import (
+from nemori.domain.interfaces import (
     EpisodeStore,
     SemanticStore,
     MessageBufferStore,

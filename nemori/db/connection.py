@@ -6,7 +6,7 @@ from typing import Any
 
 import asyncpg
 
-from src.domain.exceptions import DatabaseError
+from nemori.domain.exceptions import DatabaseError
 
 logger = logging.getLogger("nemori")
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from src.domain.exceptions import LLMError, LLMAuthError, LLMRateLimitError
+from nemori.domain.exceptions import LLMError, LLMAuthError, LLMRateLimitError
 
 logger = logging.getLogger("nemori")
 

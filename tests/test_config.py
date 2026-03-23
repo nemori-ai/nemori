@@ -1,6 +1,6 @@
 """Tests for simplified MemoryConfig."""
 import pytest
-from src.config import MemoryConfig
+from nemori.config import MemoryConfig
 
 
 def test_default_config():

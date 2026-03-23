@@ -1,7 +1,7 @@
 """Tests for AsyncEmbeddingClient."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.services.embedding import AsyncEmbeddingClient
+from nemori.services.embedding import AsyncEmbeddingClient
 
 
 @pytest.mark.asyncio

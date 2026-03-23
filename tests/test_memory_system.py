@@ -1,31 +1,11 @@
 """Tests for async MemorySystem."""
-import sys
-import types
-
-# Stub out heavy transitive imports before anything touches them.
-for _mod_name in [
-    "chromadb",
-    "src.search.chroma_search",
-    "src.search.bm25_search",
-    "src.search.unified_search",
-    "src.search.original_message_search",
-]:
-    if _mod_name not in sys.modules:
-        sys.modules[_mod_name] = types.ModuleType(_mod_name)
-
-# Ensure src.search package exists so unified.py can be imported directly
-if "src.search" not in sys.modules:
-    _search = types.ModuleType("src.search")
-    _search.__path__ = ["src/search"]
-    sys.modules["src.search"] = _search
-
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
-from src.core.memory_system import MemorySystem
-from src.domain.models import Message, Episode, SemanticMemory
-from src.search.unified import SearchResult
-from src.config import MemoryConfig
+from nemori.core.memory_system import MemorySystem
+from nemori.domain.models import Message, Episode, SemanticMemory
+from nemori.search.unified import SearchResult
+from nemori.config import MemoryConfig
 
 
 @pytest.fixture

@@ -1,21 +1,8 @@
 """Tests for UnifiedSearch."""
 import pytest
-import importlib.util
-import sys
-import os
 from unittest.mock import AsyncMock
 
-# Load src/search/unified.py directly to bypass src/search/__init__.py (which imports chromadb)
-_spec = importlib.util.spec_from_file_location(
-    "src.search.unified",
-    os.path.join(os.path.dirname(__file__), "..", "src", "search", "unified.py"),
-)
-_mod = importlib.util.module_from_spec(_spec)
-sys.modules["src.search.unified"] = _mod
-_spec.loader.exec_module(_mod)
-UnifiedSearch = _mod.UnifiedSearch
-SearchMethod = _mod.SearchMethod
-SearchResult = _mod.SearchResult
+from nemori.search.unified import UnifiedSearch, SearchMethod, SearchResult
 
 
 @pytest.fixture

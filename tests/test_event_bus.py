@@ -1,7 +1,7 @@
 """Tests for async EventBus."""
 import pytest
 import asyncio
-from src.services.event_bus import EventBus
+from nemori.services.event_bus import EventBus
 
 
 @pytest.mark.asyncio

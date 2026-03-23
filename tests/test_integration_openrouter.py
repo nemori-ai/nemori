@@ -14,13 +14,10 @@ import time
 from dotenv import load_dotenv
 load_dotenv()
 
-# Ensure src is importable
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from src.llm.client import AsyncLLMClient
-from src.llm.orchestrator import LLMOrchestrator, LLMRequest, LLMResponse
-from src.services.embedding import AsyncEmbeddingClient
-from src.domain.exceptions import LLMError
+from nemori.llm.client import AsyncLLMClient
+from nemori.llm.orchestrator import LLMOrchestrator, LLMRequest, LLMResponse
+from nemori.services.embedding import AsyncEmbeddingClient
+from nemori.domain.exceptions import LLMError
 
 # ─── Config ───────────────────────────────────────────────────────────
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
@@ -218,8 +215,8 @@ async def test_episode_generation_pipeline():
     """Test the full episode generation prompt → parse pipeline."""
     print(f"\n🔹 Testing Episode Generation Pipeline")
 
-    from src.llm.generators.episode import EpisodeGenerator
-    from src.domain.models import Message
+    from nemori.llm.generators.episode import EpisodeGenerator
+    from nemori.domain.models import Message
 
     client = AsyncLLMClient(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
     orch = LLMOrchestrator(provider=client, default_model="anthropic/claude-sonnet-4.6")

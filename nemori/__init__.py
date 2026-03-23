@@ -1,9 +1,9 @@
 """Nemori - Self-organizing agent memory system."""
-from src.api.facade import NemoriMemory
-from src.config import MemoryConfig
-from src.domain.models import Message, Episode, SemanticMemory, HealthResult
-from src.domain.exceptions import NemoriError, DatabaseError, LLMError
-from src.search.unified import SearchMethod, SearchResult
+from nemori.api.facade import NemoriMemory
+from nemori.config import MemoryConfig
+from nemori.domain.models import Message, Episode, SemanticMemory, HealthResult
+from nemori.domain.exceptions import NemoriError, DatabaseError, LLMError
+from nemori.search.unified import SearchMethod, SearchResult
 
 __all__ = [
     "NemoriMemory",

@@ -2,8 +2,8 @@
 import pytest
 from unittest.mock import AsyncMock
 from datetime import datetime
-from src.db.semantic_store import PgSemanticStore
-from src.domain.models import SemanticMemory
+from nemori.db.semantic_store import PgSemanticStore
+from nemori.domain.models import SemanticMemory
 
 
 @pytest.fixture

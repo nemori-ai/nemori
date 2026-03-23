@@ -10,13 +10,13 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
-from src.domain.exceptions import (
+from nemori.domain.exceptions import (
     LLMError,
     LLMRateLimitError,
     LLMAuthError,
     TokenBudgetExceeded,
 )
-from src.domain.interfaces import LLMProvider
+from nemori.domain.interfaces import LLMProvider
 
 logger = logging.getLogger("nemori")
 

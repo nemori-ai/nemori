@@ -4,21 +4,21 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from src.config import MemoryConfig
-from src.db.connection import DatabaseManager
-from src.db.migrations import get_migrations
-from src.db.episode_store import PgEpisodeStore
-from src.db.semantic_store import PgSemanticStore
-from src.db.buffer_store import PgMessageBufferStore
-from src.domain.models import Message, Episode, HealthResult
-from src.llm.orchestrator import LLMOrchestrator
-from src.llm.client import AsyncLLMClient
-from src.llm.generators.episode import EpisodeGenerator
-from src.llm.generators.semantic import SemanticGenerator
-from src.services.embedding import AsyncEmbeddingClient
-from src.services.event_bus import EventBus
-from src.search.unified import UnifiedSearch, SearchMethod, SearchResult
-from src.core.memory_system import MemorySystem
+from nemori.config import MemoryConfig
+from nemori.db.connection import DatabaseManager
+from nemori.db.migrations import get_migrations
+from nemori.db.episode_store import PgEpisodeStore
+from nemori.db.semantic_store import PgSemanticStore
+from nemori.db.buffer_store import PgMessageBufferStore
+from nemori.domain.models import Message, Episode, HealthResult
+from nemori.llm.orchestrator import LLMOrchestrator
+from nemori.llm.client import AsyncLLMClient
+from nemori.llm.generators.episode import EpisodeGenerator
+from nemori.llm.generators.semantic import SemanticGenerator
+from nemori.services.embedding import AsyncEmbeddingClient
+from nemori.services.event_bus import EventBus
+from nemori.search.unified import UnifiedSearch, SearchMethod, SearchResult
+from nemori.core.memory_system import MemorySystem
 
 logger = logging.getLogger("nemori")
 
@@ -68,7 +68,7 @@ class NemoriMemory:
 
     async def _check_dimension_adaptation(self) -> None:
         """Check if existing vector columns need dimension adaptation."""
-        from src.db.migrations import get_dimension_adaptation_sql
+        from nemori.db.migrations import get_dimension_adaptation_sql
         try:
             # Check current column dimension from pg_attribute
             row = await self._db.fetchrow("""

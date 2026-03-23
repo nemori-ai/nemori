@@ -1,96 +1,113 @@
-"""PostgreSQL implementation of EpisodeStore."""
+"""PostgreSQL implementation of SemanticStore."""
 from __future__ import annotations
 
 import json
 import logging
 from typing import Any
 
-from src.db.connection import DatabaseManager
-from src.domain.models import Episode
+from nemori.db.connection import DatabaseManager
+from nemori.domain.models import SemanticMemory
 
 logger = logging.getLogger("nemori")
 
 
-class PgEpisodeStore:
-    """Episode persistence + search backed by PostgreSQL + pgvector."""
+class PgSemanticStore:
+    """Semantic memory persistence + search backed by PostgreSQL + pgvector."""
 
     def __init__(self, db: DatabaseManager) -> None:
         self._db = db
 
-    async def save(self, episode: Episode) -> None:
+    async def save(self, memory: SemanticMemory) -> None:
         await self._db.execute(
             """
-            INSERT INTO episodes (id, user_id, title, content, embedding,
-                                  source_messages, metadata, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO semantic_memories
+                (id, user_id, content, memory_type, embedding,
+                 source_episode_id, confidence, metadata, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (id) DO UPDATE SET
-                title = EXCLUDED.title,
                 content = EXCLUDED.content,
+                memory_type = EXCLUDED.memory_type,
                 embedding = EXCLUDED.embedding,
-                source_messages = EXCLUDED.source_messages,
+                confidence = EXCLUDED.confidence,
                 metadata = EXCLUDED.metadata,
                 updated_at = EXCLUDED.updated_at
             """,
-            episode.id, episode.user_id, episode.title, episode.content,
-            episode.embedding, json.dumps(episode.source_messages),
-            json.dumps(episode.metadata), episode.created_at, episode.updated_at,
+            memory.id, memory.user_id, memory.content, memory.memory_type,
+            memory.embedding, memory.source_episode_id, memory.confidence,
+            json.dumps(memory.metadata), memory.created_at, memory.updated_at,
         )
 
-    async def get(self, episode_id: str) -> Episode | None:
+    async def save_batch(self, memories: list[SemanticMemory]) -> None:
+        for memory in memories:
+            await self.save(memory)
+
+    async def get(self, memory_id: str) -> SemanticMemory | None:
         row = await self._db.fetchrow(
-            "SELECT * FROM episodes WHERE id = $1", episode_id
+            "SELECT * FROM semantic_memories WHERE id = $1", memory_id
         )
-        return self._row_to_episode(row) if row else None
+        return self._row_to_memory(row) if row else None
 
     async def list_by_user(
-        self, user_id: str, limit: int = 100, offset: int = 0
-    ) -> list[Episode]:
-        rows = await self._db.fetch(
-            """SELECT * FROM episodes WHERE user_id = $1
-               ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
-            user_id, limit, offset,
-        )
-        return [self._row_to_episode(r) for r in rows]
+        self, user_id: str, memory_type: str | None = None
+    ) -> list[SemanticMemory]:
+        if memory_type:
+            rows = await self._db.fetch(
+                """SELECT * FROM semantic_memories
+                   WHERE user_id = $1 AND memory_type = $2
+                   ORDER BY created_at DESC""",
+                user_id, memory_type,
+            )
+        else:
+            rows = await self._db.fetch(
+                """SELECT * FROM semantic_memories
+                   WHERE user_id = $1 ORDER BY created_at DESC""",
+                user_id,
+            )
+        return [self._row_to_memory(r) for r in rows]
 
-    async def delete(self, episode_id: str) -> None:
-        await self._db.execute("DELETE FROM episodes WHERE id = $1", episode_id)
+    async def delete(self, memory_id: str) -> None:
+        await self._db.execute(
+            "DELETE FROM semantic_memories WHERE id = $1", memory_id
+        )
 
     async def delete_by_user(self, user_id: str) -> None:
-        await self._db.execute("DELETE FROM episodes WHERE user_id = $1", user_id)
+        await self._db.execute(
+            "DELETE FROM semantic_memories WHERE user_id = $1", user_id
+        )
 
     async def search_by_vector(
         self, user_id: str, embedding: list[float], top_k: int
-    ) -> list[Episode]:
+    ) -> list[SemanticMemory]:
         rows = await self._db.fetch(
             """SELECT *, embedding <=> $2::vector AS distance
-               FROM episodes
+               FROM semantic_memories
                WHERE user_id = $1 AND embedding IS NOT NULL
                ORDER BY distance ASC
                LIMIT $3""",
             user_id, str(embedding), top_k,
         )
-        return [self._row_to_episode(r) for r in rows]
+        return [self._row_to_memory(r) for r in rows]
 
     async def search_by_text(
         self, user_id: str, query: str, top_k: int
-    ) -> list[Episode]:
+    ) -> list[SemanticMemory]:
         rows = await self._db.fetch(
             """SELECT *, ts_rank(tsv, plainto_tsquery('simple', $2)) AS rank
-               FROM episodes
+               FROM semantic_memories
                WHERE user_id = $1 AND tsv @@ plainto_tsquery('simple', $2)
                ORDER BY rank DESC
                LIMIT $3""",
             user_id, query, top_k,
         )
-        return [self._row_to_episode(r) for r in rows]
+        return [self._row_to_memory(r) for r in rows]
 
     async def search_hybrid(
         self, user_id: str, query: str, embedding: list[float], top_k: int
-    ) -> list[Episode]:
+    ) -> list[SemanticMemory]:
         rows = await self._db.fetch(
             """WITH vector_results AS (
                 SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $3::vector) AS vrank
-                FROM episodes
+                FROM semantic_memories
                 WHERE user_id = $1 AND embedding IS NOT NULL
                 LIMIT $4 * 2
             ),
@@ -98,7 +115,7 @@ class PgEpisodeStore:
                 SELECT id, ROW_NUMBER() OVER (
                     ORDER BY ts_rank(tsv, plainto_tsquery('simple', $2)) DESC
                 ) AS trank
-                FROM episodes
+                FROM semantic_memories
                 WHERE user_id = $1 AND tsv @@ plainto_tsquery('simple', $2)
                 LIMIT $4 * 2
             ),
@@ -111,27 +128,26 @@ class PgEpisodeStore:
                 ORDER BY rrf_score DESC
                 LIMIT $4
             )
-            SELECT e.* FROM fused f JOIN episodes e ON f.id = e.id
+            SELECT sm.* FROM fused f
+            JOIN semantic_memories sm ON f.id = sm.id
             ORDER BY f.rrf_score DESC""",
             user_id, query, str(embedding), top_k,
         )
-        return [self._row_to_episode(r) for r in rows]
+        return [self._row_to_memory(r) for r in rows]
 
     @staticmethod
-    def _row_to_episode(row: Any) -> Episode:
-        source_msgs = row["source_messages"]
-        if isinstance(source_msgs, str):
-            source_msgs = json.loads(source_msgs)
+    def _row_to_memory(row: Any) -> SemanticMemory:
         metadata = row["metadata"]
         if isinstance(metadata, str):
             metadata = json.loads(metadata)
-        return Episode(
+        return SemanticMemory(
             id=str(row["id"]),
             user_id=row["user_id"],
-            title=row["title"],
             content=row["content"],
+            memory_type=row["memory_type"],
             embedding=list(row["embedding"]) if row.get("embedding") else None,
-            source_messages=source_msgs or [],
+            source_episode_id=str(row["source_episode_id"]) if row.get("source_episode_id") else None,
+            confidence=row["confidence"],
             metadata=metadata or {},
             created_at=row["created_at"],
             updated_at=row["updated_at"],

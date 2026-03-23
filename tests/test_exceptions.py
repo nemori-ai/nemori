@@ -1,6 +1,6 @@
 """Tests for Nemori exception hierarchy."""
 import pytest
-from src.domain.exceptions import (
+from nemori.domain.exceptions import (
     NemoriError,
     DatabaseError,
     LLMError,

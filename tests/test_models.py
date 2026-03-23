@@ -1,7 +1,7 @@
 """Tests for domain models."""
 import pytest
 from datetime import datetime
-from src.domain.models import Message, Episode, SemanticMemory, HealthResult
+from nemori.domain.models import Message, Episode, SemanticMemory, HealthResult
 
 
 class TestMessage:

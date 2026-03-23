@@ -65,7 +65,7 @@ nemori-search-longmemeval = "evaluation.longmemeval.search:main"
 nemori-eval-longmemeval = "evaluation.longmemeval.evals:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["nemori", "src", "evaluation"]
+packages = ["nemori"]
 
 [tool.black]
 line-length = 88
@@ -104,7 +104,4 @@ minversion = "7.0"
 addopts = "-ra -q"
 testpaths = [
     "tests",
-]
-pythonpath = [
-    "src",
 ]

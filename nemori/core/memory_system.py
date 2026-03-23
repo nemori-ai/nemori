@@ -6,16 +6,16 @@ import logging
 from collections import OrderedDict
 from typing import Any
 
-from src.config import MemoryConfig
-from src.db.connection import DatabaseManager
-from src.domain.interfaces import EpisodeStore, SemanticStore, MessageBufferStore, EmbeddingProvider
-from src.domain.models import Message, Episode, SemanticMemory
-from src.llm.orchestrator import LLMOrchestrator
-from src.llm.generators.episode import EpisodeGenerator
-from src.llm.generators.semantic import SemanticGenerator
-from src.llm.generators.segmenter import BatchSegmenter
-from src.search.unified import UnifiedSearch, SearchMethod, SearchResult
-from src.services.event_bus import EventBus
+from nemori.config import MemoryConfig
+from nemori.db.connection import DatabaseManager
+from nemori.domain.interfaces import EpisodeStore, SemanticStore, MessageBufferStore, EmbeddingProvider
+from nemori.domain.models import Message, Episode, SemanticMemory
+from nemori.llm.orchestrator import LLMOrchestrator
+from nemori.llm.generators.episode import EpisodeGenerator
+from nemori.llm.generators.semantic import SemanticGenerator
+from nemori.llm.generators.segmenter import BatchSegmenter
+from nemori.search.unified import UnifiedSearch, SearchMethod, SearchResult
+from nemori.services.event_bus import EventBus
 
 logger = logging.getLogger("nemori")
 

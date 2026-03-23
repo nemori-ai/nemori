@@ -1,6 +1,6 @@
 """Tests for schema migrations."""
 import pytest
-from src.db.migrations import get_migrations
+from nemori.db.migrations import get_migrations
 
 
 def test_get_migrations_returns_list():

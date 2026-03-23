@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from src.domain.models import Episode, SemanticMemory, Message
+from nemori.domain.models import Episode, SemanticMemory, Message
 
 
 @runtime_checkable

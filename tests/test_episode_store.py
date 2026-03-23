@@ -2,8 +2,8 @@
 import pytest
 from unittest.mock import AsyncMock
 from datetime import datetime
-from src.db.episode_store import PgEpisodeStore
-from src.domain.models import Episode
+from nemori.db.episode_store import PgEpisodeStore
+from nemori.domain.models import Episode
 
 
 @pytest.fixture

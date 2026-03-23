@@ -1,7 +1,7 @@
 """Tests for AsyncLLMClient."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.llm.client import AsyncLLMClient
+from nemori.llm.client import AsyncLLMClient
 
 
 @pytest.mark.asyncio

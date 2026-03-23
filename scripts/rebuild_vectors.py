@@ -15,10 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.config import MemoryConfig
-from src.models import Episode, SemanticMemory
-from src.search.vector_search import VectorSearch
-from src.utils.embedding_client import EmbeddingClient
+from nemori.config import MemoryConfig
+from nemori.models import Episode, SemanticMemory
+from nemori.search.vector_search import VectorSearch
+from nemori.utils.embedding_client import EmbeddingClient
 
 
 def load_jsonl(path: Path, model_cls):

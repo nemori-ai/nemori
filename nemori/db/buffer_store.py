@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 import logging
 
-from src.db.connection import DatabaseManager
-from src.domain.models import Message
+from nemori.db.connection import DatabaseManager
+from nemori.domain.models import Message
 
 logger = logging.getLogger("nemori")
 

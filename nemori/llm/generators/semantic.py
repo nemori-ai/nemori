@@ -5,10 +5,10 @@ import json
 import logging
 from typing import Any
 
-from src.domain.models import Episode, SemanticMemory
-from src.domain.interfaces import EmbeddingProvider
-from src.llm.orchestrator import LLMOrchestrator, LLMRequest
-from src.llm.prompts import PromptTemplates
+from nemori.domain.models import Episode, SemanticMemory
+from nemori.domain.interfaces import EmbeddingProvider
+from nemori.llm.orchestrator import LLMOrchestrator, LLMRequest
+from nemori.llm.prompts import PromptTemplates
 
 logger = logging.getLogger("nemori")
 

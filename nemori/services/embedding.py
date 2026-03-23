@@ -6,7 +6,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from src.domain.exceptions import EmbeddingError
+from nemori.domain.exceptions import EmbeddingError
 
 logger = logging.getLogger("nemori")
 

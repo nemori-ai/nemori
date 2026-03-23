@@ -1,11 +1,11 @@
 """Tests for LLM generators."""
 import pytest
 from unittest.mock import AsyncMock
-from src.llm.orchestrator import LLMOrchestrator, LLMResponse, TokenUsage
-from src.llm.generators.episode import EpisodeGenerator
-from src.llm.generators.semantic import SemanticGenerator
-from src.llm.generators.segmenter import BatchSegmenter
-from src.domain.models import Message, Episode
+from nemori.llm.orchestrator import LLMOrchestrator, LLMResponse, TokenUsage
+from nemori.llm.generators.episode import EpisodeGenerator
+from nemori.llm.generators.semantic import SemanticGenerator
+from nemori.llm.generators.segmenter import BatchSegmenter
+from nemori.domain.models import Message, Episode
 
 
 @pytest.fixture
