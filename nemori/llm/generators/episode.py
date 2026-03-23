@@ -30,7 +30,7 @@ class EpisodeGenerator:
         self._embedding = embedding
 
     async def generate(
-        self, user_id: str, messages: list[Message], boundary_reason: str
+        self, user_id: str, agent_id: str, messages: list[Message], boundary_reason: str
     ) -> Episode:
         # Format conversation
         msg_dicts = [m.to_dict() for m in messages]
@@ -74,6 +74,7 @@ class EpisodeGenerator:
                 title=parsed["title"],
                 content=parsed["content"],
                 source_messages=msg_dicts,
+                agent_id=agent_id,
                 embedding=embedding,
                 metadata={"boundary_reason": boundary_reason},
                 created_at=timestamp,
@@ -81,7 +82,7 @@ class EpisodeGenerator:
             )
         except Exception as e:
             logger.warning("Episode generation failed, creating fallback: %s", e)
-            return self._create_fallback(user_id, messages, boundary_reason)
+            return self._create_fallback(user_id, agent_id, messages, boundary_reason)
 
     def _parse_response(self, content: str) -> dict[str, Any]:
         """Parse JSON response from LLM."""
@@ -133,7 +134,7 @@ class EpisodeGenerator:
         return "\n".join(lines)
 
     def _create_fallback(
-        self, user_id: str, messages: list[Message], boundary_reason: str
+        self, user_id: str, agent_id: str, messages: list[Message], boundary_reason: str
     ) -> Episode:
         """Create a raw episode when LLM generation fails."""
         conversation = "\n".join(f"{m.role}: {m.text_content()}" for m in messages)
@@ -142,5 +143,6 @@ class EpisodeGenerator:
             title=f"Conversation ({len(messages)} messages)",
             content=conversation,
             source_messages=[m.to_dict() for m in messages],
+            agent_id=agent_id,
             metadata={"boundary_reason": boundary_reason, "fallback": True},
         )

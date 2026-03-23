@@ -82,6 +82,7 @@ class Episode:
     title: str
     content: str
     source_messages: list[dict[str, Any]]
+    agent_id: str = "default"
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     embedding: list[float] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -92,6 +93,7 @@ class Episode:
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "agent_id": self.agent_id,
             "title": self.title,
             "content": self.content,
             "source_messages": self.source_messages,
@@ -115,6 +117,7 @@ class Episode:
         return cls(
             id=data.get("id", str(uuid.uuid4())),
             user_id=data["user_id"],
+            agent_id=data.get("agent_id", "default"),
             title=data["title"],
             content=data["content"],
             source_messages=data.get("source_messages", []),
@@ -131,6 +134,7 @@ class SemanticMemory:
     user_id: str
     content: str
     memory_type: str
+    agent_id: str = "default"
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     embedding: list[float] | None = None
     source_episode_id: str | None = None
@@ -143,6 +147,7 @@ class SemanticMemory:
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "agent_id": self.agent_id,
             "content": self.content,
             "memory_type": self.memory_type,
             "source_episode_id": self.source_episode_id,
@@ -167,6 +172,7 @@ class SemanticMemory:
         return cls(
             id=data.get("id", str(uuid.uuid4())),
             user_id=data["user_id"],
+            agent_id=data.get("agent_id", "default"),
             content=data["content"],
             memory_type=data.get("memory_type", data.get("knowledge_type", "")),
             source_episode_id=data.get("source_episode_id"),

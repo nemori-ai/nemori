@@ -43,6 +43,7 @@ class SemanticGenerator:
     async def generate(
         self,
         user_id: str,
+        agent_id: str,
         episode: Episode,
         existing_episodes: list[Episode],
         existing_semantics: list[SemanticMemory],
@@ -64,6 +65,7 @@ class SemanticGenerator:
                     user_id=user_id,
                     content=stmt,
                     memory_type=self._classify_type(stmt),
+                    agent_id=agent_id,
                     embedding=emb,
                     source_episode_id=episode.id,
                 ))

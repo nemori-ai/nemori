@@ -68,6 +68,14 @@ class TestEpisode:
         assert ep.user_id == "u1"
         assert ep.title == "Test"
         assert ep.metadata == {}
+        assert ep.agent_id == "default"
+
+    def test_create_episode_with_agent_id(self):
+        ep = Episode(
+            user_id="u1", title="Test", content="Test content",
+            source_messages=[], agent_id="my-agent",
+        )
+        assert ep.agent_id == "my-agent"
 
     def test_episode_from_dict(self):
         data = {
@@ -77,12 +85,22 @@ class TestEpisode:
         }
         ep = Episode.from_dict(data)
         assert ep.id == "abc-123"
+        assert ep.agent_id == "default"
+
+    def test_episode_from_dict_with_agent_id(self):
+        data = {
+            "id": "abc-123", "user_id": "u1", "agent_id": "test-agent",
+            "title": "Test", "content": "Content", "source_messages": [],
+        }
+        ep = Episode.from_dict(data)
+        assert ep.agent_id == "test-agent"
 
     def test_episode_to_dict(self):
         ep = Episode(user_id="u1", title="T", content="C", source_messages=[])
         d = ep.to_dict()
         assert "id" in d
         assert d["user_id"] == "u1"
+        assert d["agent_id"] == "default"
         assert "created_at" in d
 
     def test_episode_metadata_stores_boundary_reason(self):
@@ -100,6 +118,14 @@ class TestSemanticMemory:
         assert sm.memory_type == "preference"
         assert sm.confidence == 1.0
         assert sm.source_episode_id is None
+        assert sm.agent_id == "default"
+
+    def test_create_semantic_memory_with_agent_id(self):
+        sm = SemanticMemory(
+            user_id="u1", content="User likes hiking",
+            memory_type="preference", agent_id="my-agent",
+        )
+        assert sm.agent_id == "my-agent"
 
     def test_semantic_memory_with_source(self):
         sm = SemanticMemory(
@@ -113,7 +139,16 @@ class TestSemanticMemory:
         sm = SemanticMemory(user_id="u1", content="fact", memory_type="identity")
         d = sm.to_dict()
         assert d["memory_type"] == "identity"
+        assert d["agent_id"] == "default"
         assert "id" in d
+
+    def test_semantic_memory_from_dict_with_agent_id(self):
+        data = {
+            "user_id": "u1", "content": "fact", "memory_type": "identity",
+            "agent_id": "test-agent",
+        }
+        sm = SemanticMemory.from_dict(data)
+        assert sm.agent_id == "test-agent"
 
 
 class TestHealthResult:

@@ -62,6 +62,11 @@ class DatabaseManager:
         async with pool.acquire() as conn:
             return await conn.fetchval(query, *args)
 
+    async def executemany(self, query: str, args: list[tuple]) -> None:
+        pool = self._ensure_pool()
+        async with pool.acquire() as conn:
+            await conn.executemany(query, args)
+
     async def ping(self) -> bool:
         try:
             pool = self._ensure_pool()

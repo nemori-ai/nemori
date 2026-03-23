@@ -30,3 +30,12 @@ async def test_operations_before_init_raise():
     dm = DatabaseManager()
     with pytest.raises(DatabaseError):
         await dm.ping()
+
+
+@pytest.mark.asyncio
+async def test_executemany_method_exists():
+    dm = DatabaseManager()
+    assert hasattr(dm, "executemany")
+    # Should raise DatabaseError since not initialized
+    with pytest.raises(DatabaseError):
+        await dm.executemany("INSERT INTO t VALUES ($1)", [("a",)])

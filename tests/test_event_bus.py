@@ -37,3 +37,40 @@ async def test_multiple_handlers():
 async def test_no_handler_no_error():
     bus = EventBus()
     await bus.emit("unknown_event")
+
+
+@pytest.mark.asyncio
+async def test_drain_waits_for_tasks():
+    bus = EventBus()
+    results = []
+
+    async def slow_handler(**kw):
+        await asyncio.sleep(0.05)
+        results.append("done")
+
+    bus.on("ev", slow_handler)
+    await bus.emit("ev")
+    errors = await bus.drain(timeout=5.0)
+    assert errors == []
+    assert results == ["done"]
+
+
+@pytest.mark.asyncio
+async def test_drain_collects_errors():
+    bus = EventBus()
+
+    async def failing_handler(**kw):
+        raise ValueError("handler failed")
+
+    bus.on("ev", failing_handler)
+    await bus.emit("ev")
+    errors = await bus.drain(timeout=5.0)
+    assert len(errors) == 1
+    assert isinstance(errors[0], ValueError)
+
+
+@pytest.mark.asyncio
+async def test_drain_empty_returns_no_errors():
+    bus = EventBus()
+    errors = await bus.drain(timeout=1.0)
+    assert errors == []

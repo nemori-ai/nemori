@@ -37,7 +37,7 @@ def search(mock_episode_store, mock_semantic_store, mock_embedding):
 
 @pytest.mark.asyncio
 async def test_hybrid_search(search, mock_episode_store, mock_semantic_store):
-    result = await search.search("u1", "hiking", method=SearchMethod.HYBRID)
+    result = await search.search("u1", "default", "hiking", method=SearchMethod.HYBRID)
     assert isinstance(result, SearchResult)
     mock_episode_store.search_hybrid.assert_called_once()
     mock_semantic_store.search_hybrid.assert_called_once()
@@ -45,19 +45,19 @@ async def test_hybrid_search(search, mock_episode_store, mock_semantic_store):
 
 @pytest.mark.asyncio
 async def test_vector_search(search, mock_episode_store):
-    await search.search("u1", "hiking", method=SearchMethod.VECTOR)
+    await search.search("u1", "default", "hiking", method=SearchMethod.VECTOR)
     mock_episode_store.search_by_vector.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_text_search(search, mock_episode_store):
-    await search.search("u1", "hiking", method=SearchMethod.TEXT)
+    await search.search("u1", "default", "hiking", method=SearchMethod.TEXT)
     mock_episode_store.search_by_text.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_search_result_to_dict(search):
-    result = await search.search("u1", "test")
+    result = await search.search("u1", "default", "test")
     d = result.to_dict()
     assert "episodes" in d
     assert "semantic_memories" in d

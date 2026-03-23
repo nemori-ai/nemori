@@ -12,6 +12,7 @@ from nemori.config import MemoryConfig
 def deps():
     return {
         "config": MemoryConfig(),
+        "agent_id": "default",
         "db": AsyncMock(),
         "episode_store": AsyncMock(),
         "semantic_store": AsyncMock(),
@@ -37,7 +38,7 @@ def system(deps):
 async def test_add_messages_pushes_to_buffer(system, deps):
     msgs = [Message(role="user", content="hi")]
     await system.add_messages("u1", msgs)
-    deps["buffer_store"].push.assert_called_once_with("u1", msgs)
+    deps["buffer_store"].push.assert_called_once_with("u1", "default", msgs)
 
 
 @pytest.mark.asyncio
@@ -63,14 +64,14 @@ async def test_search_delegates(system, deps):
 @pytest.mark.asyncio
 async def test_delete_episode(system, deps):
     await system.delete_episode("u1", "ep-1")
-    deps["episode_store"].delete.assert_called_once_with("ep-1")
+    deps["episode_store"].delete.assert_called_once_with("ep-1", "u1", "default")
 
 
 @pytest.mark.asyncio
 async def test_delete_user(system, deps):
     await system.delete_user("u1")
-    deps["episode_store"].delete_by_user.assert_called_once_with("u1")
-    deps["semantic_store"].delete_by_user.assert_called_once_with("u1")
+    deps["episode_store"].delete_by_user.assert_called_once_with("u1", "default")
+    deps["semantic_store"].delete_by_user.assert_called_once_with("u1", "default")
 
 
 @pytest.mark.asyncio

@@ -7,17 +7,9 @@ from typing import Any
 from nemori.config import MemoryConfig
 from nemori.db.connection import DatabaseManager
 from nemori.db.migrations import get_migrations
-from nemori.db.episode_store import PgEpisodeStore
-from nemori.db.semantic_store import PgSemanticStore
-from nemori.db.buffer_store import PgMessageBufferStore
 from nemori.domain.models import Message, Episode, HealthResult
-from nemori.llm.orchestrator import LLMOrchestrator
-from nemori.llm.client import AsyncLLMClient
-from nemori.llm.generators.episode import EpisodeGenerator
-from nemori.llm.generators.semantic import SemanticGenerator
 from nemori.services.embedding import AsyncEmbeddingClient
-from nemori.services.event_bus import EventBus
-from nemori.search.unified import UnifiedSearch, SearchMethod, SearchResult
+from nemori.search.unified import SearchMethod, SearchResult
 from nemori.core.memory_system import MemorySystem
 
 logger = logging.getLogger("nemori")
@@ -96,49 +88,9 @@ class NemoriMemory:
             await self._db.close()
 
     async def _build_system(self) -> MemorySystem:
+        from nemori.factory import create_memory_system
         assert self._db is not None
-
-        episode_store = PgEpisodeStore(self._db)
-        semantic_store = PgSemanticStore(self._db)
-        buffer_store = PgMessageBufferStore(self._db)
-
-        llm_client = AsyncLLMClient(
-            api_key=self._config.llm_api_key,
-            base_url=self._config.llm_base_url,
-        )
-        orchestrator = LLMOrchestrator(
-            provider=llm_client,
-            default_model=self._config.llm_model,
-            max_concurrent=self._config.llm_max_concurrent,
-            token_budget=self._config.llm_token_budget,
-        )
-        embedding = AsyncEmbeddingClient(
-            api_key=self._config.embedding_api_key,
-            model=self._config.embedding_model,
-            base_url=self._config.embedding_base_url,
-        )
-        episode_gen = EpisodeGenerator(orchestrator=orchestrator, embedding=embedding)
-        semantic_gen = SemanticGenerator(
-            orchestrator=orchestrator,
-            embedding=embedding,
-            enable_prediction_correction=self._config.enable_prediction_correction,
-        )
-        event_bus = EventBus()
-        search = UnifiedSearch(episode_store, semantic_store, embedding)
-
-        return MemorySystem(
-            config=self._config,
-            db=self._db,
-            episode_store=episode_store,
-            semantic_store=semantic_store,
-            buffer_store=buffer_store,
-            orchestrator=orchestrator,
-            embedding=embedding,
-            episode_generator=episode_gen,
-            semantic_generator=semantic_gen,
-            event_bus=event_bus,
-            search=search,
-        )
+        return await create_memory_system(self._config, self._db)
 
     def _ensure_system(self) -> MemorySystem:
         if self._system is None:
@@ -169,6 +121,7 @@ class NemoriMemory:
         method_map = {
             "vector": SearchMethod.VECTOR,
             "text": SearchMethod.TEXT,
+            "bm25": SearchMethod.TEXT,  # backward compat
             "hybrid": SearchMethod.HYBRID,
         }
         method = method_map.get(search_method, SearchMethod.HYBRID)

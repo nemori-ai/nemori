@@ -42,3 +42,21 @@ def test_migrations_use_coalesce_in_tsvector():
     migrations = get_migrations(embedding_dimension=1536)
     initial_sql = migrations[0][2]
     assert "coalesce" in initial_sql.lower()
+
+
+def test_migration_3_adds_agent_id():
+    migrations = get_migrations(embedding_dimension=1536)
+    assert len(migrations) >= 3
+    version, name, sql = migrations[2]
+    assert version == 3
+    assert "agent_id" in name.lower() or "agent_id" in sql
+    assert "agent_id" in sql
+    assert "episodes" in sql
+    assert "semantic_memories" in sql
+    assert "message_buffer" in sql
+
+
+def test_initial_schema_has_agent_id():
+    migrations = get_migrations(embedding_dimension=1536)
+    initial_sql = migrations[0][2]
+    assert "agent_id" in initial_sql

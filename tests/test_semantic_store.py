@@ -45,13 +45,13 @@ async def test_save_batch(store, mock_db):
 
 @pytest.mark.asyncio
 async def test_get_returns_none_for_missing(store, mock_db):
-    result = await store.get("missing-id")
+    result = await store.get("missing-id", "u1", "default")
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_list_by_user_with_type_filter(store, mock_db):
-    await store.list_by_user("u1", memory_type="preference")
+    await store.list_by_user("u1", "default", memory_type="preference")
     call_sql = mock_db.fetch.call_args[0][0]
     assert "memory_type" in call_sql
 
@@ -59,6 +59,6 @@ async def test_list_by_user_with_type_filter(store, mock_db):
 @pytest.mark.asyncio
 async def test_search_hybrid(store, mock_db):
     mock_db.fetch.return_value = []
-    await store.search_hybrid("u1", "hiking", [0.1] * 1536, top_k=5)
+    await store.search_hybrid("u1", "default", "hiking", [0.1] * 1536, top_k=5)
     call_sql = mock_db.fetch.call_args[0][0]
     assert "rrf_score" in call_sql or "<=>" in call_sql

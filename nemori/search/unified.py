@@ -47,6 +47,7 @@ class UnifiedSearch:
     async def search(
         self,
         user_id: str,
+        agent_id: str,
         query: str,
         top_k_episodes: int = 10,
         top_k_semantic: int = 10,
@@ -55,14 +56,14 @@ class UnifiedSearch:
         embedding = await self._embedding.embed(query)
 
         if method == SearchMethod.VECTOR:
-            ep_task = self._episodes.search_by_vector(user_id, embedding, top_k_episodes)
-            sm_task = self._semantics.search_by_vector(user_id, embedding, top_k_semantic)
+            ep_task = self._episodes.search_by_vector(user_id, agent_id, embedding, top_k_episodes)
+            sm_task = self._semantics.search_by_vector(user_id, agent_id, embedding, top_k_semantic)
         elif method == SearchMethod.TEXT:
-            ep_task = self._episodes.search_by_text(user_id, query, top_k_episodes)
-            sm_task = self._semantics.search_by_text(user_id, query, top_k_semantic)
+            ep_task = self._episodes.search_by_text(user_id, agent_id, query, top_k_episodes)
+            sm_task = self._semantics.search_by_text(user_id, agent_id, query, top_k_semantic)
         else:
-            ep_task = self._episodes.search_hybrid(user_id, query, embedding, top_k_episodes)
-            sm_task = self._semantics.search_hybrid(user_id, query, embedding, top_k_semantic)
+            ep_task = self._episodes.search_hybrid(user_id, agent_id, query, embedding, top_k_episodes)
+            sm_task = self._semantics.search_hybrid(user_id, agent_id, query, embedding, top_k_semantic)
 
         episodes, semantics = await asyncio.gather(ep_task, sm_task)
         return SearchResult(episodes=episodes, semantic_memories=semantics)

@@ -4,6 +4,7 @@ from nemori.config import MemoryConfig
 from nemori.domain.models import Message, Episode, SemanticMemory, HealthResult
 from nemori.domain.exceptions import NemoriError, DatabaseError, LLMError
 from nemori.search.unified import SearchMethod, SearchResult
+from nemori.factory import create_memory_system
 
 __all__ = [
     "NemoriMemory",
@@ -17,4 +18,5 @@ __all__ = [
     "LLMError",
     "SearchMethod",
     "SearchResult",
+    "create_memory_system",
 ]

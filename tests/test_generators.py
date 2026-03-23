@@ -31,7 +31,7 @@ async def test_episode_generator_returns_episode(mock_orchestrator, mock_embeddi
         Message(role="user", content="I love hiking"),
         Message(role="assistant", content="That's great!"),
     ]
-    episode = await gen.generate("u1", messages, "topic_change")
+    episode = await gen.generate("u1", "default", messages, "topic_change")
     assert isinstance(episode, Episode)
     assert episode.title == "Test Episode"
     assert episode.user_id == "u1"
@@ -46,7 +46,7 @@ async def test_episode_generator_fallback_on_bad_json(mock_orchestrator, mock_em
     ))
     gen = EpisodeGenerator(orchestrator=mock_orchestrator, embedding=mock_embedding)
     messages = [Message(role="user", content="test")]
-    episode = await gen.generate("u1", messages, "fallback_test")
+    episode = await gen.generate("u1", "default", messages, "fallback_test")
     assert isinstance(episode, Episode)
     assert episode.user_id == "u1"
 
@@ -59,7 +59,7 @@ async def test_semantic_generator_returns_memories(mock_orchestrator, mock_embed
     ))
     gen = SemanticGenerator(orchestrator=mock_orchestrator, embedding=mock_embedding)
     episode = Episode(user_id="u1", title="T", content="C", source_messages=[])
-    memories = await gen.generate("u1", episode, [], [])
+    memories = await gen.generate("u1", "default", episode, [], [])
     assert len(memories) == 2
     assert memories[0].content == "User likes hiking"
 
@@ -78,7 +78,7 @@ async def test_episode_generator_multimodal(mock_orchestrator, mock_embedding):
         ]),
         Message(role="assistant", content="Beautiful view!"),
     ]
-    episode = await gen.generate("u1", messages, "topic_change")
+    episode = await gen.generate("u1", "default", messages, "topic_change")
     assert isinstance(episode, Episode)
     # Verify the LLM request contained image content
     call_args = mock_orchestrator.execute.call_args[0][0]
@@ -97,7 +97,7 @@ async def test_episode_generator_fallback_uses_text_content(mock_orchestrator, m
             {"type": "image_url", "image_url": {"url": "https://img.png"}},
         ]),
     ]
-    episode = await gen.generate("u1", messages, "test")
+    episode = await gen.generate("u1", "default", messages, "test")
     # Should NOT contain raw list repr in content
     assert "[{" not in episode.content
     assert "Check this" in episode.content
