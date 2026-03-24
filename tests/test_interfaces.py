@@ -12,7 +12,7 @@ from nemori.domain.interfaces import (
 def test_episode_store_has_required_methods():
     required = [
         "save", "get", "list_by_user", "delete", "delete_by_user",
-        "search_by_vector", "search_by_text", "search_hybrid",
+        "search_by_text", "get_batch",
     ]
     for method in required:
         assert hasattr(EpisodeStore, method), f"Missing: {method}"
@@ -21,7 +21,7 @@ def test_episode_store_has_required_methods():
 def test_semantic_store_has_required_methods():
     required = [
         "save", "save_batch", "get", "list_by_user", "delete",
-        "delete_by_user", "search_by_vector", "search_by_text", "search_hybrid",
+        "delete_by_user", "search_by_text", "get_batch",
     ]
     for method in required:
         assert hasattr(SemanticStore, method), f"Missing: {method}"

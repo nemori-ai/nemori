@@ -50,6 +50,12 @@ class MemoryConfig:
     embedding_base_url: str | None = None
     embedding_dimension: int = 1536
 
+    # Qdrant
+    qdrant_url: str = "localhost"
+    qdrant_port: int = 6333
+    qdrant_api_key: str | None = None
+    qdrant_collection_prefix: str = "nemori"
+
     # Buffer & Generation
     buffer_size_min: int = 2
     buffer_size_max: int = 25
@@ -82,8 +88,6 @@ class MemoryConfig:
             raise ConfigError("buffer_size_min must be >= 1")
         if self.buffer_size_max < self.buffer_size_min:
             raise ConfigError("buffer_size_max must be >= buffer_size_min")
-        if self.embedding_dimension < 1:
-            raise ConfigError("embedding_dimension must be >= 1")
         if self.search_top_k_episodes < 1:
             raise ConfigError("search_top_k_episodes must be >= 1")
         if self.search_top_k_semantic < 1:

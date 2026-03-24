@@ -12,7 +12,7 @@ logger = logging.getLogger("nemori")
 
 
 class PgSemanticStore:
-    """Semantic memory persistence + search backed by PostgreSQL + pgvector."""
+    """Semantic memory persistence + text search backed by PostgreSQL."""
 
     def __init__(self, db: DatabaseManager) -> None:
         self._db = db
@@ -21,19 +21,18 @@ class PgSemanticStore:
         await self._db.execute(
             """
             INSERT INTO semantic_memories
-                (id, user_id, agent_id, content, memory_type, embedding,
+                (id, user_id, agent_id, content, memory_type,
                  source_episode_id, confidence, metadata, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (id) DO UPDATE SET
                 content = EXCLUDED.content,
                 memory_type = EXCLUDED.memory_type,
-                embedding = EXCLUDED.embedding,
                 confidence = EXCLUDED.confidence,
                 metadata = EXCLUDED.metadata,
                 updated_at = EXCLUDED.updated_at
             """,
             memory.id, memory.user_id, memory.agent_id, memory.content,
-            memory.memory_type, str(memory.embedding) if memory.embedding else None,
+            memory.memory_type,
             memory.source_episode_id,
             memory.confidence, json.dumps(memory.metadata),
             memory.created_at, memory.updated_at,
@@ -80,19 +79,6 @@ class PgSemanticStore:
             user_id, agent_id,
         )
 
-    async def search_by_vector(
-        self, user_id: str, agent_id: str, embedding: list[float], top_k: int
-    ) -> list[SemanticMemory]:
-        rows = await self._db.fetch(
-            """SELECT *, embedding <=> $3::vector AS distance
-               FROM semantic_memories
-               WHERE user_id = $1 AND agent_id = $2 AND embedding IS NOT NULL
-               ORDER BY distance ASC
-               LIMIT $4""",
-            user_id, agent_id, str(embedding), top_k,
-        )
-        return [self._row_to_memory(r) for r in rows]
-
     async def search_by_text(
         self, user_id: str, agent_id: str, query: str, top_k: int
     ) -> list[SemanticMemory]:
@@ -106,37 +92,14 @@ class PgSemanticStore:
         )
         return [self._row_to_memory(r) for r in rows]
 
-    async def search_hybrid(
-        self, user_id: str, agent_id: str, query: str, embedding: list[float], top_k: int
-    ) -> list[SemanticMemory]:
+    async def get_batch(self, memory_ids: list[str], user_id: str, agent_id: str) -> list[SemanticMemory]:
+        """Fetch multiple semantic memories by IDs."""
+        if not memory_ids:
+            return []
         rows = await self._db.fetch(
-            """WITH vector_results AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $4::vector) AS vrank
-                FROM semantic_memories
-                WHERE user_id = $1 AND agent_id = $2 AND embedding IS NOT NULL
-                LIMIT $5 * 2
-            ),
-            text_results AS (
-                SELECT id, ROW_NUMBER() OVER (
-                    ORDER BY ts_rank(tsv, plainto_tsquery('simple', $3)) DESC
-                ) AS trank
-                FROM semantic_memories
-                WHERE user_id = $1 AND agent_id = $2 AND tsv @@ plainto_tsquery('simple', $3)
-                LIMIT $5 * 2
-            ),
-            fused AS (
-                SELECT COALESCE(v.id, t.id) AS id,
-                       COALESCE(1.0 / (60 + v.vrank), 0) +
-                       COALESCE(1.0 / (60 + t.trank), 0) AS rrf_score
-                FROM vector_results v
-                FULL OUTER JOIN text_results t ON v.id = t.id
-                ORDER BY rrf_score DESC
-                LIMIT $5
-            )
-            SELECT sm.* FROM fused f
-            JOIN semantic_memories sm ON f.id = sm.id
-            ORDER BY f.rrf_score DESC""",
-            user_id, agent_id, query, str(embedding), top_k,
+            """SELECT * FROM semantic_memories
+               WHERE id = ANY($1::uuid[]) AND user_id = $2 AND agent_id = $3""",
+            memory_ids, user_id, agent_id,
         )
         return [self._row_to_memory(r) for r in rows]
 
@@ -151,7 +114,7 @@ class PgSemanticStore:
             agent_id=row.get("agent_id", "default"),
             content=row["content"],
             memory_type=row["memory_type"],
-            embedding=list(row["embedding"]) if row.get("embedding") else None,
+            embedding=None,
             source_episode_id=str(row["source_episode_id"]) if row.get("source_episode_id") else None,
             confidence=row["confidence"],
             metadata=metadata or {},

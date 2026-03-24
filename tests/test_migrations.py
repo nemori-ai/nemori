@@ -24,18 +24,14 @@ def test_migrations_contain_episodes_table():
     assert "message_buffer" in initial_sql
 
 
-def test_migrations_use_configured_dimension():
-    migrations = get_migrations(embedding_dimension=768)
-    initial_sql = migrations[0][2]
-    assert "vector(768)" in initial_sql
-    assert "vector(1536)" not in initial_sql
-
-
-def test_migrations_use_hnsw_not_ivfflat():
+def test_migrations_no_pgvector_columns():
+    """After Qdrant migration, no pgvector columns in initial schema."""
     migrations = get_migrations(embedding_dimension=1536)
     initial_sql = migrations[0][2]
-    assert "hnsw" in initial_sql.lower()
-    assert "ivfflat" not in initial_sql.lower()
+    # No pgvector extension or embedding columns (tsvector is fine)
+    assert "CREATE EXTENSION IF NOT EXISTS vector" not in initial_sql
+    assert "embedding   vector(" not in initial_sql
+    assert "hnsw" not in initial_sql.lower()
 
 
 def test_migrations_use_coalesce_in_tsvector():
@@ -60,3 +56,13 @@ def test_initial_schema_has_agent_id():
     migrations = get_migrations(embedding_dimension=1536)
     initial_sql = migrations[0][2]
     assert "agent_id" in initial_sql
+
+
+def test_migration_4_removes_pgvector():
+    """Migration 4 should drop embedding columns and vector extension."""
+    migrations = get_migrations(embedding_dimension=1536)
+    assert len(migrations) >= 4
+    version, name, sql = migrations[3]
+    assert version == 4
+    assert "DROP" in sql
+    assert "embedding" in sql

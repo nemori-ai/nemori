@@ -2,28 +2,8 @@
 from __future__ import annotations
 
 
-def get_dimension_adaptation_sql(new_dim: int) -> str:
-    """Generate SQL to adapt vector columns to a new dimension."""
-    return f"""
-    DROP INDEX IF EXISTS idx_episodes_embedding;
-    DROP INDEX IF EXISTS idx_semantic_embedding;
-
-    ALTER TABLE episodes ALTER COLUMN embedding TYPE vector({new_dim});
-    ALTER TABLE semantic_memories ALTER COLUMN embedding TYPE vector({new_dim});
-
-    UPDATE episodes SET embedding = NULL WHERE embedding IS NOT NULL;
-    UPDATE semantic_memories SET embedding = NULL WHERE embedding IS NOT NULL;
-
-    CREATE INDEX idx_episodes_embedding ON episodes USING hnsw (embedding vector_cosine_ops);
-    CREATE INDEX idx_semantic_embedding ON semantic_memories USING hnsw (embedding vector_cosine_ops);
-    """
-
-
 def get_migrations(embedding_dimension: int = 1536) -> list[tuple[int, str, str]]:
-    dim = embedding_dimension
-
-    initial_schema = f"""
-    CREATE EXTENSION IF NOT EXISTS vector;
+    initial_schema = """
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
     CREATE TABLE IF NOT EXISTS episodes (
@@ -32,18 +12,16 @@ def get_migrations(embedding_dimension: int = 1536) -> list[tuple[int, str, str]
         agent_id    VARCHAR(255) NOT NULL DEFAULT 'default',
         title       TEXT NOT NULL,
         content     TEXT NOT NULL,
-        embedding   vector({dim}),
         tsv         tsvector GENERATED ALWAYS AS (
                         to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(content,''))
                     ) STORED,
         source_messages JSONB,
-        metadata    JSONB DEFAULT '{{}}'::jsonb,
+        metadata    JSONB DEFAULT '{}'::jsonb,
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE INDEX IF NOT EXISTS idx_episodes_agent_user ON episodes(agent_id, user_id);
-    CREATE INDEX IF NOT EXISTS idx_episodes_embedding ON episodes USING hnsw (embedding vector_cosine_ops);
     CREATE INDEX IF NOT EXISTS idx_episodes_tsv ON episodes USING gin(tsv);
     CREATE INDEX IF NOT EXISTS idx_episodes_agent_user_created ON episodes(agent_id, user_id, created_at DESC);
 
@@ -53,19 +31,17 @@ def get_migrations(embedding_dimension: int = 1536) -> list[tuple[int, str, str]
         agent_id        VARCHAR(255) NOT NULL DEFAULT 'default',
         content         TEXT NOT NULL,
         memory_type     VARCHAR(50) NOT NULL,
-        embedding       vector({dim}),
         tsv             tsvector GENERATED ALWAYS AS (
                             to_tsvector('simple', coalesce(content,''))
                         ) STORED,
         source_episode_id UUID REFERENCES episodes(id) ON DELETE SET NULL,
         confidence      FLOAT DEFAULT 1.0,
-        metadata        JSONB DEFAULT '{{}}'::jsonb,
+        metadata        JSONB DEFAULT '{}'::jsonb,
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE INDEX IF NOT EXISTS idx_semantic_agent_user ON semantic_memories(agent_id, user_id);
-    CREATE INDEX IF NOT EXISTS idx_semantic_embedding ON semantic_memories USING hnsw (embedding vector_cosine_ops);
     CREATE INDEX IF NOT EXISTS idx_semantic_tsv ON semantic_memories USING gin(tsv);
     CREATE INDEX IF NOT EXISTS idx_semantic_agent_user_type ON semantic_memories(agent_id, user_id, memory_type);
 
@@ -104,5 +80,12 @@ def get_migrations(embedding_dimension: int = 1536) -> list[tuple[int, str, str]
     DROP INDEX IF EXISTS idx_semantic_user_id;
     DROP INDEX IF EXISTS idx_semantic_type;
     DROP INDEX IF EXISTS idx_buffer_user_unprocessed;
+"""),
+        (4, "remove pgvector columns for Qdrant migration", """
+    DROP INDEX IF EXISTS idx_episodes_embedding;
+    DROP INDEX IF EXISTS idx_semantic_embedding;
+    ALTER TABLE episodes DROP COLUMN IF EXISTS embedding;
+    ALTER TABLE semantic_memories DROP COLUMN IF EXISTS embedding;
+    DROP EXTENSION IF EXISTS vector;
 """),
     ]

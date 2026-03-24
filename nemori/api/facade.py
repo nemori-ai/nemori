@@ -8,6 +8,7 @@ from typing import Any
 from nemori.config import MemoryConfig
 from nemori.db.connection import DatabaseManager
 from nemori.db.migrations import get_migrations
+from nemori.db.qdrant_store import QdrantVectorStore
 from nemori.domain.models import Message, Episode, HealthResult
 from nemori.services.embedding import AsyncEmbeddingClient
 from nemori.search.unified import SearchMethod, SearchResult
@@ -23,6 +24,7 @@ class NemoriMemory:
         self._config = config or MemoryConfig()
         self._db: DatabaseManager | None = None
         self._system: MemorySystem | None = None
+        self._qdrant: QdrantVectorStore | None = None
 
     async def __aenter__(self) -> NemoriMemory:
         self._db = DatabaseManager()
@@ -32,13 +34,12 @@ class NemoriMemory:
             max_size=self._config.db_pool_max,
         )
 
-        # Probe embedding dimension before schema setup
+        # Probe embedding dimension (let it detect native dimension, no truncation)
         try:
             embedding = AsyncEmbeddingClient(
                 api_key=self._config.embedding_api_key,
                 model=self._config.embedding_model,
                 base_url=self._config.embedding_base_url,
-                dimensions=self._config.embedding_dimension,
             )
             actual_dim = await embedding.probe_dimension()
             if actual_dim != self._config.embedding_dimension:
@@ -50,49 +51,35 @@ class NemoriMemory:
         except Exception as e:
             logger.warning("Embedding dimension probe failed: %s. Using config value %d", e, self._config.embedding_dimension)
 
-        # Run migrations with correct dimension
+        # Run PostgreSQL migrations
         migrations = get_migrations(self._config.embedding_dimension)
         await self._db.ensure_schema(migrations)
 
-        # Check if dimension adaptation needed on existing DB
-        await self._check_dimension_adaptation()
+        # Initialize Qdrant
+        self._qdrant = QdrantVectorStore(
+            url=self._config.qdrant_url,
+            port=self._config.qdrant_port,
+            api_key=self._config.qdrant_api_key,
+            collection_prefix=self._config.qdrant_collection_prefix,
+        )
+        self._qdrant.ensure_collections(self._config.embedding_dimension)
 
         self._system = await self._build_system()
         return self
 
-    async def _check_dimension_adaptation(self) -> None:
-        """Check if existing vector columns need dimension adaptation."""
-        from nemori.db.migrations import get_dimension_adaptation_sql
-        try:
-            # Check current column dimension from pg_attribute
-            row = await self._db.fetchrow("""
-                SELECT atttypmod FROM pg_attribute
-                WHERE attrelid = 'episodes'::regclass
-                AND attname = 'embedding'
-            """)
-            if row and row['atttypmod'] > 0:
-                current_dim = row['atttypmod']
-                if current_dim != self._config.embedding_dimension:
-                    logger.warning(
-                        "Vector dimension mismatch: DB has %d, config needs %d. "
-                        "Adapting schema and clearing stale embeddings.",
-                        current_dim, self._config.embedding_dimension,
-                    )
-                    sql = get_dimension_adaptation_sql(self._config.embedding_dimension)
-                    await self._db.execute(sql)
-        except Exception as e:
-            logger.debug("Dimension check skipped: %s", e)
-
     async def __aexit__(self, *exc: Any) -> None:
         if self._system:
             await self._system.drain(timeout=30.0)
+        if self._qdrant:
+            self._qdrant.close()
         if self._db:
             await self._db.close()
 
     async def _build_system(self) -> MemorySystem:
         from nemori.factory import create_memory_system
         assert self._db is not None
-        return await create_memory_system(self._config, self._db)
+        assert self._qdrant is not None
+        return await create_memory_system(self._config, self._db, self._qdrant)
 
     def _ensure_system(self) -> MemorySystem:
         if self._system is None:

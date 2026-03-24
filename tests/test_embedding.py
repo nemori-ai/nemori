@@ -31,3 +31,10 @@ async def test_embed_batch_returns_list_of_lists():
         result = await client.embed_batch(["hello", "world"])
         assert len(result) == 2
         assert result[0] == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_no_dimensions_param():
+    """Verify dimensions parameter is no longer passed to OpenAI API."""
+    client = AsyncEmbeddingClient(api_key="test", model="text-embedding-3-small")
+    assert not hasattr(client, "_dimensions")

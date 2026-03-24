@@ -8,6 +8,7 @@ from typing import Any
 
 from nemori.domain.models import Episode
 from nemori.domain.interfaces import EpisodeStore, EmbeddingProvider
+from nemori.db.qdrant_store import QdrantVectorStore
 from nemori.llm.orchestrator import LLMOrchestrator, LLMRequest
 from nemori.llm.prompts import PromptTemplates
 
@@ -22,12 +23,14 @@ class EpisodeMerger:
         orchestrator: LLMOrchestrator,
         embedding: EmbeddingProvider,
         episode_store: EpisodeStore,
+        qdrant: QdrantVectorStore,
         similarity_threshold: float = 0.85,
         merge_top_k: int = 5,
     ) -> None:
         self._orchestrator = orchestrator
         self._embedding = embedding
         self._episode_store = episode_store
+        self._qdrant = qdrant
         self._similarity_threshold = similarity_threshold
         self._merge_top_k = merge_top_k
 
@@ -64,14 +67,17 @@ class EpisodeMerger:
             return False, None, None
 
     async def _find_similar(self, episode: Episode, agent_id: str) -> list[Episode]:
-        """Find similar episodes using vector search."""
+        """Find similar episodes using Qdrant vector search."""
         if not episode.embedding:
             return []
-        candidates = await self._episode_store.search_by_vector(
+        results = self._qdrant.search_episodes(
             episode.user_id, agent_id, episode.embedding, self._merge_top_k + 1
         )
-        # Exclude self
-        return [c for c in candidates if c.id != episode.id][:self._merge_top_k]
+        # Filter out self and fetch full records from PostgreSQL
+        ids = [r["id"] for r in results if r["id"] != episode.id][:self._merge_top_k]
+        if not ids:
+            return []
+        return await self._episode_store.get_batch(ids, episode.user_id, agent_id)
 
     async def _decide_merge(
         self, new_episode: Episode, candidates: list[Episode]

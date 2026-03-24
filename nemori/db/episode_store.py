@@ -12,7 +12,7 @@ logger = logging.getLogger("nemori")
 
 
 class PgEpisodeStore:
-    """Episode persistence + search backed by PostgreSQL + pgvector."""
+    """Episode persistence + text search backed by PostgreSQL."""
 
     def __init__(self, db: DatabaseManager) -> None:
         self._db = db
@@ -20,19 +20,18 @@ class PgEpisodeStore:
     async def save(self, episode: Episode) -> None:
         await self._db.execute(
             """
-            INSERT INTO episodes (id, user_id, agent_id, title, content, embedding,
+            INSERT INTO episodes (id, user_id, agent_id, title, content,
                                   source_messages, metadata, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (id) DO UPDATE SET
                 title = EXCLUDED.title,
                 content = EXCLUDED.content,
-                embedding = EXCLUDED.embedding,
                 source_messages = EXCLUDED.source_messages,
                 metadata = EXCLUDED.metadata,
                 updated_at = EXCLUDED.updated_at
             """,
             episode.id, episode.user_id, episode.agent_id, episode.title,
-            episode.content, str(episode.embedding) if episode.embedding else None,
+            episode.content,
             json.dumps(episode.source_messages),
             json.dumps(episode.metadata), episode.created_at, episode.updated_at,
         )
@@ -66,19 +65,6 @@ class PgEpisodeStore:
             user_id, agent_id,
         )
 
-    async def search_by_vector(
-        self, user_id: str, agent_id: str, embedding: list[float], top_k: int
-    ) -> list[Episode]:
-        rows = await self._db.fetch(
-            """SELECT *, embedding <=> $3::vector AS distance
-               FROM episodes
-               WHERE user_id = $1 AND agent_id = $2 AND embedding IS NOT NULL
-               ORDER BY distance ASC
-               LIMIT $4""",
-            user_id, agent_id, str(embedding), top_k,
-        )
-        return [self._row_to_episode(r) for r in rows]
-
     async def search_by_text(
         self, user_id: str, agent_id: str, query: str, top_k: int
     ) -> list[Episode]:
@@ -92,36 +78,14 @@ class PgEpisodeStore:
         )
         return [self._row_to_episode(r) for r in rows]
 
-    async def search_hybrid(
-        self, user_id: str, agent_id: str, query: str, embedding: list[float], top_k: int
-    ) -> list[Episode]:
+    async def get_batch(self, episode_ids: list[str], user_id: str, agent_id: str) -> list[Episode]:
+        """Fetch multiple episodes by IDs."""
+        if not episode_ids:
+            return []
         rows = await self._db.fetch(
-            """WITH vector_results AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $4::vector) AS vrank
-                FROM episodes
-                WHERE user_id = $1 AND agent_id = $2 AND embedding IS NOT NULL
-                LIMIT $5 * 2
-            ),
-            text_results AS (
-                SELECT id, ROW_NUMBER() OVER (
-                    ORDER BY ts_rank(tsv, plainto_tsquery('simple', $3)) DESC
-                ) AS trank
-                FROM episodes
-                WHERE user_id = $1 AND agent_id = $2 AND tsv @@ plainto_tsquery('simple', $3)
-                LIMIT $5 * 2
-            ),
-            fused AS (
-                SELECT COALESCE(v.id, t.id) AS id,
-                       COALESCE(1.0 / (60 + v.vrank), 0) +
-                       COALESCE(1.0 / (60 + t.trank), 0) AS rrf_score
-                FROM vector_results v
-                FULL OUTER JOIN text_results t ON v.id = t.id
-                ORDER BY rrf_score DESC
-                LIMIT $5
-            )
-            SELECT e.* FROM fused f JOIN episodes e ON f.id = e.id
-            ORDER BY f.rrf_score DESC""",
-            user_id, agent_id, query, str(embedding), top_k,
+            """SELECT * FROM episodes
+               WHERE id = ANY($1::uuid[]) AND user_id = $2 AND agent_id = $3""",
+            episode_ids, user_id, agent_id,
         )
         return [self._row_to_episode(r) for r in rows]
 
@@ -139,7 +103,7 @@ class PgEpisodeStore:
             agent_id=row.get("agent_id", "default"),
             title=row["title"],
             content=row["content"],
-            embedding=list(row["embedding"]) if row.get("embedding") else None,
+            embedding=None,
             source_messages=source_msgs or [],
             metadata=metadata or {},
             created_at=row["created_at"],

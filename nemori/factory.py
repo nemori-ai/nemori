@@ -6,6 +6,7 @@ from nemori.db.connection import DatabaseManager
 from nemori.db.episode_store import PgEpisodeStore
 from nemori.db.semantic_store import PgSemanticStore
 from nemori.db.buffer_store import PgMessageBufferStore
+from nemori.db.qdrant_store import QdrantVectorStore
 from nemori.llm.client import AsyncLLMClient
 from nemori.llm.orchestrator import LLMOrchestrator
 from nemori.llm.generators.episode import EpisodeGenerator
@@ -17,7 +18,9 @@ from nemori.search.unified import UnifiedSearch
 from nemori.core.memory_system import MemorySystem
 
 
-async def create_memory_system(config: MemoryConfig, db: DatabaseManager) -> MemorySystem:
+async def create_memory_system(
+    config: MemoryConfig, db: DatabaseManager, qdrant: QdrantVectorStore
+) -> MemorySystem:
     """Assemble a fully-wired MemorySystem from config and database manager."""
     episode_store = PgEpisodeStore(db)
     semantic_store = PgSemanticStore(db)
@@ -37,7 +40,6 @@ async def create_memory_system(config: MemoryConfig, db: DatabaseManager) -> Mem
         api_key=config.embedding_api_key,
         model=config.embedding_model,
         base_url=config.embedding_base_url,
-        dimensions=config.embedding_dimension,
     )
     episode_gen = EpisodeGenerator(orchestrator=orchestrator, embedding=embedding)
     semantic_gen = SemanticGenerator(
@@ -49,11 +51,12 @@ async def create_memory_system(config: MemoryConfig, db: DatabaseManager) -> Mem
         orchestrator=orchestrator,
         embedding=embedding,
         episode_store=episode_store,
+        qdrant=qdrant,
         similarity_threshold=config.merge_similarity_threshold,
         merge_top_k=config.merge_top_k,
     ) if config.enable_episode_merging else None
     event_bus = EventBus()
-    search = UnifiedSearch(episode_store, semantic_store, embedding)
+    search = UnifiedSearch(episode_store, semantic_store, embedding, qdrant)
 
     return MemorySystem(
         config=config,
@@ -69,4 +72,5 @@ async def create_memory_system(config: MemoryConfig, db: DatabaseManager) -> Mem
         search=search,
         agent_id=config.agent_id,
         merger=merger,
+        qdrant=qdrant,
     )

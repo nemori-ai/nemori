@@ -72,9 +72,12 @@ def test_config_invalid_buffer_size_max():
         MemoryConfig(buffer_size_min=10, buffer_size_max=5)
 
 
-def test_config_invalid_embedding_dimension():
-    with pytest.raises(ConfigError, match="embedding_dimension"):
-        MemoryConfig(embedding_dimension=0)
+def test_config_has_qdrant_defaults():
+    cfg = MemoryConfig()
+    assert cfg.qdrant_url == "localhost"
+    assert cfg.qdrant_port == 6333
+    assert cfg.qdrant_api_key is None
+    assert cfg.qdrant_collection_prefix == "nemori"
 
 
 def test_config_invalid_search_top_k_episodes():

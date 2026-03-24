@@ -8,6 +8,7 @@ from typing import Any
 
 from nemori.config import MemoryConfig
 from nemori.db.connection import DatabaseManager
+from nemori.db.qdrant_store import QdrantVectorStore
 from nemori.domain.interfaces import EpisodeStore, SemanticStore, MessageBufferStore, EmbeddingProvider
 from nemori.domain.models import Message, Episode, SemanticMemory
 from nemori.llm.orchestrator import LLMOrchestrator
@@ -41,6 +42,7 @@ class MemorySystem:
         event_bus: EventBus,
         search: UnifiedSearch,
         merger: EpisodeMerger | None = None,
+        qdrant: QdrantVectorStore | None = None,
     ) -> None:
         self._config = config
         self._agent_id = agent_id
@@ -55,6 +57,7 @@ class MemorySystem:
         self._event_bus = event_bus
         self._search = search
         self._merger = merger
+        self._qdrant = qdrant
 
         self._user_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._tasks: set[asyncio.Task] = set()
@@ -122,13 +125,26 @@ class MemorySystem:
                 )
                 await self._episode_store.save(episode)
 
+                # Upsert episode vector to Qdrant
+                if self._qdrant and episode.embedding:
+                    self._qdrant.upsert_episode(
+                        episode.id, user_id, self._agent_id, episode.embedding
+                    )
+
                 # Check for merge
                 if self._merger:
                     merged, merged_ep, old_id = await self._merger.check_and_merge(episode, self._agent_id)
                     if merged and merged_ep and old_id:
-                        # Delete old episode, save merged
+                        # Delete old episode from PG and Qdrant
                         await self._episode_store.delete(old_id, user_id, self._agent_id)
+                        if self._qdrant:
+                            self._qdrant.delete_episode(old_id)
                         await self._episode_store.save(merged_ep)
+                        # Upsert merged episode vector
+                        if self._qdrant and merged_ep.embedding:
+                            self._qdrant.upsert_episode(
+                                merged_ep.id, user_id, self._agent_id, merged_ep.embedding
+                            )
                         episode = merged_ep  # Use merged episode for downstream
 
                 episodes.append(episode)
@@ -155,6 +171,13 @@ class MemorySystem:
             )
             if memories:
                 await self._semantic_store.save_batch(memories)
+                # Upsert semantic vectors to Qdrant
+                if self._qdrant:
+                    for mem in memories:
+                        if mem.embedding:
+                            self._qdrant.upsert_semantic(
+                                mem.id, user_id, self._agent_id, mem.embedding
+                            )
                 logger.info(
                     "Generated %d semantic memories for user %s",
                     len(memories), user_id,
@@ -181,13 +204,20 @@ class MemorySystem:
 
     async def delete_episode(self, user_id: str, episode_id: str) -> None:
         await self._episode_store.delete(episode_id, user_id, self._agent_id)
+        if self._qdrant:
+            self._qdrant.delete_episode(episode_id)
 
     async def delete_semantic(self, user_id: str, memory_id: str) -> None:
         await self._semantic_store.delete(memory_id, user_id, self._agent_id)
+        if self._qdrant:
+            self._qdrant.delete_semantic(memory_id)
 
     async def delete_user(self, user_id: str) -> None:
         await self._semantic_store.delete_by_user(user_id, self._agent_id)
         await self._episode_store.delete_by_user(user_id, self._agent_id)
+        if self._qdrant:
+            self._qdrant.delete_semantic_by_user(user_id, self._agent_id)
+            self._qdrant.delete_episodes_by_user(user_id, self._agent_id)
 
     async def stats(self, user_id: str) -> dict[str, Any]:
         episodes = await self._episode_store.list_by_user(user_id, self._agent_id)

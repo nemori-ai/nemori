@@ -9,21 +9,27 @@ from nemori.config import MemoryConfig
 @pytest.mark.asyncio
 async def test_facade_context_manager():
     with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+         patch("nemori.api.facade.QdrantVectorStore") as MockQdrant, \
          patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
         mock_db_instance = AsyncMock()
         MockDB.return_value = mock_db_instance
+        mock_qdrant = MagicMock()
+        MockQdrant.return_value = mock_qdrant
 
         config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
         async with NemoriMemory(config=config) as memory:
             assert memory is not None
         mock_db_instance.close.assert_called_once()
+        mock_qdrant.close.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_facade_add_messages():
     with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+         patch("nemori.api.facade.QdrantVectorStore") as MockQdrant, \
          patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
         MockDB.return_value = AsyncMock()
+        MockQdrant.return_value = MagicMock()
 
         config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
         async with NemoriMemory(config=config) as memory:
@@ -35,6 +41,7 @@ async def test_facade_add_messages():
 @pytest.mark.asyncio
 async def test_facade_health():
     with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+         patch("nemori.api.facade.QdrantVectorStore") as MockQdrant, \
          patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
         mock_db = AsyncMock()
         mock_db.ping = AsyncMock(return_value=True)
@@ -42,6 +49,7 @@ async def test_facade_health():
         mock_db.pool.get_size.return_value = 10
         mock_db.pool.get_idle_size.return_value = 8
         MockDB.return_value = mock_db
+        MockQdrant.return_value = MagicMock()
 
         config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
         async with NemoriMemory(config=config) as memory:
@@ -52,8 +60,10 @@ async def test_facade_health():
 @pytest.mark.asyncio
 async def test_facade_add_messages_preserves_timestamp_and_metadata():
     with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+         patch("nemori.api.facade.QdrantVectorStore") as MockQdrant, \
          patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
         MockDB.return_value = AsyncMock()
+        MockQdrant.return_value = MagicMock()
 
         config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
         async with NemoriMemory(config=config) as memory:
@@ -78,8 +88,10 @@ async def test_facade_add_messages_preserves_timestamp_and_metadata():
 async def test_add_multimodal_message_builds_content_array():
     """add_multimodal_message should build proper content array with compressed images."""
     with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+         patch("nemori.api.facade.QdrantVectorStore") as MockQdrant, \
          patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
         MockDB.return_value = AsyncMock()
+        MockQdrant.return_value = MagicMock()
         config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
         async with NemoriMemory(config=config) as memory:
             memory._system = AsyncMock()
@@ -105,8 +117,10 @@ async def test_add_multimodal_message_builds_content_array():
 async def test_add_multimodal_message_text_only_fallback():
     """Without image_urls, add_multimodal_message should add a plain text message."""
     with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+         patch("nemori.api.facade.QdrantVectorStore") as MockQdrant, \
          patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
         MockDB.return_value = AsyncMock()
+        MockQdrant.return_value = MagicMock()
         config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
         async with NemoriMemory(config=config) as memory:
             memory._system = AsyncMock()

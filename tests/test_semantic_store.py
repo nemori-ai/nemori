@@ -31,6 +31,8 @@ async def test_save_calls_upsert(store, mock_db):
     call_sql = mock_db.execute.call_args[0][0]
     assert "INSERT INTO semantic_memories" in call_sql
     assert "ON CONFLICT" in call_sql
+    # Embedding should NOT be in the SQL anymore
+    assert "embedding" not in call_sql.lower()
 
 
 @pytest.mark.asyncio
@@ -57,8 +59,16 @@ async def test_list_by_user_with_type_filter(store, mock_db):
 
 
 @pytest.mark.asyncio
-async def test_search_hybrid(store, mock_db):
+async def test_search_by_text(store, mock_db):
     mock_db.fetch.return_value = []
-    await store.search_hybrid("u1", "default", "hiking", [0.1] * 1536, top_k=5)
+    await store.search_by_text("u1", "default", "hiking", top_k=5)
     call_sql = mock_db.fetch.call_args[0][0]
-    assert "rrf_score" in call_sql or "<=>" in call_sql
+    assert "ts_rank" in call_sql or "tsv" in call_sql
+
+
+@pytest.mark.asyncio
+async def test_get_batch(store, mock_db):
+    mock_db.fetch.return_value = []
+    result = await store.get_batch(["id1", "id2"], "u1", "default")
+    assert result == []
+    mock_db.fetch.assert_called_once()

@@ -1,6 +1,6 @@
 """Tests for UnifiedSearch."""
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from nemori.search.unified import UnifiedSearch, SearchMethod, SearchResult
 
@@ -8,18 +8,16 @@ from nemori.search.unified import UnifiedSearch, SearchMethod, SearchResult
 @pytest.fixture
 def mock_episode_store():
     store = AsyncMock()
-    store.search_by_vector = AsyncMock(return_value=[])
     store.search_by_text = AsyncMock(return_value=[])
-    store.search_hybrid = AsyncMock(return_value=[])
+    store.get_batch = AsyncMock(return_value=[])
     return store
 
 
 @pytest.fixture
 def mock_semantic_store():
     store = AsyncMock()
-    store.search_by_vector = AsyncMock(return_value=[])
     store.search_by_text = AsyncMock(return_value=[])
-    store.search_hybrid = AsyncMock(return_value=[])
+    store.get_batch = AsyncMock(return_value=[])
     return store
 
 
@@ -31,22 +29,33 @@ def mock_embedding():
 
 
 @pytest.fixture
-def search(mock_episode_store, mock_semantic_store, mock_embedding):
-    return UnifiedSearch(mock_episode_store, mock_semantic_store, mock_embedding)
+def mock_qdrant():
+    qdrant = MagicMock()
+    qdrant.search_episodes = MagicMock(return_value=[])
+    qdrant.search_semantic = MagicMock(return_value=[])
+    return qdrant
+
+
+@pytest.fixture
+def search(mock_episode_store, mock_semantic_store, mock_embedding, mock_qdrant):
+    return UnifiedSearch(mock_episode_store, mock_semantic_store, mock_embedding, mock_qdrant)
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search(search, mock_episode_store, mock_semantic_store):
+async def test_hybrid_search(search, mock_qdrant, mock_episode_store, mock_semantic_store):
     result = await search.search("u1", "default", "hiking", method=SearchMethod.HYBRID)
     assert isinstance(result, SearchResult)
-    mock_episode_store.search_hybrid.assert_called_once()
-    mock_semantic_store.search_hybrid.assert_called_once()
+    mock_qdrant.search_episodes.assert_called_once()
+    mock_qdrant.search_semantic.assert_called_once()
+    mock_episode_store.search_by_text.assert_called_once()
+    mock_semantic_store.search_by_text.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_vector_search(search, mock_episode_store):
+async def test_vector_search(search, mock_qdrant):
     await search.search("u1", "default", "hiking", method=SearchMethod.VECTOR)
-    mock_episode_store.search_by_vector.assert_called_once()
+    mock_qdrant.search_episodes.assert_called_once()
+    mock_qdrant.search_semantic.assert_called_once()
 
 
 @pytest.mark.asyncio

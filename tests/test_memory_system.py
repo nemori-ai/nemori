@@ -10,6 +10,13 @@ from nemori.config import MemoryConfig
 
 @pytest.fixture
 def deps():
+    qdrant = MagicMock()
+    qdrant.upsert_episode = MagicMock()
+    qdrant.upsert_semantic = MagicMock()
+    qdrant.delete_episode = MagicMock()
+    qdrant.delete_semantic = MagicMock()
+    qdrant.delete_episodes_by_user = MagicMock()
+    qdrant.delete_semantic_by_user = MagicMock()
     return {
         "config": MemoryConfig(),
         "agent_id": "default",
@@ -23,6 +30,7 @@ def deps():
         "semantic_generator": AsyncMock(),
         "event_bus": AsyncMock(),
         "search": AsyncMock(),
+        "qdrant": qdrant,
     }
 
 
@@ -47,12 +55,14 @@ async def test_flush_processes_buffer(system, deps):
         Message(role="user", content="hello", metadata={"buffer_id": 1}),
         Message(role="assistant", content="hi", metadata={"buffer_id": 2}),
     ]
-    ep = Episode(user_id="u1", title="T", content="C", source_messages=[])
+    ep = Episode(user_id="u1", title="T", content="C", source_messages=[], embedding=[0.1] * 10)
     deps["episode_generator"].generate = AsyncMock(return_value=ep)
 
     result = await system.flush("u1")
     assert len(result) >= 1
     deps["episode_store"].save.assert_called()
+    # Qdrant upsert should be called for episode with embedding
+    deps["qdrant"].upsert_episode.assert_called()
 
 
 @pytest.mark.asyncio
@@ -65,6 +75,7 @@ async def test_search_delegates(system, deps):
 async def test_delete_episode(system, deps):
     await system.delete_episode("u1", "ep-1")
     deps["episode_store"].delete.assert_called_once_with("ep-1", "u1", "default")
+    deps["qdrant"].delete_episode.assert_called_once_with("ep-1")
 
 
 @pytest.mark.asyncio
@@ -72,6 +83,8 @@ async def test_delete_user(system, deps):
     await system.delete_user("u1")
     deps["episode_store"].delete_by_user.assert_called_once_with("u1", "default")
     deps["semantic_store"].delete_by_user.assert_called_once_with("u1", "default")
+    deps["qdrant"].delete_episodes_by_user.assert_called_once_with("u1", "default")
+    deps["qdrant"].delete_semantic_by_user.assert_called_once_with("u1", "default")
 
 
 @pytest.mark.asyncio
