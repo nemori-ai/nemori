@@ -5,6 +5,7 @@ from nemori.domain.models import Message, Episode, SemanticMemory, HealthResult
 from nemori.domain.exceptions import NemoriError, DatabaseError, LLMError
 from nemori.search.unified import SearchMethod, SearchResult
 from nemori.factory import create_memory_system
+from nemori.utils.image import compress_image_for_llm, compress_images_for_llm
 
 __all__ = [
     "NemoriMemory",
@@ -19,4 +20,6 @@ __all__ = [
     "SearchMethod",
     "SearchResult",
     "create_memory_system",
+    "compress_image_for_llm",
+    "compress_images_for_llm",
 ]
