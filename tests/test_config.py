@@ -6,7 +6,7 @@ from nemori.domain.exceptions import ConfigError
 
 def test_default_config():
     cfg = MemoryConfig()
-    assert cfg.dsn == "postgresql://localhost/nemori"
+    assert "nemori" in cfg.dsn  # DSN resolved from env or default
     assert cfg.db_pool_min == 5
     assert cfg.db_pool_max == 20
     assert cfg.agent_id == "default"

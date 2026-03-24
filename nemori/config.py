@@ -23,12 +23,24 @@ def _resolve_embedding_key() -> str:
     )
 
 
+def _resolve_dsn() -> str:
+    return (
+        os.getenv("DATABASE_URL")
+        or os.getenv("DSN")
+        or "postgresql://nemori:nemori@localhost:5432/nemori"
+    )
+
+
+def _resolve_base_url(env_key: str) -> str | None:
+    return os.getenv(env_key) or None
+
+
 @dataclass
 class MemoryConfig:
     """Configuration for the Nemori memory system."""
 
     # Database
-    dsn: str = "postgresql://localhost/nemori"
+    dsn: str = field(default_factory=_resolve_dsn)
     db_pool_min: int = 5
     db_pool_max: int = 20
 
@@ -38,7 +50,7 @@ class MemoryConfig:
     # LLM
     llm_model: str = "gpt-4o-mini"
     llm_api_key: str = field(default_factory=_resolve_llm_key)
-    llm_base_url: str | None = None
+    llm_base_url: str | None = field(default_factory=lambda: _resolve_base_url("LLM_BASE_URL"))
     llm_max_concurrent: int = 10
     llm_timeout: float = 30.0
     llm_retries: int = 3
@@ -47,13 +59,13 @@ class MemoryConfig:
     # Embedding
     embedding_model: str = "text-embedding-3-small"
     embedding_api_key: str = field(default_factory=_resolve_embedding_key)
-    embedding_base_url: str | None = None
+    embedding_base_url: str | None = field(default_factory=lambda: _resolve_base_url("EMBEDDING_BASE_URL"))
     embedding_dimension: int = 1536
 
     # Qdrant
-    qdrant_url: str = "localhost"
-    qdrant_port: int = 6333
-    qdrant_api_key: str | None = None
+    qdrant_url: str = field(default_factory=lambda: os.getenv("QDRANT_URL") or "localhost")
+    qdrant_port: int = field(default_factory=lambda: int(os.getenv("QDRANT_PORT", "6333")))
+    qdrant_api_key: str | None = field(default_factory=lambda: os.getenv("QDRANT_API_KEY"))
     qdrant_collection_prefix: str = "nemori"
 
     # Buffer & Generation

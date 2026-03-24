@@ -1,9 +1,6 @@
 {
-  "dsn": "postgresql://nemori:nemori@localhost:5432/nemori",
   "llm_model": "openai/gpt-4.1-mini",
-  "llm_base_url": "https://openrouter.ai/api/v1",
   "embedding_model": "google/gemini-embedding-001",
-  "embedding_base_url": "https://openrouter.ai/api/v1",
   "buffer_size_min": 1,
   "buffer_size_max": 20,
   "episode_min_messages": 1,
