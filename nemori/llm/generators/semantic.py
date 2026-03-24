@@ -102,6 +102,7 @@ class SemanticGenerator:
         )
         extract_req = LLMRequest(
             messages=({"role": "user", "content": extract_prompt},),
+            response_format={"type": "json_object"},
             metadata={"generator": "semantic_extract"},
         )
         extract_resp = await self._orchestrator.execute(extract_req)
@@ -113,6 +114,7 @@ class SemanticGenerator:
         prompt = PromptTemplates.get_semantic_generation_prompt(ep_text)
         req = LLMRequest(
             messages=({"role": "user", "content": prompt},),
+            response_format={"type": "json_object"},
             metadata={"generator": "semantic_direct"},
         )
         resp = await self._orchestrator.execute(req)

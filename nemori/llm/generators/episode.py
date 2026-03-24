@@ -50,6 +50,7 @@ class EpisodeGenerator:
                 {"role": "system", "content": "You are an episodic memory generation expert."},
                 {"role": "user", "content": user_content},
             ),
+            response_format={"type": "json_object"},
             metadata={"generator": "episode", "user_id": user_id},
         )
 

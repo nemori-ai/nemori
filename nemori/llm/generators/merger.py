@@ -94,6 +94,7 @@ class EpisodeMerger:
         )
         request = LLMRequest(
             messages=({"role": "user", "content": prompt},),
+            response_format={"type": "json_object"},
             metadata={"generator": "merge_decision"},
         )
         response = await self._orchestrator.execute(request)
@@ -122,6 +123,7 @@ class EpisodeMerger:
         )
         request = LLMRequest(
             messages=({"role": "user", "content": prompt},),
+            response_format={"type": "json_object"},
             metadata={"generator": "merge_content"},
         )
         response = await self._orchestrator.execute(request)

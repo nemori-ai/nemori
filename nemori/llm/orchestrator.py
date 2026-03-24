@@ -37,7 +37,7 @@ class LLMRequest:
     model: str | None = None
     temperature: float = 0.7
     max_tokens: int = 2000
-    response_format: type | None = None
+    response_format: dict[str, str] | None = None
     timeout: float = 30.0
     retries: int = 3
     metadata: MappingProxyType = field(
@@ -99,12 +99,16 @@ class LLMOrchestrator:
             try:
                 async with self._semaphore:
                     start = time.monotonic()
+                    extra_kwargs: dict[str, Any] = {}
+                    if request.response_format is not None:
+                        extra_kwargs["response_format"] = request.response_format
                     content = await asyncio.wait_for(
                         self._provider.complete(
                             list(request.messages),
                             model=model,
                             temperature=request.temperature,
                             max_tokens=request.max_tokens,
+                            **extra_kwargs,
                         ),
                         timeout=request.timeout,
                     )
