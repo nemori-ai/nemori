@@ -86,6 +86,5 @@ def get_migrations(embedding_dimension: int = 1536) -> list[tuple[int, str, str]
     DROP INDEX IF EXISTS idx_semantic_embedding;
     ALTER TABLE episodes DROP COLUMN IF EXISTS embedding;
     ALTER TABLE semantic_memories DROP COLUMN IF EXISTS embedding;
-    DROP EXTENSION IF EXISTS vector;
 """),
     ]
