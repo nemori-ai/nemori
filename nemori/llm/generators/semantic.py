@@ -88,7 +88,7 @@ class SemanticGenerator:
         predict_req = LLMRequest(
             messages=({"role": "user", "content": predict_prompt},),
             metadata={"generator": "semantic_predict"},
-        )
+        )  # No response_format here — prediction output is free-form text
         predict_resp = await self._orchestrator.execute(predict_req)
 
         # Step 2: Extract deltas
