@@ -99,6 +99,41 @@ class NemoriMemory:
             raise RuntimeError("NemoriMemory not initialized. Use 'async with' context manager.")
         return self._system
 
+    async def add_multimodal_message(
+        self,
+        user_id: str,
+        text: str,
+        image_urls: list[str] | None = None,
+        role: str = "user",
+        timestamp: str | None = None,
+        compress_images: bool = True,
+    ) -> None:
+        """Add a message with optional image attachments.
+
+        Args:
+            user_id: User identifier.
+            text: Text content of the message.
+            image_urls: Optional list of image URLs (data URLs or http URLs).
+            role: Message role (default: "user").
+            timestamp: Optional ISO timestamp string.
+            compress_images: Whether to compress images for LLM (default: True).
+        """
+        if image_urls:
+            content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+            for url in image_urls:
+                if compress_images:
+                    from nemori.utils.image import compress_image_for_llm
+                    url = compress_image_for_llm(url)
+                content.append({"type": "image_url", "image_url": {"url": url}})
+            msg_dict: dict[str, Any] = {"role": role, "content": content}
+        else:
+            msg_dict = {"role": role, "content": text}
+
+        if timestamp:
+            msg_dict["timestamp"] = timestamp
+
+        await self.add_messages(user_id, [msg_dict])
+
     async def add_messages(self, user_id: str, messages: list[dict[str, Any]]) -> None:
         system = self._ensure_system()
         msg_objects = []
