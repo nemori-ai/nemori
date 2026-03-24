@@ -63,6 +63,11 @@ class MemoryConfig:
     enable_prediction_correction: bool = True
     semantic_similarity_threshold: float = 0.85
 
+    # Episode Merging
+    enable_episode_merging: bool = True
+    merge_similarity_threshold: float = 0.85
+    merge_top_k: int = 5
+
     # Search
     search_top_k_episodes: int = 10
     search_top_k_semantic: int = 10

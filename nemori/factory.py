@@ -10,6 +10,7 @@ from nemori.llm.client import AsyncLLMClient
 from nemori.llm.orchestrator import LLMOrchestrator
 from nemori.llm.generators.episode import EpisodeGenerator
 from nemori.llm.generators.semantic import SemanticGenerator
+from nemori.llm.generators.merger import EpisodeMerger
 from nemori.services.embedding import AsyncEmbeddingClient
 from nemori.services.event_bus import EventBus
 from nemori.search.unified import UnifiedSearch
@@ -44,6 +45,13 @@ async def create_memory_system(config: MemoryConfig, db: DatabaseManager) -> Mem
         embedding=embedding,
         enable_prediction_correction=config.enable_prediction_correction,
     )
+    merger = EpisodeMerger(
+        orchestrator=orchestrator,
+        embedding=embedding,
+        episode_store=episode_store,
+        similarity_threshold=config.merge_similarity_threshold,
+        merge_top_k=config.merge_top_k,
+    ) if config.enable_episode_merging else None
     event_bus = EventBus()
     search = UnifiedSearch(episode_store, semantic_store, embedding)
 
@@ -60,4 +68,5 @@ async def create_memory_system(config: MemoryConfig, db: DatabaseManager) -> Mem
         event_bus=event_bus,
         search=search,
         agent_id=config.agent_id,
+        merger=merger,
     )

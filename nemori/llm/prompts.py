@@ -378,6 +378,94 @@ Return only the JSON object, no additional text.
             knowledge_statements=formatted_statements
         )
 
+    MERGE_DECISION_PROMPT = """
+You are an episodic memory merge decision expert. Determine if a new episode should be merged with an existing similar episode.
+
+## New Episode
+Time Range: {new_time_range}
+Content: {new_content}
+
+## Candidate Episodes to Merge With
+{candidates}
+
+## Your Task
+Decide whether the new episode should:
+1. **merge**: Merge with one of the candidates (they describe the same event/topic)
+2. **new**: Keep as a separate new episode (it's a distinct event)
+
+## Merge Criteria
+Merge ONLY if:
+- Both episodes describe the SAME event or conversation session
+- They have significant temporal overlap or are very close in time
+- The content is clearly a continuation or different perspective of the same topic
+- Merging would create a more complete picture without mixing different events
+
+Do NOT merge if:
+- They are different events/conversations even if on similar topics
+- They are separated by significant time gaps (>1 hour)
+- They involve different contexts or participants
+
+## Output Format
+Return JSON:
+{{
+    "decision": "merge" or "new",
+    "merge_target_id": "episode_id_to_merge_with" (only if decision is "merge", otherwise null),
+    "reason": "Brief explanation of your decision"
+}}
+
+Return only the JSON object, no additional text.
+"""
+
+    MERGE_CONTENT_PROMPT = """
+You are an episodic memory merge content generator. Combine two related episodes into a single, coherent episode.
+
+## Original Episode
+Time Range: {original_time_range}
+Title: {original_title}
+Content: {original_content}
+
+## New Episode to Merge
+Time Range: {new_time_range}
+Title: {new_title}
+Content: {new_content}
+
+## Combined Event Details
+{combined_events}
+
+## Your Task
+Generate a merged episode that:
+1. Combines information from both episodes without duplication
+2. Maintains chronological flow of events
+3. Preserves all important details from both episodes
+4. Creates a coherent narrative
+
+## Output Format
+Return JSON:
+{{
+    "title": "Merged episode title that captures the complete topic",
+    "content": "Detailed narrative combining both episodes chronologically. Include all participants, key decisions, emotions, and outcomes.",
+    "timestamp": "ISO format timestamp of when the merged episode occurred (use earliest time)"
+}}
+
+Return only the JSON object, no additional text.
+"""
+
+    @classmethod
+    def get_merge_decision_prompt(cls, new_time_range: str, new_content: str, candidates: str) -> str:
+        return cls.MERGE_DECISION_PROMPT.format(
+            new_time_range=new_time_range, new_content=new_content, candidates=candidates
+        )
+
+    @classmethod
+    def get_merge_content_prompt(cls, original_time_range: str, original_title: str,
+                                  original_content: str, new_time_range: str,
+                                  new_title: str, new_content: str, combined_events: str) -> str:
+        return cls.MERGE_CONTENT_PROMPT.format(
+            original_time_range=original_time_range, original_title=original_title,
+            original_content=original_content, new_time_range=new_time_range,
+            new_title=new_title, new_content=new_content, combined_events=combined_events
+        )
+
     @classmethod
     def get_batch_segmentation_prompt(cls, count: int, messages: str) -> str:
         """Get batch segmentation prompt"""

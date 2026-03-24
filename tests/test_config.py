@@ -48,7 +48,7 @@ def test_config_no_removed_fields():
     assert not hasattr(cfg, "lexical_index_backend")
     assert not hasattr(cfg, "chroma_persist_directory")
     assert not hasattr(cfg, "storage_path")
-    assert not hasattr(cfg, "enable_episode_merging")
+    assert hasattr(cfg, "enable_episode_merging")
     assert not hasattr(cfg, "max_workers")
 
 

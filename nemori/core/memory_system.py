@@ -14,6 +14,7 @@ from nemori.llm.orchestrator import LLMOrchestrator
 from nemori.llm.generators.episode import EpisodeGenerator
 from nemori.llm.generators.semantic import SemanticGenerator
 from nemori.llm.generators.segmenter import BatchSegmenter
+from nemori.llm.generators.merger import EpisodeMerger
 from nemori.search.unified import UnifiedSearch, SearchMethod, SearchResult
 from nemori.services.event_bus import EventBus
 
@@ -39,6 +40,7 @@ class MemorySystem:
         semantic_generator: SemanticGenerator,
         event_bus: EventBus,
         search: UnifiedSearch,
+        merger: EpisodeMerger | None = None,
     ) -> None:
         self._config = config
         self._agent_id = agent_id
@@ -52,6 +54,7 @@ class MemorySystem:
         self._semantic_gen = semantic_generator
         self._event_bus = event_bus
         self._search = search
+        self._merger = merger
 
         self._user_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._tasks: set[asyncio.Task] = set()
@@ -118,6 +121,16 @@ class MemorySystem:
                     user_id, self._agent_id, group_msgs, group.get("topic", "conversation")
                 )
                 await self._episode_store.save(episode)
+
+                # Check for merge
+                if self._merger:
+                    merged, merged_ep, old_id = await self._merger.check_and_merge(episode, self._agent_id)
+                    if merged and merged_ep and old_id:
+                        # Delete old episode, save merged
+                        await self._episode_store.delete(old_id, user_id, self._agent_id)
+                        await self._episode_store.save(merged_ep)
+                        episode = merged_ep  # Use merged episode for downstream
+
                 episodes.append(episode)
 
                 # Emit event for async semantic generation
