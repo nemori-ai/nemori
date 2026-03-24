@@ -12,7 +12,7 @@ Nemori is a self-organising long-term memory substrate for agentic LLM workflows
 
 - **🐍 Language:** Python 3.10+
 - **📜 License:** MIT
-- **📦 Key dependencies:** OpenAI API, ChromaDB, uv (optional package manager)
+- **📦 Key dependencies:** asyncpg, Qdrant, OpenAI SDK, Pillow
 
 ---
 
@@ -33,7 +33,17 @@ The result is a compact, queryable memory fabric that stays faithful to the sour
 
 ## 2. 🚀 Quick Start
 
-### 2.1 📥 Install and bootstrap
+### 2.1 🐳 Infrastructure (Docker Compose)
+
+Nemori uses PostgreSQL for metadata and text search, and Qdrant for vector storage. Start both with a single command:
+
+```bash
+docker compose up -d
+```
+
+This launches PostgreSQL 16 (port 5432) and Qdrant (ports 6333/6334) with persistent volumes.
+
+### 2.2 📥 Install Nemori
 
 Using [uv](https://github.com/astral-sh/uv) is the easiest way to manage the environment:
 
@@ -47,50 +57,57 @@ uv venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 
 uv sync
-
-# Install spaCy language packs used for BM25 tokenization
-python -m spacy download en_core_web_sm
-python -m spacy download zh_core_web_sm
 ```
 
-### 2.2 🔑 Credentials
+Alternatively, install in editable mode:
+
+```bash
+pip install -e .
+```
+
+### 2.3 🔑 Credentials
 
 Create a `.env` file in the repo root:
 
-```ini
-OPENAI_API_KEY=sk-...
+```bash
+# OpenRouter (recommended — single key for both LLM and embeddings)
+LLM_API_KEY=sk-or-...
+LLM_BASE_URL=https://openrouter.ai/api/v1
+EMBEDDING_API_KEY=sk-or-...
+EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
+
+# Or use direct OpenAI
+# LLM_API_KEY=sk-...
+# EMBEDDING_API_KEY=sk-...
 ```
 
 Nemori only reads these variables; it never writes secrets to disk. 🔒
 
-### 2.3 💡 Minimal usage
+### 2.4 💡 Minimal usage
 
 ```python
+import asyncio
 from nemori import NemoriMemory, MemoryConfig
 
-config = MemoryConfig(
-    llm_model="gpt-4o-mini",
-    enable_semantic_memory=True,
-    enable_prediction_correction=True,
-)
+async def main():
+    config = MemoryConfig(
+        dsn="postgresql://nemori:nemori@localhost:5432/nemori",
+        llm_model="openai/gpt-4.1-mini",
+        llm_base_url="https://openrouter.ai/api/v1",
+        embedding_model="google/gemini-embedding-001",
+        embedding_base_url="https://openrouter.ai/api/v1",
+    )
+    async with NemoriMemory(config) as memory:
+        await memory.add_messages("user123", [
+            {"role": "user", "content": "I started training for a marathon in Seattle."},
+            {"role": "assistant", "content": "Great! When is the race?"},
+            {"role": "user", "content": "It is in October."},
+        ])
+        await memory.flush("user123")
+        results = await memory.search("user123", "marathon training")
+        print(results)
 
-memory = NemoriMemory(config=config)
-
-memory.add_messages(
-    user_id="user123",
-    messages=[
-        {"role": "user", "content": "I started training for a marathon in Seattle."},
-        {"role": "assistant", "content": "Great! When is the race?"},
-        {"role": "user", "content": "It is in October."},
-    ],
-)
-memory.flush(user_id)
-memory.wait_for_semantic(user_id)
-
-results = memory.search(user_id, "race", search_method="vector")
-print("Search results:", results)
-
-memory.close()
+asyncio.run(main())
 ```
 
 ---
@@ -99,27 +116,34 @@ memory.close()
 
 ![Nemori system architecture](assets/nemori_system.png)
 
+Nemori uses a **dual-backend** storage architecture:
+- **PostgreSQL** – metadata, text search (tsvector/GIN indexes), and message buffering.
+- **Qdrant** – all vector storage and similarity search with automatic embedding dimension adaptation.
+
+Both backends are fully async via `asyncpg` and the Qdrant gRPC client.
+
 ---
 
 ## 4. 📂 Repository Layout
 
 ```
-src/
-├── api/                 # Facade entry points
-├── core/                # Orchestration, buffers, metrics
-├── generation/          # Episode & semantic generation, prediction loop
-├── models/              # Dataclasses for messages and memories
-├── search/              # BM25, vector, hybrid, original text search
-├── storage/             # JSONL storage backends
-├── utils/               # LLM client, embeddings, caching utilities
-└── ...
+nemori/
+├── api/            # Async facade (NemoriMemory)
+├── core/           # MemorySystem orchestrator
+├── db/             # PostgreSQL stores + Qdrant vector store
+├── domain/         # Models, interfaces, exceptions
+├── llm/            # LLM client, orchestrator, generators
+├── search/         # Unified search (vector + text + hybrid)
+├── services/       # Embedding client, event bus
+└── utils/          # Image compression utilities
 
 evaluation/
-├── locomo/              # LoCoMo benchmark scripts
-├── longmemeval/         # Long-context evaluation suite
-└── readme.md            # Dataset instructions
+├── locomo/         # LoCoMo benchmark scripts
+├── longmemeval/    # Long-context evaluation suite
+└── readme.md       # Dataset instructions
 
-memories/                # Default persistence root (episodes/, semantic/)
+docker/
+└── init-extensions.sql   # PostgreSQL extension setup
 ```
 
 ---
@@ -129,23 +153,23 @@ memories/                # Default persistence root (episodes/, semantic/)
 ### 5.1 🔧 LoCoMo pipeline
 
 ```bash
-cd evaluation
-python locomo/add.py
-python locomo/search.py
-python locomo/evals.py
-python locomo/generate_scores.py
+PYTHONPATH=. python evaluation/locomo/add.py
+PYTHONPATH=. python evaluation/locomo/search.py
+PYTHONPATH=. python evaluation/locomo/evals.py
+PYTHONPATH=. python evaluation/locomo/generate_scores.py
 ```
 
-### 5.2 🏆 Latest LoCoMo scores
+### 5.2 🏆 Latest LoCoMo scores (V5)
+
 ![LoCoMo LLM score comparison](assets/locomo_scores.png)
 | Category | BLEU | F1 | LLM | Count |
 |----------|------|----|-----|-------|
-| Multi-Hop | 0.3426 | 0.4312 | 0.7730 | 282 |
-| Temporal-Reasoning | 0.5050 | 0.5874 | 0.7632 | 321 |
-| Open-Domain | 0.2294 | 0.2878 | 0.5521 | 96 |
-| Single-Hop | 0.4878 | 0.5497 | 0.8716 | 841 |
+| Single-Hop | 0.3432 | 0.4338 | 0.7943 | 282 |
+| Multi-Hop | 0.5109 | 0.5913 | 0.7882 | 321 |
+| Temporal | 0.2224 | 0.2736 | 0.5938 | 96 |
+| Open-Domain | 0.5046 | 0.5664 | 0.8859 | 841 |
 
-✨ Overall means: BLEU **0.4487**, F1 **0.5196**, LLM alignment **0.8110**, with only **3K** context tokens. 
+✨ Overall LLM alignment: **0.8305**
 
 ### 5.3 📚 LongMemEval
 
@@ -153,26 +177,63 @@ See `evaluation/longmemeval/readme.md` for running the 100k-token context benchm
 
 ---
 
-## 6. 🛠️ Developing with Nemori
+## 6. 🐳 Docker Deployment
 
-- 🧪 Tests: `pytest`
-- 🔍 Linting: `ruff check src`
-- 📝 Type checking: `mypy src`
+Start the infrastructure services:
+
+```bash
+docker compose up -d
+```
+
+This brings up:
+- **PostgreSQL 16** on port `5432` (user: `nemori`, password: `nemori`, db: `nemori`)
+- **Qdrant** on ports `6333` (HTTP) and `6334` (gRPC)
+
+Data is persisted in Docker volumes (`nemori_pg_data`, `nemori_qdrant_data`).
+
+To stop:
+
+```bash
+docker compose down        # keep data
+docker compose down -v     # remove data volumes
+```
+
+---
+
+## 7. 🏢 Multi-Tenant Support
+
+Nemori supports workspace isolation via `agent_id`. Each agent gets its own namespace for episodes, semantic memories, and vector collections, enabling safe multi-tenant deployments.
+
+---
+
+## 8. 🖼️ Multimodal Support
+
+Nemori supports image inputs via `add_multimodal_message()`. Images are automatically compressed and stored alongside text content, enabling memory formation from visual conversations.
+
+---
+
+## 9. 🛠️ Developing with Nemori
+
+- 🧪 Tests: `pytest tests/`
+- 🔍 Linting: `ruff check nemori`
+- 📝 Type checking: `mypy nemori`
 - 📊 Benchmark helpers live in `scripts/`
 
 Use the `NemoriMemory` facade for experiments and inject custom storage or LLM clients when integrating into larger systems.
 
 ---
 
-## 7. 🔧 Troubleshooting
+## 10. 🔧 Troubleshooting
 
 | 🚨 Symptom | 🔍 Likely cause | 💡 Mitigation |
 |---------|--------------|------------|
-| High latency on first query | Chroma cold start | Preload collections via `load_user_data_and_indices_for_method` |
+| `asyncpg.ConnectionError` on startup | PostgreSQL not running | Run `docker compose up -d` and wait for healthcheck |
+| Qdrant connection refused | Qdrant container not ready | Check `docker compose ps`; wait for healthy status |
+| Embedding dimension mismatch | Model changed without recreating collection | Delete the Qdrant collection and re-ingest |
 
 ---
 
-## 8. 🤝 Contributing
+## 11. 🤝 Contributing
 
 1. 🍴 Fork the repository and create a feature branch.
 2. ✅ Add or update tests (`pytest`, `ruff`, `mypy`).
@@ -181,7 +242,8 @@ Use the `NemoriMemory` facade for experiments and inject custom storage or LLM c
 Nemori is evolving toward multi-agent deployments. Feedback and collaboration are welcome! 💬
 
 ---
-## 9. 📰 News
+## 12. 📰 News
+- **🎉 2026-03-24** — Complete async refactoring: PostgreSQL + Qdrant dual backend, OpenRouter LLM support, multimodal messages, Docker Compose deployment.
 - **🎉 2025-10-28** — Upgraded the segmenter component and added token counting functionality for evaluation.
 - **🎉 2025-09-26** — Released Nemori as fully open source, covering episodic and semantic memory implementations end-to-end.
 - **🏁 2025-07-10** — Delivered the MVP of episodic memory generation.
