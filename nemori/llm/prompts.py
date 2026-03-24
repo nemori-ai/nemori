@@ -139,7 +139,7 @@ GOOD: "The user works at ByteDance as a senior ML engineer"
 BAD: "The user thanked the assistant"
 BAD: "The user was happy about the response"
 
-## Output Format:
+## Output Format (JSON):
 {{
     "statements": [
         "First factual statement extracted from the gap",
