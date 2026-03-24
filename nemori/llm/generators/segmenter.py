@@ -23,7 +23,11 @@ class BatchSegmenter:
         # Format messages for prompt
         formatted_lines = []
         for i, msg in enumerate(messages, 1):
-            formatted_lines.append(f"{i}. [{msg.role}] {msg.text_content()}")
+            ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S") if msg.timestamp else ""
+            if ts:
+                formatted_lines.append(f"{i}. [{ts}] {msg.role}: {msg.text_content()}")
+            else:
+                formatted_lines.append(f"{i}. {msg.role}: {msg.text_content()}")
         formatted = "\n".join(formatted_lines)
 
         prompt = PromptTemplates.get_batch_segmentation_prompt(
