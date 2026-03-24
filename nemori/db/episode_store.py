@@ -32,7 +32,8 @@ class PgEpisodeStore:
                 updated_at = EXCLUDED.updated_at
             """,
             episode.id, episode.user_id, episode.agent_id, episode.title,
-            episode.content, episode.embedding, json.dumps(episode.source_messages),
+            episode.content, str(episode.embedding) if episode.embedding else None,
+            json.dumps(episode.source_messages),
             json.dumps(episode.metadata), episode.created_at, episode.updated_at,
         )
 

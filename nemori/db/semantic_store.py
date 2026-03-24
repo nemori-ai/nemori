@@ -33,7 +33,8 @@ class PgSemanticStore:
                 updated_at = EXCLUDED.updated_at
             """,
             memory.id, memory.user_id, memory.agent_id, memory.content,
-            memory.memory_type, memory.embedding, memory.source_episode_id,
+            memory.memory_type, str(memory.embedding) if memory.embedding else None,
+            memory.source_episode_id,
             memory.confidence, json.dumps(memory.metadata),
             memory.created_at, memory.updated_at,
         )
