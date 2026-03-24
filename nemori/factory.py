@@ -36,6 +36,7 @@ async def create_memory_system(config: MemoryConfig, db: DatabaseManager) -> Mem
         api_key=config.embedding_api_key,
         model=config.embedding_model,
         base_url=config.embedding_base_url,
+        dimensions=config.embedding_dimension,
     )
     episode_gen = EpisodeGenerator(orchestrator=orchestrator, embedding=embedding)
     semantic_gen = SemanticGenerator(
