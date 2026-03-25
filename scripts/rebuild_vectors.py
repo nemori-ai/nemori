@@ -15,10 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.config import MemoryConfig
-from src.models import Episode, SemanticMemory
-from src.search.vector_search import VectorSearch
-from src.utils.embedding_client import EmbeddingClient
+from nemori.config import MemoryConfig
+from nemori.models import Episode, SemanticMemory
+from nemori.search.vector_search import VectorSearch
+from nemori.utils.embedding_client import EmbeddingClient
 
 
 def load_jsonl(path: Path, model_cls):
@@ -48,13 +48,14 @@ def rebuild(storage_root: Path) -> None:
     load_dotenv()
 
     embedding_client = EmbeddingClient(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        model="text-embedding-3-small"
+        api_key=os.getenv("EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        model="text-embedding-3-small",
+        base_url=os.getenv("EMBEDDING_BASE_URL"),
     )
     vector_search = VectorSearch(
         embedding_client=embedding_client,
         storage_path=str(storage_root),
-        dimension=1536
+        dimension=embedding_client.embedding_dim,
     )
 
     episodes_dir = storage_root / "episodes"

@@ -1,8 +1,10 @@
-"""Search LongMemEval memories using the Nemori facade."""
+"""Search LongMemEval memories using the async Nemori facade."""
 
 from __future__ import annotations
 
 import argparse
+import asyncio
+import dataclasses
 import json
 import logging
 from collections import defaultdict
@@ -11,8 +13,8 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from jinja2 import Template
-from openai import OpenAI
-from tqdm import tqdm
+from openai import AsyncOpenAI
+from tqdm.asyncio import tqdm
 
 from nemori import MemoryConfig, NemoriMemory
 
@@ -21,7 +23,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 ANSWER_PROMPT = Template(
- """
+    """
     You are an intelligent memory assistant tasked with retrieving accurate information from conversation memories.
 
     # CONTEXT:
@@ -68,46 +70,50 @@ ANSWER_PROMPT = Template(
 
 def load_config(path: Path) -> MemoryConfig:
     data = json.loads(path.read_text(encoding="utf-8"))
-    return MemoryConfig.from_dict(data)
+    valid_fields = {f.name for f in dataclasses.fields(MemoryConfig)}
+    filtered = {k: v for k, v in data.items() if k in valid_fields}
+    return MemoryConfig(**filtered)
 
 
 def format_memory_lines(
-    memories: List[Dict[str, Any]], include_original_limit: int = 0
+    memories: List[Dict[str, Any]],
+    include_original_limit: int = 0,
 ) -> str:
     lines: List[str] = []
     for idx, item in enumerate(memories):
-        timestamp = item.get("timestamp") or item.get("created_at") or ""
+        timestamp = item.get("created_at") or ""
         content = item.get("content", "")
         lines.append(f"- [{timestamp}] {content}")
         if (
             include_original_limit > 0
             and idx < include_original_limit
-            and item.get("original_messages")
+            and item.get("source_messages")
         ):
-            lines.append("    Original Messages:")
-            for msg in item["original_messages"]:
-                lines.append(
-                    f"    • {msg.get('role', 'user')}: {msg.get('content', '')}"
-                )
+            lines.append("    Source Messages:")
+            for msg in item["source_messages"]:
+                lines.append(f"    - {msg.get('role', 'user')}: {msg.get('content', '')}")
     return "\n".join(lines)
 
 
 def flatten_results(
-    memories: Dict[str, List[Dict[str, Any]]], include_original_limit: int
+    memories: Dict[str, List[Dict[str, Any]]],
+    include_original_limit: int,
 ) -> List[Dict[str, Any]]:
     combined: List[Dict[str, Any]] = []
-    for mem_type, items in memories.items():
+    type_map = {"episodes": "episodic", "semantic_memories": "semantic"}
+    for mem_key, items in memories.items():
+        mem_type = type_map.get(mem_key, mem_key)
         for idx, item in enumerate(items):
             record = {
                 "type": mem_type,
-                "timestamp": item.get("timestamp", item.get("created_at")),
-                "content": item.get("content", item.get("summary")),
+                "timestamp": item.get("created_at"),
+                "content": item.get("content"),
                 "score": item.get("score"),
-                "episode_id": item.get("episode_id"),
-                "memory_id": item.get("memory_id"),
+                "episode_id": item.get("id"),
+                "memory_id": item.get("id"),
             }
-            if item.get("original_messages") and idx < include_original_limit:
-                record["original_messages"] = item["original_messages"]
+            if item.get("source_messages") and idx < include_original_limit:
+                record["source_messages"] = item["source_messages"]
             combined.append(record)
     return combined
 
@@ -121,138 +127,88 @@ class LongMemEvalSearcher:
         top_k_semantic: int,
         search_method: str,
         include_original_messages_top_k: int,
+        max_concurrent_answer: int = 20,
     ) -> None:
-        self.memory = NemoriMemory(config=config)
+        self.config = config
         self.output_path = output_path
         self.top_k_episodes = top_k_episodes
         self.top_k_semantic = top_k_semantic
         self.search_method = search_method
         self.include_original_messages_top_k = include_original_messages_top_k
+        self.max_concurrent_answer = max_concurrent_answer
         self.results: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         try:
-            self.openai_client = OpenAI()
+            self.openai_client = AsyncOpenAI(
+                api_key=config.llm_api_key,
+                base_url=config.llm_base_url,
+            )
         except Exception:
             self.openai_client = None
 
-    def close(self) -> None:
-        self.memory.close()
-
-    def answer(self, question: str, question_date: str, memories: Dict[str, List[Dict[str, Any]]]) -> str:
+    async def answer(
+        self, question: str, question_date: str, memories: Dict[str, List[Dict[str, Any]]]
+    ) -> str:
         if not self.openai_client:
             return ""
         episodic = format_memory_lines(
-            memories.get("episodic", []),
+            memories.get("episodes", []),
             include_original_limit=self.include_original_messages_top_k,
         )
-        semantic = format_memory_lines(memories.get("semantic", []), include_original_limit=0)
+        semantic = format_memory_lines(
+            memories.get("semantic_memories", []),
+            include_original_limit=0,
+        )
         prompt = ANSWER_PROMPT.render(
             question=question,
             question_date=question_date,
             episodic=episodic,
             semantic=semantic,
         )
-        response = self.openai_client.chat.completions.create(
-            model=self.memory.config.llm_model,
+        response = await self.openai_client.chat.completions.create(
+            model=self.config.llm_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
         )
         return response.choices[0].message.content if response and response.choices else ""
 
-    def search(self, user_id: str, question: str) -> Dict[str, List[Dict[str, Any]]]:
-        return self.memory.search(
-            user_id,
-            question,
-            top_k_episodes=self.top_k_episodes,
-            top_k_semantic=self.top_k_semantic,
-            search_method=self.search_method,
-        )
+    async def process(self, dataset: List[Dict[str, Any]]) -> None:
+        answer_semaphore = asyncio.Semaphore(self.max_concurrent_answer)
 
-    def _hydrate_episode_results(
-        self, user_id: str, episodes: List[Dict[str, Any]]
-    ) -> None:
-        if not episodes:
-            return
-
-        memory_system = getattr(self.memory, "_memory_system", None)
-        if memory_system is None:
-            return
-
-        repository = getattr(memory_system, "_episode_repository", None)
-        episode_cache: Dict[str, Any] = {}
-
-        for idx, item in enumerate(episodes):
-            metadata = item.get("metadata") or {}
-            if "timestamp" not in item and metadata.get("timestamp"):
-                item["timestamp"] = metadata["timestamp"]
-            if "created_at" not in item and metadata.get("created_at"):
-                item["created_at"] = metadata["created_at"]
-
-            if (
-                idx < self.include_original_messages_top_k
-                and not item.get("original_messages")
-            ):
-                episode_id = item.get("episode_id") or metadata.get("episode_id")
-                if not episode_id or repository is None:
-                    continue
-
-                episode_obj = None
-                try:
-                    if hasattr(repository, "get_episode"):
-                        episode_obj = repository.get_episode(episode_id, user_id)  # type: ignore[attr-defined]
-                    else:
-                        if not episode_cache:
-                            all_eps = repository.list_by_user(user_id)
-                            episode_cache = {ep.episode_id: ep for ep in all_eps}
-                        episode_obj = episode_cache.get(episode_id)
-                except Exception as exc:  # pragma: no cover
-                    logger.debug(
-                        "Hydration failed for episode %s (user %s): %s",
-                        episode_id,
-                        user_id,
-                        exc,
-                    )
-                    continue
-
-                if episode_obj is None:
-                    continue
-
-                item.setdefault("original_messages", episode_obj.original_messages)
-                item.setdefault("timestamp", episode_obj.timestamp.isoformat())
-                item.setdefault("created_at", episode_obj.created_at.isoformat())
-                item.setdefault("content", episode_obj.content)
-                item.setdefault("title", episode_obj.title)
-
-    def _hydrate_semantic_results(self, semantic_results: List[Dict[str, Any]]) -> None:
-        for item in semantic_results:
-            metadata = item.get("metadata") or {}
-            if "timestamp" not in item and metadata.get("timestamp"):
-                item["timestamp"] = metadata["timestamp"]
-            if "created_at" not in item and metadata.get("created_at"):
-                item["created_at"] = metadata["created_at"]
-
-    def process(self, dataset: List[Dict[str, Any]]) -> None:
-        for item in tqdm(dataset, desc="Questions"):
+        async def worker(memory: NemoriMemory, item: Dict[str, Any]) -> None:
             question_id = item.get("question_id")
             user_id = f"question_{question_id}"
             question = item.get("question", "")
             question_date = item.get("question_date", "")
-            memories = self.search(user_id, question)
-            self._hydrate_episode_results(user_id, memories.get("episodic", []))
-            self._hydrate_semantic_results(memories.get("semantic", []))
-            response = self.answer(question, question_date, memories)
+            memories = await memory.search(
+                user_id,
+                question,
+                top_k_episodes=self.top_k_episodes,
+                top_k_semantic=self.top_k_semantic,
+                search_method=self.search_method,
+            )
+            async with answer_semaphore:
+                response = await self.answer(question, question_date, memories)
             flattened = flatten_results(memories, self.include_original_messages_top_k)
             record = {
                 "question_id": question_id,
                 "question": question,
                 "question_date": question_date,
+                "answer": item.get("answer", ""),
+                "question_type": item.get("question_type", ""),
                 "response": response,
                 "memories": flattened,
                 "search_method": self.search_method,
             }
             self.results[str(question_id)].append(record)
 
+        async with NemoriMemory(self.config) as memory:
+            tasks = [worker(memory, item) for item in dataset]
+            await tqdm.gather(*tasks, desc="Questions")
+
     def save(self) -> None:
-        self.output_path.write_text(json.dumps(self.results, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.output_path.write_text(
+            json.dumps(self.results, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
 
 def main() -> None:
@@ -262,10 +218,10 @@ def main() -> None:
     parser.add_argument("--output", default="longmemeval_results.json")
     parser.add_argument("--top-k-episodes", type=int, default=10)
     parser.add_argument("--top-k-semantic", type=int, default=10)
-    parser.add_argument("--search-method", default="vector", choices=["vector", "bm25", "hybrid"])
+    parser.add_argument("--search-method", default="vector", choices=["vector", "text", "hybrid"])
     parser.add_argument(
         "--include-original-messages-top-k", type=int, default=0,
-        help="Number of top episodic memories to attach original messages for",
+        help="Number of top episodic memories to attach source messages for",
     )
     args = parser.parse_args()
 
@@ -285,11 +241,8 @@ def main() -> None:
         search_method=args.search_method,
         include_original_messages_top_k=args.include_original_messages_top_k,
     )
-    try:
-        searcher.process(dataset)
-        searcher.save()
-    finally:
-        searcher.close()
+    asyncio.run(searcher.process(dataset))
+    searcher.save()
 
 
 if __name__ == "__main__":  # pragma: no cover

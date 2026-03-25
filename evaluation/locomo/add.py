@@ -1,21 +1,20 @@
-"""Add LoCoMo dataset conversations into Nemori memory using the simplified facade."""
+"""Add LoCoMo dataset conversations into Nemori memory using the async facade."""
 
 from __future__ import annotations
 
 import argparse
+import asyncio
+import dataclasses
 import json
-import time
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from dotenv import load_dotenv
-from tqdm import tqdm
+from tqdm.asyncio import tqdm
 
 from nemori import NemoriMemory, MemoryConfig
-from concurrent.futures import ThreadPoolExecutor
-import threading
-import logging
 
 load_dotenv()
 
@@ -23,16 +22,17 @@ load_dotenv()
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("chromadb").setLevel(logging.WARNING)
 
 
 def load_config(path: Path) -> MemoryConfig:
     data = json.loads(path.read_text(encoding="utf-8"))
-    return MemoryConfig.from_dict(data)
+    valid_fields = {f.name for f in dataclasses.fields(MemoryConfig)}
+    filtered = {k: v for k, v in data.items() if k in valid_fields}
+    return MemoryConfig(**filtered)
 
 
 def parse_timestamp(value: str) -> datetime:
-    """Parse dataset timestamps such as "1:56 pm on 8 May, 2023"."""
+    """Parse dataset timestamps such as '1:56 pm on 8 May, 2023'."""
     value = " ".join(value.split())
     if " on " not in value:
         try:
@@ -123,295 +123,82 @@ def batched(iterable: Iterable[Dict[str, Any]], size: int) -> Iterable[List[Dict
         yield batch
 
 
-def process_single_conversation(
-    config: MemoryConfig,
+async def process_single_conversation(
+    memory: NemoriMemory,
     item: Dict[str, Any],
     idx: int,
     batch_size: int,
-    wait_timeout: float,
-    tracker: Dict[str, Any],
-    tracker_lock: threading.Lock,
-    position: int = 0,
-    verbose: bool = False,
-    max_retries: int = 3,
-) -> None:
+    semaphore: asyncio.Semaphore,
+) -> Dict[str, Any]:
+    """Process a single conversation using the shared NemoriMemory instance."""
     conversation = item.get("conversation", {})
     speaker_a = conversation.get("speaker_a", "speaker_a")
     user_id = f"{speaker_a}_{idx}"
     messages = build_messages(conversation)
 
-    # Track result
-    result = {
-        "user_id": user_id, 
-        "success": False, 
-        "message_count": len(messages), 
+    result: Dict[str, Any] = {
+        "user_id": user_id,
+        "success": False,
+        "message_count": len(messages),
         "error": None,
-        "stage": "initialized",
-        "retries": 0
     }
-    
+
     if not messages:
         result["error"] = "No messages"
-        result["stage"] = "validation_failed"
-        with tracker_lock:
-            tracker[user_id] = result
-        return
+        return result
 
-    # 重试逻辑
-    for retry_attempt in range(max_retries):
-        if retry_attempt > 0:
-            # 在重试前等待，避免立即重试导致同样的问题
-            wait_time = retry_attempt * 2  # 递增等待时间：2s, 4s, 6s
-            time.sleep(wait_time)
-            result["retries"] = retry_attempt
-            result["stage"] = f"retry_{retry_attempt}"
-        
+    async with semaphore:
         try:
-            memory = NemoriMemory(config=config)
-            result["stage"] = "memory_created"
-            break  # 成功创建，跳出重试循环
-        except Exception as e:
-            result["error"] = f"Failed to create memory: {e}"
-            result["stage"] = "memory_creation_failed"
-            if retry_attempt == max_retries - 1:
-                # 最后一次重试也失败了
-                with tracker_lock:
-                    tracker[user_id] = result
-                return
-            else:
-                # 还有重试机会，继续
-                continue
-    
-    # Create progress bar for this user's message processing
-    chunks = list(batched(messages, batch_size))
-    total_chunks = len(chunks)
-    
-    # Use a progress bar if verbose mode is enabled and we have messages to process
-    if verbose and (total_chunks > 1 or len(messages) > 20):
-        pbar = tqdm(
-            total=len(messages),
-            desc=f"  [{idx+1:2d}] {speaker_a}",
-            position=position + 1,
-            leave=False,
-            bar_format="{desc:15s}: {percentage:3.0f}%|{bar:30}| {n_fmt:>4}/{total_fmt:<4} msgs",
-            ncols=80,
-            colour='cyan',
-            disable=False  # Ensure it's enabled
-        )
-    else:
-        pbar = None
-    
-    try:
-        # Add messages in batches with progress tracking
-        messages_processed = 0
-        result["stage"] = "adding_messages"
-        
-        # 添加消息时的重试逻辑
-        for chunk_idx, chunk in enumerate(chunks):
-            for retry in range(max_retries):
-                try:
-                    memory.add_messages(user_id, chunk)
-                    messages_processed += len(chunk)
-                    if pbar:
-                        pbar.update(len(chunk))
-                    break  # 成功，跳出重试循环
-                except Exception as e:
-                    if retry == max_retries - 1:
-                        raise  # 最后一次重试还是失败，抛出异常
-                    time.sleep(0.5 * (retry + 1))  # 短暂等待后重试
-        
-        if pbar:
-            pbar.close()
-        
-        # Create episode with retry
-        result["stage"] = "flushing_episode"
-        episode_info = None
-        for retry in range(max_retries):
-            try:
-                episode_info = memory.flush(user_id)
-                if episode_info is not None:
-                    break
-                elif retry < max_retries - 1:
-                    time.sleep(1 * (retry + 1))
-            except Exception as e:
-                if retry == max_retries - 1:
-                    raise
-                time.sleep(1 * (retry + 1))
-        
-        if episode_info is None:
-            result["error"] = "Failed to create episode (flush returned None after retries)"
-            result["stage"] = "flush_failed"
-            with tracker_lock:
-                tracker[user_id] = result
-            memory.close()
-            return
-            
-        # Wait for semantic generation
-        result["stage"] = "waiting_semantic"
-        memory.wait_for_semantic(user_id, timeout=wait_timeout)
-        
-        # Verify file creation
-        result["stage"] = "verifying_files"
-        episodes_dir = Path(config.storage_path) / "episodes"
-        file_path = episodes_dir / f"{user_id}_episodes.jsonl"
-        
-        if file_path.exists():
+            # Add messages in batches
+            for chunk in batched(messages, batch_size):
+                await memory.add_messages(user_id, chunk)
+
+            # Flush to create episodes (also triggers semantic generation)
+            episodes = await memory.flush(user_id)
             result["success"] = True
-            result["stage"] = "completed"
-        else:
-            result["error"] = "Episode file not found after processing"
-            result["stage"] = "file_not_found"
-            
-    except Exception as e:
-        result["error"] = f"{type(e).__name__}: {str(e)}"
-        result["stage"] = f"exception_at_{result.get('stage', 'unknown')}"
-        if pbar:
-            pbar.close()
-    finally:
-        try:
-            memory.close()
+            result["episodes_created"] = len(episodes)
         except Exception as e:
-            if result["error"] is None:
-                result["error"] = f"Error closing memory: {e}"
-        with tracker_lock:
-            tracker[user_id] = result
+            result["error"] = f"{type(e).__name__}: {e}"
+
+    return result
 
 
-def process_dataset(
+async def process_dataset(
     config: MemoryConfig,
     dataset: List[Dict[str, Any]],
     batch_size: int,
-    wait_timeout: float,
     max_workers: int,
-    verbose: bool = False,
-    max_retries: int = 3,
 ) -> None:
-    tracker: Dict[str, Any] = {}
-    tracker_lock = threading.Lock()
-    
-    print(f"\n🚀 Processing {len(dataset)} conversations with {max_workers} workers...")
-    
-    if verbose:
-        print("─" * 80)
-        # Pre-calculate total messages for each user
-        user_info = []
-        total_messages = 0
-        for idx, item in enumerate(dataset):
-            conversation = item.get("conversation", {})
-            speaker_a = conversation.get("speaker_a", "speaker_a")
-            messages = build_messages(conversation)
-            user_info.append({
-                "user_id": f"{speaker_a}_{idx}",
-                "speaker": speaker_a,
-                "message_count": len(messages)
-            })
-            total_messages += len(messages)
-        
-        # Display user overview
-        print("📋 User Overview:")
-        for info in user_info[:5]:  # Show first 5 users
-            print(f"  • {info['user_id']}: {info['message_count']} messages")
-        if len(user_info) > 5:
-            print(f"  ... and {len(user_info) - 5} more users")
-        print(f"📈 Total messages to process: {total_messages}")
-        print("─" * 80 + "\n")
-    else:
-        print("")  # Just add a blank line for cleaner output
-    
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Create futures with position information
-        futures_with_info = []
-        for idx, item in enumerate(dataset):
-            future = executor.submit(
-                process_single_conversation,
-                config,
-                item,
-                idx,
-                batch_size,
-                wait_timeout,
-                tracker,
-                tracker_lock,
-                position=idx if idx < max_workers else idx % max_workers,  # Reuse positions for overflow
-                verbose=verbose,
-                max_retries=max_retries,
-            )
-            futures_with_info.append((future, idx, item))
-        
-        # Main progress bar
-        failed_immediately = []
-        with tqdm(total=len(futures_with_info), 
-                  desc="Overall", 
-                  position=0,
-                  bar_format="{desc:10s}: {percentage:3.0f}%|{bar:40}| {n_fmt:>2}/{total_fmt:<2} [{elapsed}<{remaining}]",
-                  ncols=80,
-                  colour='green') as main_pbar:
-            
-            for future, idx, item in futures_with_info:
-                try:
-                    future.result()
-                except Exception as e:
-                    # Track exceptions that weren't caught inside the worker
-                    conversation = item.get("conversation", {})
-                    speaker_a = conversation.get("speaker_a", "speaker_a")
-                    user_id = f"{speaker_a}_{idx}"
-                    failed_immediately.append((user_id, str(e)))
-                    print(f"\n⚠️  [{idx+1}] {user_id} failed with exception: {e}")
-                main_pbar.update(1)
-        
-        # Clear the screen a bit for cleaner output
-        print("\n" * 2)
-    
+    print(f"\nProcessing {len(dataset)} conversations with concurrency={max_workers}...")
+
+    semaphore = asyncio.Semaphore(max_workers)
+
+    async with NemoriMemory(config) as memory:
+        tasks = [
+            process_single_conversation(memory, item, idx, batch_size, semaphore)
+            for idx, item in enumerate(dataset)
+        ]
+        results = await tqdm.gather(*tasks, desc="Conversations")
+
     # Print summary
-    print("\n" + "=" * 60)
-    print("📊 Processing Summary")
-    print("=" * 60)
-    
-    successful = sum(1 for r in tracker.values() if r.get("success", False))
-    failed = len(tracker) - successful
-    not_tracked = len(dataset) - len(tracker)
-    retried = sum(1 for r in tracker.values() if r.get("retries", 0) > 0)
-    total_retries = sum(r.get("retries", 0) for r in tracker.values())
-    
-    print(f"✅ Successful: {successful}/{len(dataset)}")
-    print(f"❌ Failed: {failed}/{len(dataset)}")
-    if not_tracked > 0:
-        print(f"⚠️  Not tracked: {not_tracked}/{len(dataset)} (异常退出)")
-    if retried > 0:
-        print(f"🔄 Retried: {retried} users ({total_retries} total retry attempts)")
-    
+    successful = sum(1 for r in results if r.get("success"))
+    failed = len(results) - successful
+    total_episodes = sum(r.get("episodes_created", 0) for r in results)
+
+    print(f"\n{'=' * 60}")
+    print("Processing Summary")
+    print(f"{'=' * 60}")
+    print(f"Successful: {successful}/{len(dataset)}")
+    print(f"Failed: {failed}/{len(dataset)}")
+    print(f"Total episodes created: {total_episodes}")
+
     if failed > 0:
-        print("\n🔍 Failure Details:")
-        for user_id, result in tracker.items():
-            if not result.get("success", False):
-                error = result.get("error", "Unknown error")
-                msg_count = result.get("message_count", 0)
-                stage = result.get("stage", "unknown")
-                retry_count = result.get("retries", 0)
-                print(f"  - {user_id}: {error}")
-                print(f"    └─ Stage: {stage}, Messages: {msg_count}, Retries: {retry_count}")
-    
-    if failed_immediately:
-        print("\n💥 Immediate Exceptions (在worker外部抛出):")
-        for user_id, error in failed_immediately:
-            print(f"  - {user_id}: {error}")
-    
-    # 显示成功但有重试的用户
-    if retried > 0:
-        print("\n🔄 Successfully Recovered After Retry:")
-        for user_id, result in tracker.items():
-            if result.get("success", False) and result.get("retries", 0) > 0:
-                retry_count = result.get("retries", 0)
-                print(f"  - {user_id}: {retry_count} retry(ies)")
-    
-    print("\n" + "=" * 60)
-    
-    # Print token usage statistics
-    try:
-        from src.utils.token_counter import TokenCounter
-        counter = TokenCounter()
-        counter.print_summary(title="Token Usage Summary (Add Phase)")
-    except Exception as e:
-        print(f"\nNote: Token statistics not available: {e}")
+        print("\nFailure Details:")
+        for r in results:
+            if not r.get("success"):
+                print(f"  - {r['user_id']}: {r.get('error', 'Unknown error')}")
+
+    print(f"{'=' * 60}")
 
 
 def main() -> None:
@@ -419,10 +206,7 @@ def main() -> None:
     parser.add_argument("--data", default="dataset/locomo10.json", help="Path to LoCoMo JSON dataset")
     parser.add_argument("--config", default="config.json", help="Path to MemoryConfig JSON")
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--wait-timeout", type=float, default=1800.0)
     parser.add_argument("--max-workers", type=int, default=10)
-    parser.add_argument("--max-retries", type=int, default=3, help="max retries for each step")
-    parser.add_argument("--verbose", action="store_true", help="Show detailed progress for each user")
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -432,7 +216,7 @@ def main() -> None:
 
     dataset_path = Path(args.data)
     dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
-    process_dataset(config, dataset, args.batch_size, args.wait_timeout, args.max_workers, args.verbose, args.max_retries)
+    asyncio.run(process_dataset(config, dataset, args.batch_size, args.max_workers))
 
 
 if __name__ == "__main__":  # pragma: no cover
