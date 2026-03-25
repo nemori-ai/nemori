@@ -62,9 +62,7 @@ class MemorySystem:
         self._user_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._tasks: set[asyncio.Task] = set()
 
-        # Wire event: episode_created -> semantic generation
-        if config.enable_semantic_memory:
-            self._event_bus.on("episode_created", self._on_episode_created)
+        self._enable_semantic = config.enable_semantic_memory
 
     def _get_lock(self, user_id: str) -> asyncio.Lock:
         key = f"{self._agent_id}:{user_id}"
@@ -135,10 +133,14 @@ class MemorySystem:
                 if self._merger:
                     merged, merged_ep, old_id = await self._merger.check_and_merge(episode, self._agent_id)
                     if merged and merged_ep and old_id:
-                        # Delete old episode from PG and Qdrant
+                        # Delete old target episode from PG and Qdrant
                         await self._episode_store.delete(old_id, user_id, self._agent_id)
                         if self._qdrant:
                             self._qdrant.delete_episode(old_id)
+                        # Delete original episode (replaced by merged)
+                        await self._episode_store.delete(episode.id, user_id, self._agent_id)
+                        if self._qdrant:
+                            self._qdrant.delete_episode(episode.id)
                         await self._episode_store.save(merged_ep)
                         # Upsert merged episode vector
                         if self._qdrant and merged_ep.embedding:
@@ -149,10 +151,9 @@ class MemorySystem:
 
                 episodes.append(episode)
 
-                # Emit event for async semantic generation
-                await self._event_bus.emit(
-                    "episode_created", user_id=user_id, episode=episode
-                )
+                # Generate semantic memories synchronously (avoids race with merge)
+                if self._enable_semantic:
+                    await self._on_episode_created(user_id=user_id, episode=episode)
 
             # Mark processed messages as done (deletes them)
             if buffer_ids:

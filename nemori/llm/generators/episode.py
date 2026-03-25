@@ -13,8 +13,6 @@ from nemori.llm.prompts import PromptTemplates
 
 logger = logging.getLogger("nemori")
 
-MAX_IMAGES_PER_EPISODE = 10
-
 _MULTIMODAL_GUIDANCE = """If images are included in this conversation:
 1. Use the images to enrich your understanding of what the user was doing or discussing.
 2. Describe the visual context naturally within the narrative.
@@ -107,14 +105,10 @@ class EpisodeGenerator:
 
         parts: list[dict] = [{"type": "text", "text": prompt}]
 
-        # Attach images (max 10)
-        image_count = 0
+        # Attach images (already compressed at ingestion time)
         for msg in messages:
             for url in msg.image_urls():
-                if image_count >= MAX_IMAGES_PER_EPISODE:
-                    break
                 parts.append({"type": "image_url", "image_url": {"url": url}})
-                image_count += 1
 
         return parts
 

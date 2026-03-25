@@ -164,10 +164,10 @@ PYTHONPATH=. python evaluation/locomo/generate_scores.py
 ![LoCoMo LLM score comparison](assets/locomo_scores.png)
 | Category | BLEU | F1 | LLM | Count |
 |----------|------|----|-----|-------|
-| Single-Hop | 0.3432 | 0.4338 | 0.7943 | 282 |
-| Multi-Hop | 0.5109 | 0.5913 | 0.7882 | 321 |
-| Temporal | 0.2224 | 0.2736 | 0.5938 | 96 |
-| Open-Domain | 0.5046 | 0.5664 | 0.8859 | 841 |
+| Multi-Hop | 0.3432 | 0.4338 | 0.7943 | 282 |
+| Temporal | 0.5109 | 0.5913 | 0.7882 | 321 |
+| Open-Domain | 0.2224 | 0.2736 | 0.5938 | 96 |
+| Single-Hop | 0.5046 | 0.5664 | 0.8859 | 841 |
 
 ✨ Overall LLM alignment: **0.8305**
 

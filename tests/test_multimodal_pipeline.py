@@ -1,12 +1,16 @@
 """Tests for multimodal message flow through the pipeline."""
 from __future__ import annotations
 
+import json
 import pytest
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from nemori.domain.models import Message
-from nemori.llm.generators.episode import EpisodeGenerator, MAX_IMAGES_PER_EPISODE
-from nemori.llm.generators.semantic import _extract_text
+from nemori.domain.models import Message, Episode
+from nemori.db.buffer_store import PgMessageBufferStore
+from nemori.llm.generators.episode import EpisodeGenerator
+from nemori.llm.generators.segmenter import BatchSegmenter
+from nemori.llm.generators.semantic import SemanticGenerator, _extract_text
 
 
 # ---------------------------------------------------------------------------
@@ -186,18 +190,18 @@ class TestEpisodeGeneratorMultimodal:
         assert parts[1]["type"] == "image_url"
         assert parts[1]["image_url"]["url"] == "https://example.com/img1.png"
 
-    def test_build_multimodal_prompt_caps_images(self):
-        """Images are capped at MAX_IMAGES_PER_EPISODE."""
+    def test_build_multimodal_prompt_all_images_included(self):
+        """All images are included (no artificial cap)."""
         gen = self._make_generator()
-        # Create a message with more images than the cap
+        num_images = 15
         many_images = [{"type": "text", "text": "lots of images"}] + [
             {"type": "image_url", "image_url": {"url": f"https://example.com/{i}.png"}}
-            for i in range(MAX_IMAGES_PER_EPISODE + 5)
+            for i in range(num_images)
         ]
         msgs = [_make_msg(many_images)]
         parts = gen._build_multimodal_prompt(msgs, "overflow")
         image_parts = [p for p in parts if p.get("type") == "image_url"]
-        assert len(image_parts) == MAX_IMAGES_PER_EPISODE
+        assert len(image_parts) == num_images
 
     def test_build_multimodal_prompt_no_images(self):
         """Text-only messages produce a text-only prompt part."""
@@ -251,3 +255,409 @@ class TestExtractText:
     def test_image_only_content(self):
         msg = {"content": [{"type": "image_url", "image_url": {"url": "https://x.com/i.png"}}]}
         assert _extract_text(msg) == "[image]"
+
+
+# ===================================================================
+# 4. Buffer storage round-trip (PgMessageBufferStore)
+# ===================================================================
+
+
+class TestBufferStoreMultimodalRoundTrip:
+    """push() -> get_unprocessed() preserves multimodal content arrays."""
+
+    @pytest.mark.asyncio
+    async def test_push_stores_content_as_json(self):
+        """push() serialises multimodal content via json.dumps."""
+        mock_db = AsyncMock()
+        store = PgMessageBufferStore(mock_db)
+        msg = _make_msg(MULTIMODAL_CONTENT)
+
+        await store.push("u1", "agent1", [msg])
+
+        mock_db.execute.assert_called_once()
+        call_args = mock_db.execute.call_args[0]
+        # positional args: (sql, user_id, agent_id, role, content_json, timestamp)
+        stored_json = call_args[4]
+        assert json.loads(stored_json) == MULTIMODAL_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_get_unprocessed_preserves_content_array(self):
+        """get_unprocessed() returns Message objects with list content intact."""
+        mock_db = AsyncMock()
+        ts = datetime(2025, 1, 1, 12, 0, 0)
+        mock_db.fetch.return_value = [
+            {
+                "id": 42,
+                "role": "user",
+                "content": MULTIMODAL_CONTENT,  # asyncpg returns Python objects from JSONB
+                "timestamp": ts,
+            }
+        ]
+        store = PgMessageBufferStore(mock_db)
+        messages = await store.get_unprocessed("u1", "agent1")
+
+        assert len(messages) == 1
+        msg = messages[0]
+        assert isinstance(msg.content, list)
+        assert msg.content == MULTIMODAL_CONTENT
+        assert msg.has_images() is True
+        assert msg.image_urls() == ["https://example.com/img1.png"]
+
+    @pytest.mark.asyncio
+    async def test_round_trip_text_content(self):
+        """push() -> get_unprocessed() round-trip with plain string content."""
+        mock_db = AsyncMock()
+        ts = datetime(2025, 1, 1)
+        # push
+        store = PgMessageBufferStore(mock_db)
+        msg = _make_msg("plain text")
+        await store.push("u1", "a1", [msg])
+        stored_json = mock_db.execute.call_args[0][4]
+
+        # simulate get_unprocessed returning the stored data
+        mock_db.fetch.return_value = [
+            {"id": 1, "role": "user", "content": json.loads(stored_json), "timestamp": ts}
+        ]
+        result = await store.get_unprocessed("u1", "a1")
+        assert result[0].content == "plain text"
+
+    @pytest.mark.asyncio
+    async def test_round_trip_multi_image_content(self):
+        """Round-trip with multiple images preserves all image URLs."""
+        mock_db = AsyncMock()
+        ts = datetime(2025, 6, 1)
+        mock_db.fetch.return_value = [
+            {"id": 7, "role": "user", "content": MULTI_IMAGE_CONTENT, "timestamp": ts}
+        ]
+        store = PgMessageBufferStore(mock_db)
+        msgs = await store.get_unprocessed("u1", "a1")
+        assert msgs[0].image_urls() == [
+            "https://example.com/a.png",
+            "https://example.com/b.png",
+        ]
+
+
+# ===================================================================
+# 5. Segmenter with multimodal messages
+# ===================================================================
+
+
+class TestBatchSegmenterMultimodal:
+    """BatchSegmenter handles messages with images via text_content()."""
+
+    @pytest.mark.asyncio
+    async def test_segment_uses_text_content_for_multimodal(self):
+        """Images are replaced with [image] placeholder in the prompt sent to LLM."""
+        mock_orch = AsyncMock()
+        mock_orch.execute.return_value = MagicMock(
+            content=json.dumps({
+                "episodes": [{"indices": [1, 2], "topic": "photo discussion"}]
+            })
+        )
+        segmenter = BatchSegmenter(mock_orch)
+        msgs = [
+            _make_msg(MULTIMODAL_CONTENT),
+            _make_msg("That's a nice photo", role="assistant"),
+        ]
+        groups = await segmenter.segment(msgs)
+
+        # Verify the prompt sent to LLM
+        call_args = mock_orch.execute.call_args[0][0]
+        prompt_text = call_args.messages[0]["content"]
+        # Should contain the text_content() output (with [image] placeholder)
+        assert "Check out this photo" in prompt_text
+        assert "[image]" in prompt_text
+        # Should NOT contain raw image URLs in the formatted prompt
+        assert "https://example.com/img1.png" not in prompt_text
+
+        # Verify grouping result
+        assert len(groups) == 1
+        assert len(groups[0]["messages"]) == 2
+        assert groups[0]["topic"] == "photo discussion"
+
+    @pytest.mark.asyncio
+    async def test_segment_fallback_on_failure_preserves_multimodal(self):
+        """On LLM failure, fallback returns all messages including multimodal ones."""
+        mock_orch = AsyncMock()
+        mock_orch.execute.side_effect = Exception("LLM down")
+        segmenter = BatchSegmenter(mock_orch)
+        msgs = [_make_msg(MULTIMODAL_CONTENT), _make_msg("text only")]
+        groups = await segmenter.segment(msgs)
+
+        assert len(groups) == 1
+        assert groups[0]["messages"] == msgs
+        assert groups[0]["messages"][0].has_images() is True
+
+    @pytest.mark.asyncio
+    async def test_segment_image_only_message(self):
+        """A message with only an image is segmented using [image] placeholder."""
+        mock_orch = AsyncMock()
+        mock_orch.execute.return_value = MagicMock(
+            content=json.dumps({
+                "episodes": [{"indices": [1], "topic": "image"}]
+            })
+        )
+        segmenter = BatchSegmenter(mock_orch)
+        msgs = [_make_msg(IMAGE_ONLY_CONTENT)]
+        groups = await segmenter.segment(msgs)
+
+        prompt_text = mock_orch.execute.call_args[0][0].messages[0]["content"]
+        assert "[image]" in prompt_text
+        assert len(groups) == 1
+
+
+# ===================================================================
+# 6. add_messages() with pre-built multimodal content
+# ===================================================================
+
+
+class TestFacadeAddMessagesMultimodal:
+    """Test add_messages() directly with a multimodal content array."""
+
+    @pytest.mark.asyncio
+    async def test_add_messages_with_content_array(self):
+        """Calling add_messages with a content list creates a Message with list content."""
+        with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+             patch("nemori.api.facade.QdrantVectorStore") as MockQdrant, \
+             patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
+            MockDB.return_value = AsyncMock()
+            MockQdrant.return_value = MagicMock()
+
+            from nemori.api.facade import NemoriMemory
+            from nemori.config import MemoryConfig
+
+            config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
+            async with NemoriMemory(config=config) as memory:
+                memory._system = AsyncMock()
+                await memory.add_messages("u1", [
+                    {"role": "user", "content": MULTIMODAL_CONTENT}
+                ])
+                memory._system.add_messages.assert_called_once()
+                msg = memory._system.add_messages.call_args[0][1][0]
+                assert isinstance(msg.content, list)
+                assert msg.content == MULTIMODAL_CONTENT
+                assert msg.has_images() is True
+                assert msg.text_content() == "Check out this photo [image]"
+
+    @pytest.mark.asyncio
+    async def test_add_messages_multimodal_with_timestamp(self):
+        """Multimodal message with explicit timestamp is preserved."""
+        with patch("nemori.api.facade.DatabaseManager") as MockDB, \
+             patch("nemori.api.facade.QdrantVectorStore") as MockQdrant, \
+             patch("nemori.api.facade.NemoriMemory._build_system", new_callable=AsyncMock):
+            MockDB.return_value = AsyncMock()
+            MockQdrant.return_value = MagicMock()
+
+            from nemori.api.facade import NemoriMemory
+            from nemori.config import MemoryConfig
+
+            config = MemoryConfig(dsn="postgresql://localhost/test", llm_api_key="test")
+            async with NemoriMemory(config=config) as memory:
+                memory._system = AsyncMock()
+                await memory.add_messages("u1", [
+                    {
+                        "role": "user",
+                        "content": MULTI_IMAGE_CONTENT,
+                        "timestamp": "2025-06-01T10:00:00",
+                    }
+                ])
+                msg = memory._system.add_messages.call_args[0][1][0]
+                assert isinstance(msg.content, list)
+                assert msg.timestamp == datetime(2025, 6, 1, 10, 0, 0)
+                assert msg.image_urls() == [
+                    "https://example.com/a.png",
+                    "https://example.com/b.png",
+                ]
+
+
+# ===================================================================
+# 7. Episode.to_dict() preserves image_url content
+# ===================================================================
+
+
+class TestEpisodeToDictMultimodal:
+    """Episode.to_dict() preserves multimodal source_messages."""
+
+    def test_to_dict_preserves_image_url_in_source_messages(self):
+        source_msgs = [
+            {"role": "user", "content": MULTIMODAL_CONTENT},
+            {"role": "assistant", "content": "Nice photo!"},
+        ]
+        ep = Episode(
+            user_id="u1",
+            title="Photo chat",
+            content="User shared a photo.",
+            source_messages=source_msgs,
+        )
+        d = ep.to_dict()
+        assert d["source_messages"] == source_msgs
+        # Verify the image_url is accessible
+        user_msg = d["source_messages"][0]
+        assert user_msg["content"][1]["type"] == "image_url"
+        assert user_msg["content"][1]["image_url"]["url"] == "https://example.com/img1.png"
+
+    def test_to_dict_round_trip_preserves_multimodal(self):
+        source_msgs = [{"role": "user", "content": MULTI_IMAGE_CONTENT}]
+        ep = Episode(
+            user_id="u1",
+            title="Multi image",
+            content="Multiple images shared.",
+            source_messages=source_msgs,
+        )
+        restored = Episode.from_dict(ep.to_dict())
+        assert restored.source_messages == source_msgs
+        assert restored.source_messages[0]["content"][1]["image_url"]["url"] == "https://example.com/a.png"
+        assert restored.source_messages[0]["content"][2]["image_url"]["url"] == "https://example.com/b.png"
+
+    def test_to_dict_mixed_source_messages(self):
+        """Episode with both text-only and multimodal source_messages."""
+        source_msgs = [
+            {"role": "user", "content": "plain text"},
+            {"role": "user", "content": IMAGE_ONLY_CONTENT},
+            {"role": "assistant", "content": "I see the image."},
+        ]
+        ep = Episode(
+            user_id="u1",
+            title="Mixed",
+            content="Mixed conversation.",
+            source_messages=source_msgs,
+        )
+        d = ep.to_dict()
+        assert d["source_messages"][0]["content"] == "plain text"
+        assert d["source_messages"][1]["content"][0]["type"] == "image_url"
+        assert d["source_messages"][2]["content"] == "I see the image."
+
+
+# ===================================================================
+# 8. SemanticGenerator with multimodal episodes
+# ===================================================================
+
+
+class TestSemanticGeneratorMultimodal:
+    """SemanticGenerator handles episodes with multimodal source_messages."""
+
+    def _make_episode_with_images(self) -> Episode:
+        return Episode(
+            user_id="u1",
+            title="Photo discussion",
+            content="User shared a photo of their dog.",
+            source_messages=[
+                {"role": "user", "content": MULTIMODAL_CONTENT},
+                {"role": "assistant", "content": "That's a cute dog!"},
+            ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_direct_extraction_with_multimodal_episode(self):
+        """Direct extraction works even if source_messages have images."""
+        mock_orch = AsyncMock()
+        mock_orch.execute.return_value = MagicMock(
+            content=json.dumps({"statements": ["User has a dog"]})
+        )
+        mock_embed = AsyncMock()
+        mock_embed.embed.return_value = [0.1] * 10
+
+        gen = SemanticGenerator(mock_orch, mock_embed, enable_prediction_correction=False)
+        ep = self._make_episode_with_images()
+        memories = await gen.generate("u1", "a1", ep, [], [])
+
+        assert len(memories) == 1
+        assert memories[0].content == "User has a dog"
+
+    @pytest.mark.asyncio
+    async def test_prediction_correction_uses_extract_text(self):
+        """_prediction_correction formats multimodal source_messages via _extract_text."""
+        mock_orch = AsyncMock()
+        # First call: prediction response
+        predict_resp = MagicMock(content="The user likes dogs.")
+        # Second call: extraction response
+        extract_resp = MagicMock(
+            content=json.dumps({"statements": ["User likes dogs"]})
+        )
+        mock_orch.execute.side_effect = [predict_resp, extract_resp]
+
+        mock_embed = AsyncMock()
+        mock_embed.embed.return_value = [0.1] * 10
+
+        existing_semantic = MagicMock()
+        existing_semantic.content = "User is friendly"
+
+        gen = SemanticGenerator(mock_orch, mock_embed, enable_prediction_correction=True)
+        ep = self._make_episode_with_images()
+        memories = await gen.generate("u1", "a1", ep, [], [existing_semantic])
+
+        assert len(memories) == 1
+        # Verify the extract call used _extract_text (contains [image] placeholder)
+        extract_call = mock_orch.execute.call_args_list[1][0][0]
+        extract_prompt = extract_call.messages[0]["content"]
+        assert "[image]" in extract_prompt
+        assert "Check out this photo" in extract_prompt
+
+    @pytest.mark.asyncio
+    async def test_extract_text_called_for_each_source_message(self):
+        """Each source_message is formatted via _extract_text in prediction_correction."""
+        ep = self._make_episode_with_images()
+        # Manually verify _extract_text works for each message
+        for msg_dict in ep.source_messages:
+            text = _extract_text(msg_dict)
+            assert isinstance(text, str)
+            assert len(text) > 0
+
+
+# ===================================================================
+# 9. EpisodeGenerator fallback with multimodal messages
+# ===================================================================
+
+
+class TestEpisodeGeneratorFallbackMultimodal:
+    """EpisodeGenerator._create_fallback() with multimodal messages."""
+
+    def _make_generator(self):
+        return EpisodeGenerator(orchestrator=None, embedding=None)  # type: ignore[arg-type]
+
+    def test_fallback_preserves_image_content_in_source_messages(self):
+        """source_messages in fallback episode preserve multimodal content."""
+        gen = self._make_generator()
+        msgs = [
+            _make_msg(MULTIMODAL_CONTENT),
+            _make_msg("Got it", role="assistant"),
+        ]
+        ep = gen._create_fallback("u1", "a1", msgs, "timeout")
+
+        # source_messages should be to_dict() of each message
+        assert len(ep.source_messages) == 2
+        assert ep.source_messages[0]["content"] == MULTIMODAL_CONTENT
+        assert ep.source_messages[0]["content"][1]["type"] == "image_url"
+
+    def test_fallback_content_uses_text_content(self):
+        """The content field uses text_content() which replaces images with [image]."""
+        gen = self._make_generator()
+        msgs = [_make_msg(MULTIMODAL_CONTENT)]
+        ep = gen._create_fallback("u1", "a1", msgs, "timeout")
+
+        assert "Check out this photo" in ep.content
+        assert "[image]" in ep.content
+        # Raw URL should NOT appear in the text content field
+        assert "https://example.com/img1.png" not in ep.content
+
+    def test_fallback_title_includes_message_count(self):
+        gen = self._make_generator()
+        msgs = [_make_msg(MULTIMODAL_CONTENT), _make_msg("reply", role="assistant")]
+        ep = gen._create_fallback("u1", "a1", msgs, "timeout")
+        assert "2 messages" in ep.title
+
+    def test_fallback_metadata_marked_as_fallback(self):
+        gen = self._make_generator()
+        msgs = [_make_msg(IMAGE_ONLY_CONTENT)]
+        ep = gen._create_fallback("u1", "a1", msgs, "error")
+        assert ep.metadata.get("fallback") is True
+        assert ep.metadata.get("boundary_reason") == "error"
+
+    def test_fallback_image_only_message(self):
+        """Image-only message produces [image] in content, preserves data in source_messages."""
+        gen = self._make_generator()
+        msgs = [_make_msg(IMAGE_ONLY_CONTENT)]
+        ep = gen._create_fallback("u1", "a1", msgs, "test")
+
+        assert ep.content == "user: [image]"
+        assert ep.source_messages[0]["content"] == IMAGE_ONLY_CONTENT

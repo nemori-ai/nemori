@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from nemori.domain.models import Episode
@@ -132,14 +132,22 @@ class EpisodeMerger:
         # Merge source messages
         merged_messages = target.source_messages + new_episode.source_messages
 
-        # Use earliest timestamp
-        merged_ts = min(
-            target.created_at or datetime.now(),
-            new_episode.created_at or datetime.now(),
-        )
+        # Use earliest timestamp (ensure both are aware for safe comparison)
+        now = datetime.now(timezone.utc)
+        ts_target = target.created_at or now
+        ts_new = new_episode.created_at or now
+        # Normalise to aware datetimes if either is naive
+        if ts_target.tzinfo is None:
+            ts_target = ts_target.replace(tzinfo=timezone.utc)
+        if ts_new.tzinfo is None:
+            ts_new = ts_new.replace(tzinfo=timezone.utc)
+        merged_ts = min(ts_target, ts_new)
         if parsed.get("timestamp"):
             try:
-                merged_ts = datetime.fromisoformat(parsed["timestamp"])
+                parsed_ts = datetime.fromisoformat(parsed["timestamp"])
+                if parsed_ts.tzinfo is None:
+                    parsed_ts = parsed_ts.replace(tzinfo=timezone.utc)
+                merged_ts = parsed_ts
             except (ValueError, TypeError):
                 pass
 
@@ -156,10 +164,10 @@ class EpisodeMerger:
             embedding=embedding,
             metadata={
                 "merged_from": [target.id, new_episode.id],
-                "merge_timestamp": datetime.now().isoformat(),
+                "merge_timestamp": datetime.now(timezone.utc).isoformat(),
             },
             created_at=merged_ts,
-            updated_at=datetime.now(),
+            updated_at=datetime.now(timezone.utc),
         )
 
     def _format_candidates(self, candidates: list[Episode]) -> str:
