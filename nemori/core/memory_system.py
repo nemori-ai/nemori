@@ -164,11 +164,19 @@ class MemorySystem:
     async def _on_episode_created(self, user_id: str, episode: Episode) -> None:
         """Handle episode_created event by generating semantic memories."""
         try:
-            existing_eps = await self._episode_store.list_by_user(user_id, self._agent_id, limit=20)
-            existing_sem = await self._semantic_store.list_by_user(user_id, self._agent_id)
+            # Retrieve semantically relevant existing memories via Qdrant
+            existing_sem: list[SemanticMemory] = []
+            if self._qdrant and episode.embedding:
+                hits = self._qdrant.search_semantic(
+                    user_id, self._agent_id, episode.embedding,
+                    top_k=self._config.search_top_k_semantic,
+                )
+                ids = [h["id"] for h in hits]
+                if ids:
+                    existing_sem = await self._semantic_store.get_batch(ids, user_id, self._agent_id)
 
             memories = await self._semantic_gen.generate(
-                user_id, self._agent_id, episode, existing_eps, existing_sem
+                user_id, self._agent_id, episode, existing_sem
             )
             if memories:
                 await self._semantic_store.save_batch(memories)

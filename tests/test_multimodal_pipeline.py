@@ -559,7 +559,7 @@ class TestSemanticGeneratorMultimodal:
 
         gen = SemanticGenerator(mock_orch, mock_embed, enable_prediction_correction=False)
         ep = self._make_episode_with_images()
-        memories = await gen.generate("u1", "a1", ep, [], [])
+        memories = await gen.generate("u1", "a1", ep, [])
 
         assert len(memories) == 1
         assert memories[0].content == "User has a dog"
@@ -584,7 +584,7 @@ class TestSemanticGeneratorMultimodal:
 
         gen = SemanticGenerator(mock_orch, mock_embed, enable_prediction_correction=True)
         ep = self._make_episode_with_images()
-        memories = await gen.generate("u1", "a1", ep, [], [existing_semantic])
+        memories = await gen.generate("u1", "a1", ep, [existing_semantic])
 
         assert len(memories) == 1
         # Verify the extract call used _extract_text (contains [image] placeholder)

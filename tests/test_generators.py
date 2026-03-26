@@ -59,7 +59,7 @@ async def test_semantic_generator_returns_memories(mock_orchestrator, mock_embed
     ))
     gen = SemanticGenerator(orchestrator=mock_orchestrator, embedding=mock_embedding)
     episode = Episode(user_id="u1", title="T", content="C", source_messages=[])
-    memories = await gen.generate("u1", "default", episode, [], [])
+    memories = await gen.generate("u1", "default", episode, [])
     assert len(memories) == 2
     assert memories[0].content == "User likes hiking"
 
