@@ -90,12 +90,11 @@ import asyncio
 from nemori import NemoriMemory, MemoryConfig
 
 async def main():
+    # DSN, API keys, and base URLs are resolved from environment variables.
+    # Only model names need to be specified explicitly.
     config = MemoryConfig(
-        dsn="postgresql://nemori:nemori@localhost:5432/nemori",
         llm_model="openai/gpt-4.1-mini",
-        llm_base_url="https://openrouter.ai/api/v1",
         embedding_model="google/gemini-embedding-001",
-        embedding_base_url="https://openrouter.ai/api/v1",
     )
     async with NemoriMemory(config) as memory:
         await memory.add_messages("user123", [

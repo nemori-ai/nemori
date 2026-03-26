@@ -45,7 +45,6 @@ class SemanticGenerator:
         user_id: str,
         agent_id: str,
         episode: Episode,
-        existing_episodes: list[Episode],
         existing_semantics: list[SemanticMemory],
     ) -> list[SemanticMemory]:
         try:
@@ -79,7 +78,7 @@ class SemanticGenerator:
         self, episode: Episode, existing: list[SemanticMemory]
     ) -> list[str]:
         """Two-step: predict from knowledge, then extract deltas."""
-        knowledge = [s.content for s in existing[:20]]
+        knowledge = [s.content for s in existing]
 
         # Step 1: Predict
         predict_prompt = PromptTemplates.get_prediction_prompt(

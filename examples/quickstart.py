@@ -4,10 +4,11 @@ from nemori import NemoriMemory, MemoryConfig
 
 
 async def main():
+    # DSN, API keys, and base URLs are resolved from environment variables.
+    # Only model names need to be specified explicitly.
     config = MemoryConfig(
-        dsn="postgresql://localhost/nemori",
-        llm_model="gpt-4o-mini",
-        embedding_model="text-embedding-3-small",
+        llm_model="openai/gpt-4.1-mini",
+        embedding_model="google/gemini-embedding-001",
     )
 
     async with NemoriMemory(config=config) as memory:
