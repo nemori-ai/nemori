@@ -240,7 +240,13 @@ class MemorySystem:
             "pending_messages": buffer_count,
             "orchestrator_stats": {
                 "total_requests": self._orchestrator.stats.total_requests,
+                "total_tokens": self._orchestrator.stats.total_tokens,
+                "prompt_tokens": self._orchestrator.stats.total_prompt_tokens,
+                "completion_tokens": self._orchestrator.stats.total_completion_tokens,
                 "total_errors": self._orchestrator.stats.total_errors,
+                "avg_latency_ms": round(self._orchestrator.stats.avg_latency_ms, 1),
+                "requests_by_phase": self._orchestrator.stats.requests_by_phase,
+                "tokens_by_phase": self._orchestrator.stats.tokens_by_phase,
             },
         }
 

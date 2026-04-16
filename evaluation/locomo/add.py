@@ -180,6 +180,9 @@ async def process_dataset(
         ]
         results = await tqdm.gather(*tasks, desc="Conversations")
 
+        # Collect orchestrator stats before context manager exits
+        orch_stats = memory._system._orchestrator.stats if memory._system else None
+
     # Print summary
     successful = sum(1 for r in results if r.get("success"))
     failed = len(results) - successful
@@ -191,6 +194,22 @@ async def process_dataset(
     print(f"Successful: {successful}/{len(dataset)}")
     print(f"Failed: {failed}/{len(dataset)}")
     print(f"Total episodes created: {total_episodes}")
+
+    if orch_stats:
+        print(f"\n{'─' * 60}")
+        print("LLM Usage Details")
+        print(f"{'─' * 60}")
+        print(f"Total LLM calls:        {orch_stats.total_requests}")
+        print(f"Total tokens:           {orch_stats.total_tokens}")
+        print(f"  Prompt tokens:        {orch_stats.total_prompt_tokens}")
+        print(f"  Completion tokens:    {orch_stats.total_completion_tokens}")
+        print(f"Total errors:           {orch_stats.total_errors}")
+        print(f"Avg latency:            {orch_stats.avg_latency_ms:.0f}ms")
+        if orch_stats.requests_by_phase:
+            print(f"\nLLM calls by phase:")
+            for phase, count in sorted(orch_stats.requests_by_phase.items()):
+                tokens = orch_stats.tokens_by_phase.get(phase, 0)
+                print(f"  {phase:25s}  calls={count:4d}  tokens={tokens:,}")
 
     if failed > 0:
         print("\nFailure Details:")

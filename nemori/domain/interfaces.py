@@ -69,3 +69,9 @@ class LLMProvider(Protocol):
     """LLM call protocol."""
 
     async def complete(self, messages: list[dict], **kwargs: object) -> str: ...
+
+    async def complete_with_usage(
+        self, messages: list[dict], **kwargs: object
+    ) -> tuple[str, dict[str, int]]:
+        """Return (content, {"prompt_tokens": ..., "completion_tokens": ...})."""
+        ...
