@@ -24,7 +24,10 @@ services:
     volumes:
       - nemori_qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/healthz"]
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/6333; printf "GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; read -r status <&3; [[ $$status == *" 200 "* ]]'
       interval: 5s
       timeout: 3s
       retries: 5
