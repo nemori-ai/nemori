@@ -73,15 +73,31 @@ Create a `.env` file in the repo root:
 # OpenRouter (recommended — single key for both LLM and embeddings)
 LLM_API_KEY=sk-or-...
 LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=openai/gpt-5-mini
 EMBEDDING_API_KEY=sk-or-...
 EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
 
 # Or use direct OpenAI
 # LLM_API_KEY=sk-...
+# LLM_MODEL=gpt-5-mini
 # EMBEDDING_API_KEY=sk-...
 ```
 
 Nemori only reads these variables; it never writes secrets to disk. 🔒
+
+Model choices:
+
+- `gpt-5-mini` (`openai/gpt-5-mini` on OpenRouter): recommended GPT-5 option
+  for a balance of quality, cost, and reliability in memory generation.
+- `gpt-5-nano` (`openai/gpt-5-nano` on OpenRouter): lowest-cost GPT-5
+  option, best for simpler summarization and classification tasks.
+- `gpt-4o` (`openai/gpt-4o` on OpenRouter): GPT-4o option for users who
+  prefer legacy-compatible behavior.
+
+See OpenAI model docs for current capabilities and pricing:
+[`gpt-5-mini`](https://platform.openai.com/docs/models/gpt-5-mini),
+[`gpt-5-nano`](https://platform.openai.com/docs/models/gpt-5-nano), and
+[`gpt-4o`](https://platform.openai.com/docs/models/gpt-4o).
 
 ### 2.4 💡 Minimal usage
 
@@ -90,10 +106,9 @@ import asyncio
 from nemori import NemoriMemory, MemoryConfig
 
 async def main():
-    # DSN, API keys, and base URLs are resolved from environment variables.
-    # Only model names need to be specified explicitly.
+    # DSN, API keys, base URLs, and model defaults are resolved from environment variables.
+    # Override model names here only when you need per-instance settings.
     config = MemoryConfig(
-        llm_model="openai/gpt-4.1-mini",
         embedding_model="google/gemini-embedding-001",
     )
     async with NemoriMemory(config) as memory:

@@ -36,3 +36,47 @@ async def test_complete_passes_params():
         assert call_kwargs["model"] == "gpt-4o"
         assert call_kwargs["temperature"] == 0.5
         assert call_kwargs["max_tokens"] == 100
+
+
+@pytest.mark.asyncio
+async def test_complete_adapts_gpt5_params():
+    client = AsyncLLMClient(api_key="test-key", base_url=None)
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    with patch.object(client, "_client") as mock_client:
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        await client.complete(
+            [{"role": "user", "content": "hi"}],
+            model="gpt-5-nano", temperature=0.5, max_tokens=100,
+        )
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["model"] == "gpt-5-nano"
+        assert call_kwargs["max_completion_tokens"] == 100
+        assert "reasoning_effort" not in call_kwargs
+        assert "max_tokens" not in call_kwargs
+        assert "temperature" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_complete_adapts_provider_prefixed_gpt5_params():
+    client = AsyncLLMClient(api_key="test-key", base_url="https://openrouter.ai/api/v1")
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "ok"
+
+    with patch.object(client, "_client") as mock_client:
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        await client.complete(
+            [{"role": "user", "content": "hi"}],
+            model="openai/gpt-5-mini",
+            max_tokens=100,
+            reasoning_effort="low",
+        )
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["model"] == "openai/gpt-5-mini"
+        assert call_kwargs["max_completion_tokens"] == 100
+        assert call_kwargs["reasoning_effort"] == "low"
+        assert "max_tokens" not in call_kwargs
+        assert "temperature" not in call_kwargs

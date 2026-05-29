@@ -4,7 +4,8 @@ from nemori.config import MemoryConfig
 from nemori.domain.exceptions import ConfigError
 
 
-def test_default_config():
+def test_default_config(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
     cfg = MemoryConfig()
     assert "nemori" in cfg.dsn  # DSN resolved from env or default
     assert cfg.db_pool_min == 5
@@ -15,6 +16,12 @@ def test_default_config():
     assert cfg.embedding_dimension == 1536
     assert cfg.buffer_size_min == 2
     assert cfg.search_top_k_episodes == 10
+
+
+def test_config_reads_env_for_llm_model(monkeypatch):
+    monkeypatch.setenv("LLM_MODEL", "gpt-5-mini")
+    cfg = MemoryConfig()
+    assert cfg.llm_model == "gpt-5-mini"
 
 
 def test_config_reads_env_for_llm_api_key(monkeypatch):

@@ -35,6 +35,10 @@ def _resolve_base_url(env_key: str) -> str | None:
     return os.getenv(env_key) or None
 
 
+def _resolve_llm_model() -> str:
+    return os.getenv("LLM_MODEL") or "gpt-4o-mini"
+
+
 @dataclass
 class MemoryConfig:
     """Configuration for the Nemori memory system."""
@@ -48,7 +52,7 @@ class MemoryConfig:
     agent_id: str = "default"
 
     # LLM
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = field(default_factory=_resolve_llm_model)
     llm_api_key: str = field(default_factory=_resolve_llm_key)
     llm_base_url: str | None = field(default_factory=lambda: _resolve_base_url("LLM_BASE_URL"))
     llm_max_concurrent: int = 10
