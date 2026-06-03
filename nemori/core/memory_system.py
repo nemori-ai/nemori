@@ -179,6 +179,7 @@ class MemorySystem:
                 user_id, self._agent_id, episode, existing_sem
             )
             if memories:
+                memories = await self._dedupe_semantic(user_id, memories)
                 await self._semantic_store.save_batch(memories)
                 # Upsert semantic vectors to Qdrant
                 if self._qdrant:
@@ -193,6 +194,43 @@ class MemorySystem:
                 )
         except Exception as e:
             logger.error("Semantic generation failed for user %s: %s", user_id, e)
+
+    async def _dedupe_semantic(
+        self, user_id: str, memories: list[SemanticMemory]
+    ) -> list[SemanticMemory]:
+        """Collapse near-duplicate facts onto the existing memory they supersede.
+
+        Without this, every extraction appends a fresh row, so a changed fact
+        ("works at Acme" -> "works at Globex") leaves both copies live with no
+        link between them. A new fact whose embedding is within
+        ``semantic_similarity_threshold`` of an existing one reuses that id, so
+        the store's ON CONFLICT DO UPDATE supersedes it (latest content wins).
+        """
+        if not (self._qdrant and self._config.enable_semantic_dedup):
+            return memories
+        threshold = self._config.semantic_similarity_threshold
+        used_ids: set[str] = set()
+        for mem in memories:
+            if not mem.embedding:
+                continue
+            hits = self._qdrant.search_semantic(
+                user_id, self._agent_id, mem.embedding, top_k=1,
+            )
+            existing_id = self._resolve_dedupe_id(hits, threshold, used_ids)
+            if existing_id:
+                mem.id = existing_id
+                mem.updated_at = mem.created_at
+                used_ids.add(existing_id)
+        return memories
+
+    @staticmethod
+    def _resolve_dedupe_id(
+        hits: list[dict[str, Any]], threshold: float, used_ids: set[str]
+    ) -> str | None:
+        """Return an existing memory id to supersede, or None to keep as new."""
+        if hits and hits[0]["score"] >= threshold and hits[0]["id"] not in used_ids:
+            return hits[0]["id"]
+        return None
 
     async def search(
         self,

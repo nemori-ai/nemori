@@ -148,4 +148,4 @@ class SemanticGenerator:
             return "belief"
         if any(w in lower for w in ["every", "always", "usually", "routine", "habit"]):
             return "habit"
-        return "identity"
+        return "unknown"

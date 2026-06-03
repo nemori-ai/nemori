@@ -31,6 +31,7 @@ async def test_save_calls_upsert(store, mock_db):
     call_sql = mock_db.execute.call_args[0][0]
     assert "INSERT INTO semantic_memories" in call_sql
     assert "ON CONFLICT" in call_sql
+    assert "source_episode_id = EXCLUDED.source_episode_id" in call_sql
     # Embedding should NOT be in the SQL anymore
     assert "embedding" not in call_sql.lower()
 

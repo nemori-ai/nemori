@@ -51,6 +51,15 @@ async def test_episode_generator_fallback_on_bad_json(mock_orchestrator, mock_em
     assert episode.user_id == "u1"
 
 
+def test_classify_type_defaults_to_unknown():
+    # A statement matching no keyword bucket must not be silently mislabeled
+    # as "identity"; it should fall through to an explicit "unknown".
+    assert SemanticGenerator._classify_type("The meeting room had blue walls") == "unknown"
+    # Sanity: real buckets still classify.
+    assert SemanticGenerator._classify_type("Her name is Ada") == "identity"
+    assert SemanticGenerator._classify_type("He wants to run a marathon") == "goal"
+
+
 @pytest.mark.asyncio
 async def test_semantic_generator_returns_memories(mock_orchestrator, mock_embedding):
     mock_orchestrator.execute = AsyncMock(return_value=LLMResponse(

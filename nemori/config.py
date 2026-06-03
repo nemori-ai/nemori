@@ -80,6 +80,9 @@ class MemoryConfig:
     enable_semantic_memory: bool = True
     enable_prediction_correction: bool = True
     semantic_similarity_threshold: float = 0.85
+    # When a newly extracted fact is within semantic_similarity_threshold of an
+    # existing one, supersede the existing memory instead of appending a copy.
+    enable_semantic_dedup: bool = True
 
     # Episode Merging
     enable_episode_merging: bool = True

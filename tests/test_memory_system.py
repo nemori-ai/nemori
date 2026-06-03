@@ -90,3 +90,72 @@ async def test_delete_user(system, deps):
 @pytest.mark.asyncio
 async def test_drain(system):
     await system.drain(timeout=1.0)
+
+
+# --- Semantic dedup / supersession -----------------------------------------
+
+def test_resolve_dedupe_id_above_threshold():
+    hits = [{"id": "existing-1", "score": 0.92}]
+    assert MemorySystem._resolve_dedupe_id(hits, 0.85, set()) == "existing-1"
+
+
+def test_resolve_dedupe_id_below_threshold():
+    hits = [{"id": "existing-1", "score": 0.50}]
+    assert MemorySystem._resolve_dedupe_id(hits, 0.85, set()) is None
+
+
+def test_resolve_dedupe_id_skips_already_used():
+    hits = [{"id": "existing-1", "score": 0.99}]
+    assert MemorySystem._resolve_dedupe_id(hits, 0.85, {"existing-1"}) is None
+
+
+def test_resolve_dedupe_id_empty_hits():
+    assert MemorySystem._resolve_dedupe_id([], 0.85, set()) is None
+
+
+@pytest.mark.asyncio
+async def test_dedupe_semantic_supersedes_near_duplicate(system, deps):
+    deps["qdrant"].search_semantic = MagicMock(
+        return_value=[{"id": "old-fact", "score": 0.95}]
+    )
+    mem = SemanticMemory(
+        user_id="u1", content="User works at Globex",
+        memory_type="identity", embedding=[0.1] * 10,
+    )
+    original_id = mem.id
+    result = await system._dedupe_semantic("u1", [mem])
+    # Near-duplicate reuses the existing id so the store UPDATEs in place.
+    assert result[0].id == "old-fact"
+    assert result[0].id != original_id
+
+
+@pytest.mark.asyncio
+async def test_dedupe_semantic_keeps_distinct_fact(system, deps):
+    deps["qdrant"].search_semantic = MagicMock(
+        return_value=[{"id": "old-fact", "score": 0.40}]
+    )
+    mem = SemanticMemory(
+        user_id="u1", content="A brand new unrelated fact",
+        memory_type="identity", embedding=[0.1] * 10,
+    )
+    original_id = mem.id
+    result = await system._dedupe_semantic("u1", [mem])
+    # Below threshold -> stays a fresh memory.
+    assert result[0].id == original_id
+
+
+@pytest.mark.asyncio
+async def test_dedupe_semantic_disabled_via_config(deps):
+    deps["config"] = MemoryConfig(enable_semantic_dedup=False)
+    deps["buffer_store"].count_unprocessed = AsyncMock(return_value=0)
+    sys_no_dedup = MemorySystem(**deps)
+    deps["qdrant"].search_semantic = MagicMock(
+        return_value=[{"id": "old-fact", "score": 0.99}]
+    )
+    mem = SemanticMemory(
+        user_id="u1", content="x", memory_type="identity", embedding=[0.1] * 10,
+    )
+    original_id = mem.id
+    result = await sys_no_dedup._dedupe_semantic("u1", [mem])
+    assert result[0].id == original_id
+    deps["qdrant"].search_semantic.assert_not_called()

@@ -27,6 +27,7 @@ class PgSemanticStore:
             ON CONFLICT (id) DO UPDATE SET
                 content = EXCLUDED.content,
                 memory_type = EXCLUDED.memory_type,
+                source_episode_id = EXCLUDED.source_episode_id,
                 confidence = EXCLUDED.confidence,
                 metadata = EXCLUDED.metadata,
                 updated_at = EXCLUDED.updated_at
