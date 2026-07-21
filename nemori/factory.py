@@ -11,6 +11,7 @@ from nemori.llm.client import AsyncLLMClient
 from nemori.llm.orchestrator import LLMOrchestrator
 from nemori.llm.generators.episode import EpisodeGenerator
 from nemori.llm.generators.semantic import SemanticGenerator
+from nemori.llm.generators.consolidator import SemanticConsolidator
 from nemori.llm.generators.merger import EpisodeMerger
 from nemori.services.embedding import AsyncEmbeddingClient
 from nemori.services.event_bus import EventBus
@@ -35,6 +36,8 @@ async def create_memory_system(
         default_model=config.llm_model,
         max_concurrent=config.llm_max_concurrent,
         token_budget=config.llm_token_budget,
+        default_timeout=config.llm_timeout,
+        default_retries=config.llm_retries,
     )
     embedding = AsyncEmbeddingClient(
         api_key=config.embedding_api_key,
@@ -47,6 +50,7 @@ async def create_memory_system(
         embedding=embedding,
         enable_prediction_correction=config.enable_prediction_correction,
     )
+    semantic_consolidator = SemanticConsolidator(orchestrator=orchestrator)
     merger = EpisodeMerger(
         orchestrator=orchestrator,
         embedding=embedding,
@@ -68,6 +72,7 @@ async def create_memory_system(
         embedding=embedding,
         episode_generator=episode_gen,
         semantic_generator=semantic_gen,
+        semantic_consolidator=semantic_consolidator,
         event_bus=event_bus,
         search=search,
         agent_id=config.agent_id,

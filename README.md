@@ -174,6 +174,34 @@ PYTHONPATH=. python evaluation/locomo/generate_scores.py
 
 See `evaluation/longmemeval/readme.md` for running the 100k-token context benchmark.
 
+### 5.4 🧪 Nemori SWE Repository-Memory Experiment
+
+The dashboard exposes two matched SWE-bench paths: **API + SWE**, a strict
+memory-free Coding Agent baseline, and **Nemori + SWE**, which adds native
+Nemori repository retrieval. Both paths use the same answer-free task bundle,
+Agent runtime, and official Harness so their results can be compared directly.
+This is an offline engineering experiment, not an official SWE-bench score.
+
+For each selected task the system automatically:
+
+1. downloads the pinned SWE-bench Lite data;
+2. extracts the task repository from the official image at its exact `base_commit`;
+3. freezes an answer-free Agent input for the API baseline, or scans safe text
+   source files and records provenance for the Nemori arm;
+4. for the Nemori arm only, writes observations through
+   `NemoriMemory.add_messages()`, calls `flush()`, and retrieves with
+   `NemoriMemory.search()`;
+5. gives the Issue, repository workspace, and arm-specific context to the
+   Coding Agent;
+6. evaluates the resulting patch with the official SWE-bench Harness and saves logs and results under `runs/`.
+
+The repository is not treated as one opaque blob. Source files are ranked and chunked into bounded observations so Episode Memory, Semantic Memory, and hybrid retrieval can operate on them. Binary files, secrets, generated directories, and Git history are excluded. The protected gold patch and test fields never enter Agent input or memory.
+
+Open the dashboard, select **API + SWE** or **Nemori + SWE**, choose up to 20
+tasks (default: 3), then run the complete experiment. The website keeps a
+single comparison history for both routes. Windows uses WSL for the isolated
+SWE runtime; Linux servers use native Docker and `uv`.
+
 ---
 
 ## 6. 🐳 Docker Deployment
@@ -184,11 +212,15 @@ Start the infrastructure services:
 docker compose up -d
 ```
 
-This brings up:
-- **PostgreSQL 16** on port `5432` (user: `nemori`, password: `nemori`, db: `nemori`)
-- **Qdrant** on ports `6333` (HTTP) and `6334` (gRPC)
+This brings up loopback-only services by default:
+- **PostgreSQL 16** on `127.0.0.1:15432` (user: `nemori`, password: `nemori`, db: `nemori`)
+- **Qdrant** on `127.0.0.1:16333` (HTTP) and `127.0.0.1:16334` (gRPC)
+- **Ollama** on `127.0.0.1:11434`
 
-Data is persisted in Docker volumes (`nemori_pg_data`, `nemori_qdrant_data`).
+Data is persisted in the `nemori_pg_data`, `nemori_qdrant_data`, and
+`nemori_ollama_data` Docker volumes. See
+[`docs/SERVER_DEPLOYMENT.md`](docs/SERVER_DEPLOYMENT.md) for private Linux
+deployment and SSH tunnel access.
 
 To stop:
 

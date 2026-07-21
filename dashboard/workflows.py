@@ -1,0 +1,512 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
+
+
+INGEST_NODES = [
+    {
+        "id": "source",
+        "title": "数据集长对话",
+        "subtitle": "原始 session / conversation",
+        "x": 40,
+        "y": 220,
+        "kind": "input",
+        "code": "evaluation/*/add.py",
+        "decision": "LoCoMo 按 conversation 展平；LongMemEval 按问题聚合全部历史 session。",
+        "inspect": "消息总数、时间跨度、说话人、首尾消息，以及图片/搜索注释。",
+    },
+    {
+        "id": "normalize",
+        "title": "消息规范化",
+        "subtitle": "角色、内容、时间戳、元数据",
+        "x": 250,
+        "y": 220,
+        "kind": "transform",
+        "code": "evaluation/locomo/add.py:build_messages",
+        "decision": "保留原始文本；图片说明与搜索词追加为可检索文本，时间被转换为 ISO 格式。",
+        "inspect": "规范化前后消息数量是否一致，时间是否解析正确。",
+    },
+    {
+        "id": "buffer",
+        "title": "消息缓冲",
+        "subtitle": "PostgreSQL message_buffer",
+        "x": 460,
+        "y": 220,
+        "kind": "store",
+        "code": "nemori/core/memory_system.py:add_messages",
+        "decision": "论文模式下未处理消息达到观察窗口 w=20 才触发后台处理；flush 会处理最后不足 w 的尾部。",
+        "inspect": "当前缓冲消息数、观察窗口，以及是否只有一个同用户 worker 在工作。",
+    },
+    {
+        "id": "segment",
+        "title": "主题边界分段",
+        "subtitle": "LLM segmentation · 非硬截断",
+        "x": 680,
+        "y": 220,
+        "kind": "llm",
+        "code": "nemori/llm/generators/segmenter.py",
+        "decision": "每个观察窗口 w=20 单独执行自适应分区。提示词偏向主题独立、2–15 条/段、疑似切换时宁可拆分。",
+        "inspect": "输入消息数、输出分组数、每组 topic 和 source_messages 数量。",
+    },
+    {
+        "id": "narrative",
+        "title": "生成情景叙事",
+        "subtitle": "对话 → 第三人称可检索故事",
+        "x": 900,
+        "y": 220,
+        "kind": "llm",
+        "code": "nemori/llm/generators/episode.py",
+        "decision": "不是按字符裁剪；模型生成 title/content/timestamp，要求保留人物、精确时间、决定、情绪、计划与结果。失败才退回原始对话。",
+        "inspect": "逐条对照 source_messages 与 narrative，观察遗漏、压缩和时间归一化。",
+    },
+    {
+        "id": "episode_embed",
+        "title": "情景向量化",
+        "subtitle": "embed(title + narrative)",
+        "x": 1120,
+        "y": 90,
+        "kind": "embedding",
+        "code": "nemori/llm/generators/episode.py",
+        "decision": "向量输入是标题和叙事拼接，不直接嵌入全部原始消息。维度由模型探测。",
+        "inspect": "模型、向量维度与延迟；不同模型维度不能混用同一 collection。",
+    },
+    {
+        "id": "episode_store",
+        "title": "保存情景记忆",
+        "subtitle": "PostgreSQL + Qdrant",
+        "x": 1340,
+        "y": 90,
+        "kind": "store",
+        "code": "nemori/core/memory_system.py:_process",
+        "decision": "完整叙事和 source_messages 存 PostgreSQL；向量与租户标识存 Qdrant。",
+        "inspect": "情景数量、标题、叙事长度、原始消息数量。",
+    },
+    {
+        "id": "merge",
+        "title": "相似情景合并",
+        "subtitle": "向量候选 + LLM 决策",
+        "x": 1120,
+        "y": 350,
+        "kind": "decision",
+        "code": "nemori/llm/generators/merger.py",
+        "decision": "按论文取相似度最高的 Ke=5 个候选，再由 LLM 判断是否为同一事件/会话并决定合并。",
+        "inspect": "被合并的 episode ID、理由、合并前后叙事差异。",
+    },
+    {
+        "id": "semantic_context",
+        "title": "召回既有知识",
+        "subtitle": "为预测—纠错提供先验",
+        "x": 1340,
+        "y": 350,
+        "kind": "retrieval",
+        "code": "nemori/core/memory_system.py:_on_episode_created",
+        "decision": "按论文先用 τ=0.70 过滤，再取 Ks=10 条既有语义，合成 anticipatory schema；空上下文等价于无既有知识。",
+        "inspect": "召回的已有事实、相似度和是否触发 prediction-correction。",
+    },
+    {
+        "id": "semantic_extract",
+        "title": "语义事实提炼",
+        "subtitle": "预测—纠错抽取",
+        "x": 1560,
+        "y": 350,
+        "kind": "llm",
+        "code": "nemori/llm/generators/semantic.py",
+        "decision": "按论文流程先预测可能发生的情景，再对比原始消息抽取“预测不到的增量”；没有既有知识时预测上下文为空。",
+        "inspect": "identity / preference / relationship / goal / belief / habit 等事实样例。",
+    },
+    {
+        "id": "semantic_embed",
+        "title": "语义向量化",
+        "subtitle": "每条事实单独 embedding",
+        "x": 1560,
+        "y": 90,
+        "kind": "embedding",
+        "code": "nemori/llm/generators/semantic.py",
+        "decision": "每一条语义陈述独立生成向量，便于细粒度召回。",
+        "inspect": "事实数、事实类型、向量维度。",
+    },
+    {
+        "id": "semantic_consolidate",
+        "title": "语义知识合并",
+        "subtitle": "Km=5 · NEW / MERGE / CONFLICT",
+        "x": 1780,
+        "y": 350,
+        "kind": "decision",
+        "code": "nemori/llm/generators/consolidator.py",
+        "decision": "每条新 insight 召回 Km=5 个语义候选；保守地选择新增、同义合并或冲突替换。",
+        "inspect": "决策、目标 ID、合并后的 canonical content，以及被删除的旧知识。",
+    },
+    {
+        "id": "semantic_store",
+        "title": "保存语义记忆",
+        "subtitle": "PostgreSQL + Qdrant",
+        "x": 2000,
+        "y": 220,
+        "kind": "output",
+        "code": "nemori/core/memory_system.py:_on_episode_created",
+        "decision": "合并后的事实文本、类型与来源 episode 存 PostgreSQL；向量存独立的 semantic collection。",
+        "inspect": "最终新增、合并、冲突替换数量，来源情景与类型分布。",
+    },
+]
+
+INGEST_EDGES = [
+    ["source", "normalize"],
+    ["normalize", "buffer"],
+    ["buffer", "segment"],
+    ["segment", "narrative"],
+    ["narrative", "episode_embed"],
+    ["episode_embed", "episode_store"],
+    ["episode_store", "merge"],
+    ["merge", "semantic_context"],
+    ["semantic_context", "semantic_extract"],
+    ["semantic_extract", "semantic_embed"],
+    ["semantic_embed", "semantic_consolidate"],
+    ["semantic_consolidate", "semantic_store"],
+    ["merge", "episode_store", "可能替换原情景"],
+]
+
+SEARCH_NODES = [
+    {
+        "id": "question",
+        "title": "评测问题",
+        "subtitle": "query + question date",
+        "x": 40,
+        "y": 220,
+        "kind": "input",
+        "code": "evaluation/*/search.py",
+        "decision": "LoCoMo 按对话逐题；LongMemEval 每条历史对应一个问题。",
+        "inspect": "问题、标准答案、类别与证据标注。",
+    },
+    {
+        "id": "query_embed",
+        "title": "问题向量化",
+        "subtitle": "同一 Embedding 模型",
+        "x": 260,
+        "y": 220,
+        "kind": "embedding",
+        "code": "nemori/search/unified.py:search",
+        "decision": "问题向量必须与写入时模型和维度一致。纯 text 模式当前仍会先计算向量。",
+        "inspect": "模型、维度与耗时。",
+    },
+    {
+        "id": "episode_recall",
+        "title": "情景记忆召回",
+        "subtitle": "Qdrant vector / PostgreSQL text",
+        "x": 500,
+        "y": 90,
+        "kind": "retrieval",
+        "code": "nemori/search/unified.py",
+        "decision": "Vector 走 Qdrant；Text 走 PostgreSQL 全文检索；Hybrid 两路都取 2×top-k。",
+        "inspect": "召回情景标题、叙事、时间和 top-k。",
+    },
+    {
+        "id": "semantic_recall",
+        "title": "语义记忆召回",
+        "subtitle": "细粒度事实检索",
+        "x": 500,
+        "y": 350,
+        "kind": "retrieval",
+        "code": "nemori/search/unified.py",
+        "decision": "与情景记忆并行，使用独立的 top_k_semantic。",
+        "inspect": "召回事实名单、类型与来源 episode。",
+    },
+    {
+        "id": "rrf",
+        "title": "Hybrid RRF 融合",
+        "subtitle": "1 / (60 + rank)",
+        "x": 740,
+        "y": 220,
+        "kind": "decision",
+        "code": "nemori/search/unified.py:_hybrid_search_*",
+        "decision": "同一记录的向量排名和文本排名分数相加，按融合分数排序后截取 top-k。Vector/Text 模式绕过此节点。",
+        "inspect": "两个榜单的重合度与排序变化；目前结果对象没有持久化原始 score。",
+    },
+    {
+        "id": "topk",
+        "title": "Top-K 上下文",
+        "subtitle": "情景 + 语义双通道",
+        "x": 980,
+        "y": 220,
+        "kind": "transform",
+        "code": "evaluation/*/search.py:format_memory_lines",
+        "decision": "每条记忆格式化为 [timestamp] content；仅前 N 条情景可附原始 source_messages。",
+        "inspect": "实际召回条数、上下文字符数、附带原文的情景数量。",
+    },
+    {
+        "id": "answer_prompt",
+        "title": "答案提示词拼装",
+        "subtitle": "时间推理 + 证据约束",
+        "x": 1220,
+        "y": 220,
+        "kind": "llm",
+        "code": "evaluation/*/search.py:ANSWER_PROMPT",
+        "decision": "要求只依据记忆、优先最近矛盾信息、把相对时间换算成具体日期，最终答案控制在 5–6 个词。",
+        "inspect": "情景/语义上下文占比，是否被噪声记忆淹没。",
+    },
+    {
+        "id": "answer",
+        "title": "生成回答",
+        "subtitle": "temperature = 0",
+        "x": 1460,
+        "y": 220,
+        "kind": "output",
+        "code": "evaluation/*/search.py:answer",
+        "decision": "使用当前 run 的 llm_model 调用 OpenAI-compatible chat completions。",
+        "inspect": "回答、标准答案、证据与失败/空回答。",
+    },
+    {
+        "id": "checkpoint",
+        "title": "实时检查点",
+        "subtitle": "atomic JSON save",
+        "x": 1700,
+        "y": 220,
+        "kind": "store",
+        "code": "evaluation/*/search.py:checkpoint",
+        "decision": "按 checkpoint_every 原子写入中间结果；停止后已完成答案仍可查看。",
+        "inspect": "完成题数、总题数与最近一条答案。",
+    },
+]
+
+SEARCH_EDGES = [
+    ["question", "query_embed"],
+    ["query_embed", "episode_recall"],
+    ["query_embed", "semantic_recall"],
+    ["episode_recall", "rrf"],
+    ["semantic_recall", "rrf"],
+    ["rrf", "topk"],
+    ["topk", "answer_prompt"],
+    ["answer_prompt", "answer"],
+    ["answer", "checkpoint"],
+]
+
+SWEBENCH_PREPARE_NODES = [
+    {
+        "id": "dataset",
+        "title": "SWE-bench 实例",
+        "subtitle": "issue + repo + base commit",
+        "x": 40,
+        "y": 220,
+        "kind": "input",
+        "code": "evaluation/swebench/download.py",
+        "decision": "从 SWE-bench Lite test split 选择实例；每条任务固定仓库、基准提交和回归测试。",
+        "inspect": "instance_id、仓库、问题描述、基准提交和 FAIL_TO_PASS/PASS_TO_PASS 测试集合。",
+    },
+    {
+        "id": "image",
+        "title": "获取 Docker 镜像",
+        "subtitle": "官方 x86_64 分层镜像",
+        "x": 290,
+        "y": 220,
+        "kind": "store",
+        "code": "swebench.harness.docker_build",
+        "decision": "优先拉取 swebench namespace 的预构建镜像；缓存级别决定运行后保留哪些层。",
+        "inspect": "镜像拉取/构建耗时、Docker 可用磁盘、环境层复用率。",
+    },
+    {
+        "id": "checkout",
+        "title": "还原基准仓库",
+        "subtitle": "checkout base_commit",
+        "x": 540,
+        "y": 220,
+        "kind": "transform",
+        "code": "swebench.harness.test_spec",
+        "decision": "每个实例在隔离容器内还原到数据集声明的 base_commit，避免本机环境污染。",
+        "inspect": "仓库版本、基准提交是否存在、测试补丁是否成功应用。",
+    },
+    {
+        "id": "dependencies",
+        "title": "安装任务依赖",
+        "subtitle": "repo-specific environment",
+        "x": 790,
+        "y": 220,
+        "kind": "output",
+        "code": "swebench.harness.prepare_images",
+        "decision": "按官方任务规格构建基础层、环境层和实例层，确保测试可复现。",
+        "inspect": "依赖解析、编译失败、网络重试、CPU/内存峰值和最终镜像大小。",
+    },
+]
+
+SWEBENCH_PREPARE_EDGES = [
+    ["dataset", "image"],
+    ["image", "checkout"],
+    ["checkout", "dependencies"],
+]
+
+SWEBENCH_EVALUATE_NODES = [
+    {
+        "id": "prediction",
+        "title": "候选补丁",
+        "subtitle": "gold 或 agent JSONL",
+        "x": 40,
+        "y": 220,
+        "kind": "input",
+        "code": "evaluation/swebench/run.py",
+        "decision": "gold 只验证评测链路；真实 agent 分数必须使用包含 model_patch 的预测文件。",
+        "inspect": "instance_id 覆盖率、model_name_or_path 和补丁是否为空。",
+    },
+    {
+        "id": "apply",
+        "title": "应用补丁",
+        "subtitle": "git apply in container",
+        "x": 280,
+        "y": 220,
+        "kind": "transform",
+        "code": "swebench.harness.run_evaluation",
+        "decision": "在基准提交上应用候选补丁；无法应用时该实例直接记为未解决。",
+        "inspect": "patch_exists、patch_successfully_applied 和容器内 git diff。",
+    },
+    {
+        "id": "tests",
+        "title": "运行回归测试",
+        "subtitle": "FAIL_TO_PASS + PASS_TO_PASS",
+        "x": 520,
+        "y": 220,
+        "kind": "decision",
+        "code": "swebench.harness.grading",
+        "decision": "新增失败测试必须转为通过，同时原本通过的测试必须保持通过。",
+        "inspect": "测试输出、单实例超时、F2P/P2P 成功和失败列表。",
+    },
+    {
+        "id": "grade",
+        "title": "判定是否解决",
+        "subtitle": "deterministic test grading",
+        "x": 760,
+        "y": 220,
+        "kind": "decision",
+        "code": "swebench.harness.grading:get_resolution_status",
+        "decision": "F2P 与 P2P 都完全通过才计为 resolved；不使用 LLM Judge。",
+        "inspect": "resolved、completed、unresolved、empty patch 和 harness error。",
+    },
+    {
+        "id": "report",
+        "title": "生成评测报告",
+        "subtitle": "resolution rate + details",
+        "x": 1000,
+        "y": 220,
+        "kind": "output",
+        "code": "evaluation/swebench/run.py:normalize_report",
+        "decision": "把官方 harness 报告规范化到当前运行目录，供网页实时展示和下载。",
+        "inspect": "完成数、解决数、解决率、错误实例和逐题报告。",
+    },
+]
+
+SWEBENCH_EVALUATE_EDGES = [
+    ["prediction", "apply"],
+    ["apply", "tests"],
+    ["tests", "grade"],
+    ["grade", "report"],
+]
+
+
+def _config(run: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return __import__("json").loads(
+            Path(run["paths"]["config"]).read_text(encoding="utf-8")
+        )
+    except (KeyError, OSError, ValueError):
+        return {}
+
+
+def workflow_for_run(run: dict[str, Any]) -> dict[str, Any]:
+    config = _config(run)
+    settings = run.get("settings", {})
+    if run.get("benchmark") == "swebench":
+        definitions = {
+            "ingest": {
+                "id": "ingest",
+                "tab_title": "环境构建",
+                "title": "SWE-bench 环境构建",
+                "subtitle": "从数据实例到可复现的 Docker 测试环境",
+                "width": 1040,
+                "height": 540,
+                "nodes": deepcopy(SWEBENCH_PREPARE_NODES),
+                "edges": deepcopy(SWEBENCH_PREPARE_EDGES),
+                "parameters": {
+                    "dataset": config.get("dataset_name"),
+                    "split": config.get("split"),
+                    "namespace": config.get("docker_namespace"),
+                    "cache_level": settings.get("swe_cache_level"),
+                },
+            },
+            "search": {
+                "id": "search",
+                "tab_title": "补丁与测试",
+                "title": "SWE-bench 补丁评测",
+                "subtitle": "应用候选补丁、执行回归测试并确定性评分",
+                "width": 1250,
+                "height": 540,
+                "nodes": deepcopy(SWEBENCH_EVALUATE_NODES),
+                "edges": deepcopy(SWEBENCH_EVALUATE_EDGES),
+                "parameters": {
+                    "predictions": settings.get("swe_predictions_path"),
+                    "max_workers": settings.get("swe_max_workers"),
+                    "timeout": settings.get("swe_timeout"),
+                    "harness": f"swebench=={config.get('swebench_version', '4.1.0')}",
+                },
+            },
+        }
+        return {
+            "definitions": definitions,
+            "runtime": run.get(
+                "workflow", {"active_node": None, "nodes": {}, "events": []}
+            ),
+        }
+    definitions = {
+        "ingest": {
+            "id": "ingest",
+            "title": "构建记忆内部工作流",
+            "subtitle": "从原始长对话到情景记忆与语义记忆",
+            "width": 2240,
+            "height": 610,
+            "nodes": deepcopy(INGEST_NODES),
+            "edges": deepcopy(INGEST_EDGES),
+            "parameters": {
+                "batch_size": settings.get("batch_size"),
+                "buffer_size_min": config.get("buffer_size_min", 2),
+                "batch_threshold": config.get("batch_threshold", 20),
+                "observation_window": config.get("observation_window", 20),
+                "episode_min_messages": config.get("episode_min_messages", 2),
+                "episode_max_messages": config.get("episode_max_messages", 25),
+                "prediction_correction": config.get("enable_prediction_correction", True),
+                "merge_similarity_threshold": config.get("merge_similarity_threshold", 0.85),
+                "episode_merge_top_k": config.get("merge_top_k", 5),
+                "semantic_context_top_k": config.get("semantic_context_top_k", 10),
+                "semantic_context_threshold": config.get(
+                    "semantic_context_similarity_threshold", 0.70
+                ),
+                "semantic_consolidation_top_k": config.get(
+                    "semantic_consolidation_top_k", 5
+                ),
+                "embedding_model": settings.get("embedding_model"),
+            },
+        },
+        "search": {
+            "id": "search",
+            "title": "检索与回答内部工作流",
+            "subtitle": "从问题到双路召回、融合、上下文与最终答案",
+            "width": 1940,
+            "height": 610,
+            "nodes": deepcopy(SEARCH_NODES),
+            "edges": deepcopy(SEARCH_EDGES),
+            "parameters": {
+                "search_method": settings.get("search_method"),
+                "top_k_episodes": settings.get("top_k_episodes"),
+                "top_k_semantic": settings.get("top_k_semantic"),
+                "include_original_messages_top_k": settings.get(
+                    "include_original_messages_top_k"
+                ),
+                "checkpoint_every": settings.get("checkpoint_every"),
+                "embedding_model": settings.get("embedding_model"),
+                "llm_model": settings.get("llm_model"),
+            },
+        },
+    }
+    return {
+        "definitions": definitions,
+        "runtime": run.get(
+            "workflow",
+            {"active_node": None, "nodes": {}, "events": []},
+        ),
+    }

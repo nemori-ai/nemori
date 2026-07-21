@@ -4,9 +4,10 @@ This directory contains evaluation scripts and datasets for testing the Nemori m
 
 ## 🎯 Overview
 
-We evaluate our memory system using two comprehensive datasets:
+We evaluate the project with three benchmark suites:
 - **LOCOMO**: Long-context memory benchmarks
 - **LongMemEval**: Extended memory evaluation suite
+- **SWE-bench Lite**: Repository-level software issue resolution through the official Docker harness
 
 ## 🗂️ Directory Structure
 
@@ -54,6 +55,19 @@ Download from [Hugging Face](https://huggingface.co/datasets/xiaowu0162/longmeme
 ```bash
 wget https://huggingface.co/datasets/xiaowu0162/longmemeval/resolve/main/longmemeval_s.json -O dataset/longmemeval_s.json
 ```
+
+#### SWE-bench Lite Dataset
+
+The included downloader validates all 300 `test` instances and writes them
+atomically:
+
+```powershell
+.\.venv\Scripts\python.exe evaluation\swebench\download.py
+```
+
+See [`evaluation/swebench/README.md`](swebench/README.md) for Docker/WSL setup,
+prediction JSONL format, and direct harness commands. The dashboard defaults to
+one instance so image pulls and repository builds stay controllable.
 
 ## 🧪 Evaluation Workflows
 
@@ -139,3 +153,11 @@ PYTHONPATH=. python evaluation/longmemeval/evals.py longmemeval/results.json
 - **Top-K Semantic**: Number of semantic memories to retrieve
 - **Evaluation Model**: Model used for response evaluation
 - **Concurrency**: Maximum concurrent evaluation tasks
+
+## SWE-bench Lite
+
+The dashboard exposes one native Nemori repository-memory pipeline. For every
+selected task it exports the official repository at `base_commit`, ingests
+bounded code observations through `NemoriMemory`, retrieves relevant Episode
+and Semantic Memory, runs the Coding Agent, and scores the generated patch with
+the official Docker Harness. See [`swebench/README.md`](swebench/README.md).

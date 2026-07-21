@@ -10,11 +10,14 @@ async def test_embed_returns_float_list():
     mock_response = MagicMock()
     mock_response.data = [MagicMock()]
     mock_response.data[0].embedding = [0.1, 0.2, 0.3]
+    mock_response.usage.total_tokens = 3
 
     with patch.object(client, "_client") as mock_client:
         mock_client.embeddings.create = AsyncMock(return_value=mock_response)
         result = await client.embed("hello")
         assert result == [0.1, 0.2, 0.3]
+        assert client.request_count == 1
+        assert client.input_tokens == 3
 
 
 @pytest.mark.asyncio

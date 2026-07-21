@@ -15,8 +15,7 @@ from dotenv import load_dotenv
 from tqdm.asyncio import tqdm
 
 from nemori import NemoriMemory, MemoryConfig
-
-load_dotenv()
+from evaluation.trace_utils import emit_trace, memory_snapshot, message_preview
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +59,7 @@ async def process_question(
             haystack_sessions = question_data["haystack_sessions"]
             haystack_dates = question_data["haystack_dates"]
             total_messages = 0
+            preview_messages: List[Dict[str, Any]] = []
 
             # Process each session
             for session, date in zip(haystack_sessions, haystack_dates):
@@ -77,17 +77,79 @@ async def process_question(
                         "timestamp": timestamp.isoformat(),
                     })
 
+                if len(preview_messages) < 6:
+                    preview_messages.extend(messages[: 6 - len(preview_messages)])
+
                 # Add messages in batches
                 for i in range(0, len(messages), batch_size):
                     batch = messages[i : i + batch_size]
                     await memory.add_messages(user_id, batch)
                     total_messages += len(batch)
 
+            emit_trace(
+                {
+                    "event": "ingest_source",
+                    "flow": "ingest",
+                    "nodes": ["source", "normalize", "buffer", "segment"],
+                    "summary": (
+                        f"读取 LongMemEval {question_id}："
+                        f"{len(haystack_sessions)} 个 session / {total_messages} 条消息"
+                    ),
+                    "sample_index": question_idx,
+                    "question_id": question_id,
+                    "user_id": user_id,
+                    "session_count": len(haystack_sessions),
+                    "message_count": total_messages,
+                    "batch_size": batch_size,
+                    "message_preview": message_preview(preview_messages),
+                }
+            )
+
             # Flush to create episodes (triggers semantic generation via event bus)
             episodes = await memory.flush(user_id)
+            snapshot = await memory_snapshot(memory, user_id)
+            source_chars = sum(
+                len(str(turn.get("content") or ""))
+                for session in haystack_sessions
+                for turn in session
+            )
+            narrative_chars = sum(
+                int(item.get("narrative_chars", 0)) for item in snapshot["episodes"]
+            )
+            emit_trace(
+                {
+                    "event": "ingest_complete",
+                    "flow": "ingest",
+                    "nodes": [
+                        "narrative",
+                        "episode_embed",
+                        "episode_store",
+                        "merge",
+                        "semantic_context",
+                        "semantic_extract",
+                        "semantic_embed",
+                        "semantic_consolidate",
+                        "semantic_store",
+                    ],
+                    "summary": (
+                        f"叙事构建完成：{total_messages} 条消息 → "
+                        f"{len(snapshot['episodes'])} 个情景 → "
+                        f"{len(snapshot['semantic_memories'])} 条语义事实"
+                    ),
+                    "sample_index": question_idx,
+                    "question_id": question_id,
+                    "user_id": user_id,
+                    "session_count": len(haystack_sessions),
+                    "message_count": total_messages,
+                    "source_chars": source_chars,
+                    "narrative_chars": narrative_chars,
+                    "compression_ratio": round(narrative_chars / max(1, source_chars), 3),
+                    **snapshot,
+                }
+            )
 
             result["success"] = True
-            result["episodes_created"] = len(episodes)
+            result["episodes_created"] = len(snapshot["episodes"]) or len(episodes)
             result["total_messages"] = total_messages
 
         except Exception as e:
@@ -119,6 +181,7 @@ async def process_dataset(
             for i, q in enumerate(questions)
         ]
         results = await tqdm.gather(*tasks, desc="Questions")
+        orch_stats = memory._system._orchestrator.stats if memory._system else None
 
     # Print summary
     successful = sum(1 for r in results if r.get("success"))
@@ -134,6 +197,22 @@ async def process_dataset(
     print(f"Total episodes created: {total_episodes}")
     print(f"Total messages processed: {total_messages}")
 
+    if orch_stats:
+        print(f"\n{'─' * 60}")
+        print("LLM Usage Details")
+        print(f"{'─' * 60}")
+        print(f"Total LLM calls:        {orch_stats.total_requests}")
+        print(f"Total tokens:           {orch_stats.total_tokens}")
+        print(f"  Prompt tokens:        {orch_stats.total_prompt_tokens}")
+        print(f"  Completion tokens:    {orch_stats.total_completion_tokens}")
+        print(f"Total errors:           {orch_stats.total_errors}")
+        print(f"Avg latency:            {orch_stats.avg_latency_ms:.0f}ms")
+        if orch_stats.requests_by_phase:
+            print("\nLLM calls by phase:")
+            for phase, count in sorted(orch_stats.requests_by_phase.items()):
+                tokens = orch_stats.tokens_by_phase.get(phase, 0)
+                print(f"  {phase:25s}  calls={count:4d}  tokens={tokens:,}")
+
     if failed > 0:
         print("\nFailure Details:")
         for r in results:
@@ -144,6 +223,7 @@ async def process_dataset(
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Add LongMemEval data to Nemori memory")
     parser.add_argument("--data_path", type=str, default="./dataset/longmemeval_s.json",
                         help="Path to longmemeval_s.json")

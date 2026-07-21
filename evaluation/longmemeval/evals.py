@@ -19,11 +19,24 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
-load_dotenv()
-
 
 class Grade(BaseModel):
     is_correct: str = Field(description='yes or no')
+
+
+def normalize_results(data: Any) -> List[Dict[str, Any]]:
+    """Accept both the search pipeline output and a flat result list."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        flattened: List[Dict[str, Any]] = []
+        for value in data.values():
+            if isinstance(value, list):
+                flattened.extend(item for item in value if isinstance(item, dict))
+            elif isinstance(value, dict):
+                flattened.append(value)
+        return flattened
+    raise ValueError("Results must be a list or an object keyed by question ID")
 
 
 class LongMemEvalEvaluator:
@@ -39,7 +52,10 @@ class LongMemEvalEvaluator:
         """
         self.model = model
         self.max_concurrent = max_concurrent
-        self.client = AsyncOpenAI()
+        self.client = AsyncOpenAI(
+            api_key=os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
+        )
         
         # Evaluation prompt template
         self.TEMPORAL_REASONING_PROMPT = """
@@ -166,7 +182,7 @@ You are an expert grader that determines if answers to questions match a gold st
         
         # Load results data
         with open(results_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+            data = normalize_results(json.load(f))
         
         print(f"Total questions: {len(data)}")
         
@@ -321,6 +337,7 @@ You are an expert grader that determines if answers to questions match a gold st
 
 
 async def main():
+    load_dotenv()
     parser = argparse.ArgumentParser(description="LongMemEval Results Evaluator")
     parser.add_argument("results_files", nargs="+", help="Results file path", default="results.json")
     parser.add_argument("--model", type=str, default="gpt-4.1-mini",
@@ -383,4 +400,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

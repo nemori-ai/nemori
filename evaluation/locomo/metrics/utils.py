@@ -14,29 +14,16 @@ import statistics
 from collections import defaultdict
 from typing import Dict, List, Union
 
-import nltk
 from bert_score import score as bert_score
+from nltk.tokenize import TreebankWordTokenizer
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from nltk.translate.meteor_score import meteor_score
 from rouge_score import rouge_scorer
-from sentence_transformers import SentenceTransformer
 
 # from load_dataset import load_locomo_dataset, QA, Turn, Session, Conversation
-from sentence_transformers.util import pytorch_cos_sim
 
-# Download required NLTK data
-try:
-    nltk.download("punkt", quiet=True)
-    nltk.download("wordnet", quiet=True)
-except Exception as e:
-    print(f"Error downloading NLTK data: {e}")
-
-# Initialize SentenceTransformer model (this will be reused)
-try:
-    sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
-except Exception as e:
-    print(f"Warning: Could not load SentenceTransformer model: {e}")
-    sentence_model = None
+sentence_model = None
+_treebank_tokenizer = TreebankWordTokenizer()
 
 
 def simple_tokenize(text):
@@ -58,9 +45,9 @@ def calculate_rouge_scores(prediction: str, reference: str) -> Dict[str, float]:
 
 
 def calculate_bleu_scores(prediction: str, reference: str) -> Dict[str, float]:
-    """Calculate BLEU scores with different n-gram settings."""
-    pred_tokens = nltk.word_tokenize(prediction.lower())
-    ref_tokens = [nltk.word_tokenize(reference.lower())]
+    """Calculate BLEU scores without downloading NLTK corpora at runtime."""
+    pred_tokens = _treebank_tokenizer.tokenize(prediction.lower())
+    ref_tokens = [_treebank_tokenizer.tokenize(reference.lower())]
 
     weights_list = [(1, 0, 0, 0), (0.5, 0.5, 0, 0), (0.33, 0.33, 0.33, 0), (0.25, 0.25, 0.25, 0.25)]
     smooth = SmoothingFunction().method1
@@ -98,9 +85,13 @@ def calculate_meteor_score(prediction: str, reference: str) -> float:
 
 def calculate_sentence_similarity(prediction: str, reference: str) -> float:
     """Calculate sentence embedding similarity using SentenceBERT."""
-    if sentence_model is None:
-        return 0.0
+    global sentence_model
     try:
+        from sentence_transformers import SentenceTransformer
+        from sentence_transformers.util import pytorch_cos_sim
+
+        if sentence_model is None:
+            sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
         # Encode sentences
         embedding1 = sentence_model.encode([prediction], convert_to_tensor=True)
         embedding2 = sentence_model.encode([reference], convert_to_tensor=True)

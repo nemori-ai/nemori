@@ -1,0 +1,8 @@
+{
+  "dataset_name": "princeton-nlp/SWE-bench_Lite",
+  "split": "test",
+  "swebench_version": "4.1.0",
+  "wsl_distribution": "Ubuntu",
+  "docker_namespace": "swebench",
+  "cache_level": "env"
+}

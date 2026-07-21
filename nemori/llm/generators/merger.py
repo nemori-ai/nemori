@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -94,11 +95,11 @@ class EpisodeMerger:
         )
         request = LLMRequest(
             messages=({"role": "user", "content": prompt},),
+            temperature=0.0,
             response_format={"type": "json_object"},
             metadata={"generator": "merge_decision"},
         )
-        response = await self._orchestrator.execute(request)
-        parsed = self._parse_json(response.content)
+        parsed = await self._request_json(request, "merge decision")
 
         decision = parsed.get("decision", "new")
         target_id = parsed.get("merge_target_id")
@@ -123,11 +124,12 @@ class EpisodeMerger:
         )
         request = LLMRequest(
             messages=({"role": "user", "content": prompt},),
+            temperature=0.0,
+            max_tokens=4096,
             response_format={"type": "json_object"},
             metadata={"generator": "merge_content"},
         )
-        response = await self._orchestrator.execute(request)
-        parsed = self._parse_json(response.content)
+        parsed = await self._request_json(request, "merged episode")
 
         # Merge source messages
         merged_messages = target.source_messages + new_episode.source_messages
@@ -187,4 +189,54 @@ class EpisodeMerger:
         if text.startswith("```"):
             lines = text.split("\n")
             text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        return json.loads(text)
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start < 0 or end <= start:
+                raise
+            parsed = json.loads(text[start : end + 1])
+        if not isinstance(parsed, dict):
+            raise ValueError("structured output is not a JSON object")
+        return parsed
+
+    async def _request_json(
+        self, request: LLMRequest, output_name: str
+    ) -> dict[str, Any]:
+        """Retry malformed JSON returned by otherwise successful provider calls."""
+        last_error: Exception | None = None
+        last_content = ""
+        current = request
+        for attempt in range(2):
+            response = await self._orchestrator.execute(current)
+            last_content = response.content
+            try:
+                return self._parse_json(response.content)
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                last_error = exc
+                if attempt == 0:
+                    logger.info(
+                        "%s structured output was invalid (%s); retrying once",
+                        output_name.capitalize(),
+                        exc,
+                    )
+                    current = replace(
+                        request,
+                        messages=request.messages + (
+                            {"role": "assistant", "content": response.content[:2000]},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Your previous response was incomplete or invalid JSON. "
+                                    "Return one complete JSON object matching the requested "
+                                    "schema. Return no markdown and no surrounding text."
+                                ),
+                            },
+                        ),
+                        temperature=0.0,
+                    )
+        raise ValueError(
+            f"invalid {output_name} JSON after structured retry: {last_error}; "
+            f"content={last_content[:500]!r}"
+        )

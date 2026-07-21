@@ -20,12 +20,24 @@ class AsyncEmbeddingClient:
     ) -> None:
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._model = model
+        self.request_count = 0
+        self.input_tokens = 0
+
+    def _record_usage(self, response: Any) -> None:
+        self.request_count += 1
+        usage = getattr(response, "usage", None)
+        value = getattr(usage, "total_tokens", None)
+        if not isinstance(value, (int, float)):
+            value = getattr(usage, "prompt_tokens", 0)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            self.input_tokens += max(0, int(value))
 
     async def embed(self, text: str) -> list[float]:
         try:
             response = await self._client.embeddings.create(
                 model=self._model, input=text,
             )
+            self._record_usage(response)
             return response.data[0].embedding
         except Exception as e:
             raise EmbeddingError(f"Embedding failed: {e}") from e
@@ -40,6 +52,7 @@ class AsyncEmbeddingClient:
             response = await self._client.embeddings.create(
                 model=self._model, input=texts,
             )
+            self._record_usage(response)
             return [item.embedding for item in response.data]
         except Exception as e:
             raise EmbeddingError(f"Batch embedding failed: {e}") from e

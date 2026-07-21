@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import Any
 
 from nemori.domain.models import Episode, SemanticMemory
@@ -48,6 +49,9 @@ class SemanticGenerator:
         existing_semantics: list[SemanticMemory],
     ) -> list[SemanticMemory]:
         try:
+            # Bootstrap exactly as the released implementation does: there is
+            # no useful world model to predict from until at least one semantic
+            # memory exists.  Subsequent episodes use prediction correction.
             if self._enable_pc and existing_semantics:
                 statements = await self._prediction_correction(episode, existing_semantics)
             else:
@@ -101,11 +105,11 @@ class SemanticGenerator:
         )
         extract_req = LLMRequest(
             messages=({"role": "user", "content": extract_prompt},),
+            temperature=0.0,
             response_format={"type": "json_object"},
             metadata={"generator": "semantic_extract"},
         )
-        extract_resp = await self._orchestrator.execute(extract_req)
-        return self._parse_statements(extract_resp.content)
+        return await self._request_statements(extract_req)
 
     async def _direct_extraction(self, episode: Episode) -> list[str]:
         """Single-step extraction from episode content."""
@@ -113,24 +117,122 @@ class SemanticGenerator:
         prompt = PromptTemplates.get_semantic_generation_prompt(ep_text)
         req = LLMRequest(
             messages=({"role": "user", "content": prompt},),
+            temperature=0.0,
             response_format={"type": "json_object"},
             metadata={"generator": "semantic_direct"},
         )
-        resp = await self._orchestrator.execute(req)
-        return self._parse_statements(resp.content)
+        return await self._request_statements(req)
+
+    async def _request_statements(self, request: LLMRequest) -> list[str]:
+        """Retry successful HTTP calls that returned malformed structured output."""
+        last_error: Exception | None = None
+        last_content = ""
+        current = request
+        for attempt in range(2):
+            response = await self._orchestrator.execute(current)
+            last_content = response.content
+            try:
+                return self._parse_statements(response.content)
+            except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as exc:
+                last_error = exc
+                if attempt == 0:
+                    logger.info(
+                        "Semantic structured output was invalid (%s); retrying once",
+                        exc,
+                    )
+                    current = replace(
+                        request,
+                        messages=request.messages + (
+                            {"role": "assistant", "content": response.content[:2000]},
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Your previous response was incomplete or invalid JSON. "
+                                    "Return one complete JSON object with a statements array. "
+                                    "Return no markdown and no text outside the JSON object."
+                                ),
+                            },
+                        ),
+                        temperature=0.0,
+                    )
+        raise ValueError(
+            "invalid semantic JSON after structured retry: "
+            f"{last_error}; content={last_content[:500]!r}"
+        )
 
     def _parse_statements(self, content: str) -> list[str]:
         """Parse JSON statements from LLM response."""
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        data = self._load_jsonish(text)
+        statements, found = self._coerce_statements(data)
+        if found:
+            # An empty statements array is a valid prediction-error result: it
+            # means this episode added no durable knowledge.
+            return statements
+        raise ValueError("structured output has no statements array")
+
+    @staticmethod
+    def _load_jsonish(text: str) -> Any:
         try:
-            text = content.strip()
-            if text.startswith("```"):
-                lines = text.split("\n")
-                text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-            data = json.loads(text)
-            return data.get("statements", [])
-        except (json.JSONDecodeError, AttributeError):
-            logger.warning("Failed to parse semantic statements")
-            return []
+            return json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                return json.loads(text[start : end + 1])
+            start = text.find("[")
+            end = text.rfind("]")
+            if start >= 0 and end > start:
+                return json.loads(text[start : end + 1])
+            raise
+
+    @classmethod
+    def _coerce_statements(cls, data: Any) -> tuple[list[str], bool]:
+        if isinstance(data, list):
+            return cls._coerce_statement_list(data), True
+        if not isinstance(data, dict):
+            return [], False
+        for key in (
+            "statements",
+            "semantic_memories",
+            "memories",
+            "facts",
+            "knowledge",
+            "insights",
+        ):
+            value = data.get(key)
+            if isinstance(value, list):
+                return cls._coerce_statement_list(value), True
+        for value in data.values():
+            if isinstance(value, list):
+                coerced = cls._coerce_statement_list(value)
+                if coerced:
+                    return coerced, True
+        return [], False
+
+    @staticmethod
+    def _coerce_statement_list(items: list[Any]) -> list[str]:
+        statements: list[str] = []
+        for item in items:
+            if isinstance(item, str):
+                text = item.strip()
+            elif isinstance(item, dict):
+                text = str(
+                    item.get("statement")
+                    or item.get("content")
+                    or item.get("memory")
+                    or item.get("fact")
+                    or item.get("text")
+                    or ""
+                ).strip()
+            else:
+                text = ""
+            if text:
+                statements.append(text)
+        return statements
 
     @staticmethod
     def _classify_type(statement: str) -> str:

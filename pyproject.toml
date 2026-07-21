@@ -48,7 +48,16 @@ eval = [
     "bert-score>=0.3.13",
     "rouge-score>=0.1.2",
     "pandas>=2.0.0",
+    "sentence-transformers>=3.0.0",
     "spacy>=3.7.0",
+    "tqdm>=4.66.0",
+]
+
+dashboard = [
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
+    "psutil>=6.0.0",
+    "uvicorn>=0.30.0",
 ]
 
 [project.urls]
@@ -64,9 +73,10 @@ nemori-eval-locomo = "evaluation.locomo.evals:main"
 nemori-add-longmemeval = "evaluation.longmemeval.add:main"
 nemori-search-longmemeval = "evaluation.longmemeval.search:main"
 nemori-eval-longmemeval = "evaluation.longmemeval.evals:main"
+nemori-dashboard = "dashboard.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["nemori"]
+packages = ["nemori", "dashboard"]
 
 [tool.black]
 line-length = 88

@@ -7,6 +7,9 @@ import asyncio
 import dataclasses
 import json
 import logging
+import os
+import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List
@@ -17,10 +20,12 @@ from openai import AsyncOpenAI
 from tqdm.asyncio import tqdm
 
 from nemori import MemoryConfig, NemoriMemory
+from evaluation.trace_utils import emit_trace, retrieval_snapshot
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+CHECKPOINT_REPLACE_ATTEMPTS = 8
+CHECKPOINT_RETRY_BASE_SECONDS = 0.05
 
 ANSWER_PROMPT = Template(
     """
@@ -118,6 +123,20 @@ def flatten_results(
     return combined
 
 
+def questions_for_item(
+    item: Dict[str, Any],
+    *,
+    scored_only: bool,
+) -> List[Dict[str, Any]]:
+    questions = item.get("qa", [])
+    if not scored_only:
+        return questions
+    # LoCoMo category 5 contains adversarial/unanswerable questions and is not
+    # part of the official 1,540-question score. Accept both numeric and string
+    # category values used by different dataset serializations.
+    return [qa for qa in questions if str(qa.get("category", "")).strip() != "5"]
+
+
 class LocomoSearcher:
     def __init__(
         self,
@@ -128,7 +147,10 @@ class LocomoSearcher:
         top_k_semantic: int,
         search_method: str,
         include_original_messages_top_k: int,
+        checkpoint_every: int = 0,
         max_concurrent_answer: int = 20,
+        resume: bool = True,
+        scored_only: bool = False,
     ) -> None:
         self.config = config
         self.output_path = output_path
@@ -136,8 +158,14 @@ class LocomoSearcher:
         self.top_k_semantic = top_k_semantic
         self.search_method = search_method
         self.include_original_messages_top_k = include_original_messages_top_k
+        self.checkpoint_every = checkpoint_every
         self.max_concurrent_answer = max_concurrent_answer
+        self.resume = resume
+        self.scored_only = scored_only
         self.results: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        self.completed_questions = 0
+        self.total_questions = 0
+        self.checkpoint_lock = asyncio.Lock()
         try:
             self.openai_client = AsyncOpenAI(
                 api_key=config.llm_api_key,
@@ -172,12 +200,33 @@ class LocomoSearcher:
     async def process(self, dataset: List[Dict[str, Any]], max_workers: int) -> None:
         semaphore = asyncio.Semaphore(max_workers)
         answer_semaphore = asyncio.Semaphore(self.max_concurrent_answer)
+        self.total_questions = sum(
+            len(questions_for_item(item, scored_only=self.scored_only))
+            for item in dataset
+        )
+        self._restore_checkpoint(dataset)
+
+        if self.completed_questions:
+            print(
+                "NEMORI_PROGRESS "
+                + json.dumps({
+                    "phase": "search",
+                    "completed": self.completed_questions,
+                    "total": self.total_questions,
+                    "resumed": True,
+                }),
+                flush=True,
+            )
 
         async def worker(memory: NemoriMemory, idx: int, item: Dict[str, Any]) -> None:
             async with semaphore:
                 conversation = item.get("conversation", {})
                 user_id = f"{conversation.get('speaker_a', 'speaker')}_{idx}"
-                for qa in item.get("qa", []):
+                completed_for_item = len(self.results.get(str(idx), []))
+                questions = questions_for_item(item, scored_only=self.scored_only)
+                for question_index, qa in enumerate(questions):
+                    if question_index < completed_for_item:
+                        continue
                     question = qa.get("question", "")
                     memories = await memory.search(
                         user_id,
@@ -188,6 +237,18 @@ class LocomoSearcher:
                     )
                     async with answer_semaphore:
                         response = await self.answer(question, memories)
+                    emit_trace(
+                        retrieval_snapshot(
+                            question=question,
+                            answer=response,
+                            memories=memories,
+                            method=self.search_method,
+                            top_k_episodes=self.top_k_episodes,
+                            top_k_semantic=self.top_k_semantic,
+                            include_original_limit=self.include_original_messages_top_k,
+                            question_id=f"{idx}:{question_index}",
+                        )
+                    )
                     flattened = flatten_results(memories, self.include_original_messages_top_k)
                     record = {
                         "question": question,
@@ -199,18 +260,172 @@ class LocomoSearcher:
                         "search_method": self.search_method,
                     }
                     self.results[str(idx)].append(record)
+                    await self.checkpoint()
 
         async with NemoriMemory(self.config) as memory:
             tasks = [worker(memory, idx, item) for idx, item in enumerate(dataset)]
             await tqdm.gather(*tasks, desc="Questions")
 
+    async def checkpoint(self) -> None:
+        async with self.checkpoint_lock:
+            self.completed_questions += 1
+            print(
+                "NEMORI_PROGRESS "
+                + json.dumps({
+                    "phase": "search",
+                    "completed": self.completed_questions,
+                    "total": self.total_questions,
+                }),
+                flush=True,
+            )
+            if self.checkpoint_every and (
+                self.completed_questions % self.checkpoint_every == 0
+                or self.completed_questions == self.total_questions
+            ):
+                self.save()
+
     def save(self) -> None:
-        self.output_path.write_text(
-            json.dumps(self.results, indent=2, ensure_ascii=False), encoding="utf-8"
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.output_path.parent,
+                prefix=f"{self.output_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                tmp_path = Path(handle.name)
+                json.dump(self.results, handle, indent=2, ensure_ascii=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except Exception:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
+            raise
+
+        last_error: OSError | None = None
+        for attempt in range(CHECKPOINT_REPLACE_ATTEMPTS):
+            try:
+                tmp_path.replace(self.output_path)
+                self._cleanup_stale_temp_files()
+                return
+            except OSError as exc:
+                last_error = exc
+                if attempt + 1 < CHECKPOINT_REPLACE_ATTEMPTS:
+                    delay = min(
+                        CHECKPOINT_RETRY_BASE_SECONDS * (2**attempt),
+                        1.0,
+                    )
+                    time.sleep(delay)
+
+        # Keep the fully written temporary file: the next run can safely resume
+        # from it, while the previous canonical checkpoint remains untouched.
+        raise OSError(
+            f"Could not replace checkpoint {self.output_path} after "
+            f"{CHECKPOINT_REPLACE_ATTEMPTS} attempts; recovery data was kept at "
+            f"{tmp_path}"
+        ) from last_error
+
+    def _temp_candidates(self) -> List[Path]:
+        if not self.output_path.parent.exists():
+            return []
+        return list(self.output_path.parent.glob(f"{self.output_path.name}*.tmp"))
+
+    def _cleanup_stale_temp_files(self) -> None:
+        for candidate in self._temp_candidates():
+            try:
+                candidate.unlink(missing_ok=True)
+            except OSError:
+                # A stale recovery file is harmless and may itself be locked by
+                # an antivirus/indexer on Windows. Leave it for a later save.
+                logger.debug("Could not remove stale checkpoint %s", candidate)
+
+    @staticmethod
+    def _matching_checkpoint(
+        raw_results: Any,
+        dataset: List[Dict[str, Any]],
+        *,
+        scored_only: bool = False,
+    ) -> Dict[str, List[Dict[str, Any]]] | None:
+        """Return dataset-compatible result prefixes, or reject the checkpoint."""
+        if not isinstance(raw_results, dict):
+            return None
+
+        expected_keys = {str(idx) for idx in range(len(dataset))}
+        if any(str(key) not in expected_keys for key in raw_results):
+            return None
+
+        matched: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for idx, item in enumerate(dataset):
+            records = raw_results.get(str(idx), [])
+            questions = questions_for_item(item, scored_only=scored_only)
+            if not isinstance(records, list) or len(records) > len(questions):
+                return None
+            for question_index, record in enumerate(records):
+                if not isinstance(record, dict):
+                    return None
+                expected_question = questions[question_index].get("question", "")
+                if record.get("question") != expected_question:
+                    return None
+            if records:
+                matched[str(idx)].extend(records)
+        return matched
+
+    def _restore_checkpoint(self, dataset: List[Dict[str, Any]]) -> None:
+        self.results = defaultdict(list)
+        self.completed_questions = 0
+        if not self.resume:
+            return
+
+        candidates = [self.output_path, *self._temp_candidates()]
+        best_path: Path | None = None
+        best_results: Dict[str, List[Dict[str, Any]]] | None = None
+        best_count = -1
+        best_is_canonical = False
+
+        for candidate in candidates:
+            if not candidate.is_file():
+                continue
+            try:
+                raw_results = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                logger.warning("Ignoring unreadable checkpoint %s: %s", candidate, exc)
+                continue
+            matched = self._matching_checkpoint(
+                raw_results,
+                dataset,
+                scored_only=self.scored_only,
+            )
+            if matched is None:
+                logger.warning("Ignoring checkpoint for a different dataset: %s", candidate)
+                continue
+            count = sum(len(records) for records in matched.values())
+            is_canonical = candidate == self.output_path
+            if count > best_count or (
+                count == best_count and is_canonical and not best_is_canonical
+            ):
+                best_path = candidate
+                best_results = matched
+                best_count = count
+                best_is_canonical = is_canonical
+
+        if best_results is None:
+            return
+
+        self.results = defaultdict(list, best_results)
+        self.completed_questions = best_count
+        logger.info(
+            "Resuming LoCoMo search from %s (%d/%d questions)",
+            best_path,
+            self.completed_questions,
+            self.total_questions,
         )
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Search LoCoMo memories")
     parser.add_argument("--data", default="dataset/locomo10.json", help="Path to LoCoMo dataset")
     parser.add_argument("--config", default="config.json", help="Path to MemoryConfig JSON")
@@ -219,7 +434,33 @@ def main() -> None:
     parser.add_argument("--top-k-semantic", type=int, default=20)
     parser.add_argument("--search-method", default="vector", choices=["hybrid", "vector", "text"])
     parser.add_argument("--include-original-messages-top-k", type=int, default=2)
+    parser.add_argument("--checkpoint-every", type=int, default=0)
     parser.add_argument("--max-workers", type=int, default=50)
+    parser.add_argument(
+        "--max-concurrent-answer",
+        type=int,
+        default=None,
+        help="Maximum concurrent answer-generation requests; defaults to --max-workers",
+    )
+    parser.add_argument(
+        "--scored-only",
+        action="store_true",
+        help="Process only official scored questions (exclude category 5)",
+    )
+    resume_group = parser.add_mutually_exclusive_group()
+    resume_group.add_argument(
+        "--resume",
+        dest="resume",
+        action="store_true",
+        default=True,
+        help="Resume from the newest valid checkpoint (default)",
+    )
+    resume_group.add_argument(
+        "--no-resume",
+        dest="resume",
+        action="store_false",
+        help="Ignore existing checkpoints and start from the first question",
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -237,6 +478,10 @@ def main() -> None:
         top_k_semantic=args.top_k_semantic,
         search_method=args.search_method,
         include_original_messages_top_k=args.include_original_messages_top_k,
+        checkpoint_every=args.checkpoint_every,
+        max_concurrent_answer=max(1, args.max_concurrent_answer or args.max_workers),
+        resume=args.resume,
+        scored_only=args.scored_only,
     )
     asyncio.run(searcher.process(dataset, max_workers=args.max_workers))
     searcher.save()

@@ -21,6 +21,13 @@ from nemori.domain.interfaces import LLMProvider
 logger = logging.getLogger("nemori")
 
 
+def _describe_error(error: BaseException) -> str:
+    """Return a useful error label even for exceptions with an empty message."""
+    detail = str(error).strip()
+    name = type(error).__name__
+    return f"{name}: {detail}" if detail else name
+
+
 @dataclass
 class TokenUsage:
     prompt_tokens: int = 0
@@ -38,8 +45,10 @@ class LLMRequest:
     temperature: float = 0.7
     max_tokens: int = 2000
     response_format: dict[str, str] | None = None
-    timeout: float = 30.0
-    retries: int = 3
+    # ``None`` inherits the orchestrator defaults.  A request can still
+    # override either value for an unusually slow or non-idempotent call.
+    timeout: float | None = None
+    retries: int | None = None
     metadata: MappingProxyType = field(
         default_factory=lambda: MappingProxyType({})
     )
@@ -75,12 +84,20 @@ class LLMOrchestrator:
         default_model: str,
         max_concurrent: int = 10,
         token_budget: int | None = None,
+        default_timeout: float = 30.0,
+        default_retries: int = 3,
         logger: logging.Logger | None = None,
     ) -> None:
+        if default_timeout <= 0:
+            raise ValueError("default_timeout must be > 0")
+        if default_retries < 1:
+            raise ValueError("default_retries must be >= 1")
         self._provider = provider
         self._default_model = default_model
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._token_budget = token_budget
+        self._default_timeout = default_timeout
+        self._default_retries = default_retries
         self._log = logger or logging.getLogger("nemori")
         self._total_requests = 0
         self._total_tokens = 0
@@ -104,8 +121,15 @@ class LLMOrchestrator:
         model = request.model or self._default_model
         request_id = str(uuid.uuid4())[:8]
         last_error: Exception | None = None
+        timeout = request.timeout if request.timeout is not None else self._default_timeout
+        retries = request.retries if request.retries is not None else self._default_retries
 
-        for attempt in range(request.retries):
+        if timeout <= 0:
+            raise ValueError("request timeout must be > 0")
+        if retries < 1:
+            raise ValueError("request retries must be >= 1")
+
+        for attempt in range(retries):
             try:
                 async with self._semaphore:
                     start = time.monotonic()
@@ -126,7 +150,7 @@ class LLMOrchestrator:
                             self._provider.complete_with_usage(
                                 list(request.messages), **call_kwargs,
                             ),
-                            timeout=request.timeout,
+                            timeout=timeout,
                         )
                         content, raw_usage = result
                         usage = TokenUsage(
@@ -138,7 +162,7 @@ class LLMOrchestrator:
                             self._provider.complete(
                                 list(request.messages), **call_kwargs,
                             ),
-                            timeout=request.timeout,
+                            timeout=timeout,
                         )
                         usage = TokenUsage()
                     latency = (time.monotonic() - start) * 1000
@@ -172,15 +196,16 @@ class LLMOrchestrator:
             except Exception as e:
                 last_error = e
                 self._total_errors += 1
-                if attempt < request.retries - 1:
+                if attempt < retries - 1:
                     delay = min(1.0 * (2 ** attempt) + random.uniform(0, 0.5), 30.0)
                     self._log.warning(
                         "LLM request %s attempt %d failed: %s. Retrying in %.1fs",
-                        request_id, attempt + 1, e, delay,
+                        request_id, attempt + 1, _describe_error(e), delay,
                     )
                     await asyncio.sleep(delay)
 
-        raise LLMError(f"All {request.retries} attempts failed: {last_error}") from last_error
+        error = _describe_error(last_error) if last_error is not None else "unknown error"
+        raise LLMError(f"All {retries} attempts failed: {error}") from last_error
 
     async def execute_batch(self, requests: list[LLMRequest]) -> list[LLMResponse]:
         tasks = [self.execute(req) for req in requests]

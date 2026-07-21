@@ -14,6 +14,7 @@ from nemori.domain.models import Message, Episode, SemanticMemory
 from nemori.llm.orchestrator import LLMOrchestrator
 from nemori.llm.generators.episode import EpisodeGenerator
 from nemori.llm.generators.semantic import SemanticGenerator
+from nemori.llm.generators.consolidator import SemanticConsolidator
 from nemori.llm.generators.segmenter import BatchSegmenter
 from nemori.llm.generators.merger import EpisodeMerger
 from nemori.search.unified import UnifiedSearch, SearchMethod, SearchResult
@@ -43,6 +44,7 @@ class MemorySystem:
         search: UnifiedSearch,
         merger: EpisodeMerger | None = None,
         qdrant: QdrantVectorStore | None = None,
+        semantic_consolidator: SemanticConsolidator | None = None,
     ) -> None:
         self._config = config
         self._agent_id = agent_id
@@ -58,9 +60,13 @@ class MemorySystem:
         self._search = search
         self._merger = merger
         self._qdrant = qdrant
+        self._semantic_consolidator = semantic_consolidator or SemanticConsolidator(
+            orchestrator
+        )
 
         self._user_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._tasks: set[asyncio.Task] = set()
+        self._observation_tasks: dict[str, asyncio.Task] = {}
 
         self._enable_semantic = config.enable_semantic_memory
 
@@ -77,10 +83,70 @@ class MemorySystem:
         """Add messages to the buffer. Triggers processing if buffer is ready."""
         await self._buffer_store.push(user_id, self._agent_id, messages)
         count = await self._buffer_store.count_unprocessed(user_id, self._agent_id)
-        if count >= self._config.buffer_size_min:
-            task = asyncio.create_task(self._process(user_id))
-            self._tasks.add(task)
-            task.add_done_callback(self._tasks.discard)
+        # In the paper's batch path, the observation step starts when buffer B
+        # reaches w messages.  ``flush`` remains the explicit way to process a
+        # final partial window.  The legacy minimum threshold still applies
+        # when batch segmentation is disabled.
+        trigger_threshold = self._observation_trigger_threshold()
+        if count >= trigger_threshold:
+            self._ensure_observation_worker(user_id)
+
+    def _observation_trigger_threshold(self) -> int:
+        return (
+            self._config.observation_window
+            if self._config.enable_batch_segmentation
+            else self._config.buffer_size_min
+        )
+
+    def _ensure_observation_worker(self, user_id: str) -> None:
+        """Start at most one background observation worker per user."""
+        key = f"{self._agent_id}:{user_id}"
+        existing = self._observation_tasks.get(key)
+        if existing is not None and not existing.done():
+            return
+
+        task = asyncio.create_task(self._observation_worker(user_id, key))
+        self._observation_tasks[key] = task
+        self._tasks.add(task)
+        task.add_done_callback(lambda done, worker_key=key: self._observation_done(worker_key, done))
+
+    def _observation_done(self, key: str, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
+        if self._observation_tasks.get(key) is task:
+            self._observation_tasks.pop(key, None)
+        if not task.cancelled():
+            error = task.exception()
+            if error is not None:
+                detail = str(error).strip()
+                label = f"{type(error).__name__}: {detail}" if detail else type(error).__name__
+                logger.error("Observation worker %s failed: %s", key, label)
+
+    async def _observation_worker(self, user_id: str, key: str) -> None:
+        """Observe full windows until the user's buffer falls below threshold."""
+        threshold = self._observation_trigger_threshold()
+        current = asyncio.current_task()
+
+        while True:
+            await self._process(user_id)
+            count = await self._buffer_store.count_unprocessed(user_id, self._agent_id)
+            if count >= threshold:
+                continue
+
+            # Unregister before the final recheck.  Messages arriving before
+            # this point were unable to schedule a second worker and are seen
+            # by the recheck; messages arriving afterwards can schedule one.
+            if current is not None and self._observation_tasks.get(key) is current:
+                self._observation_tasks.pop(key, None)
+
+            count = await self._buffer_store.count_unprocessed(user_id, self._agent_id)
+            if count < threshold:
+                return
+
+            replacement = self._observation_tasks.get(key)
+            if replacement is not None and replacement is not current and not replacement.done():
+                return
+            if current is not None:
+                self._observation_tasks[key] = current
 
     async def flush(self, user_id: str) -> list[Episode]:
         """Force processing of all buffered messages."""
@@ -105,18 +171,33 @@ class MemorySystem:
             # Segment if batch is large enough
             if (
                 self._config.enable_batch_segmentation
-                and len(messages) >= self._config.batch_threshold
+                and len(messages) >= self._config.observation_window
             ):
-                segmenter = BatchSegmenter(orchestrator=self._orchestrator)
+                segmenter = BatchSegmenter(
+                    orchestrator=self._orchestrator,
+                    window_size=self._config.observation_window,
+                    timeout=self._config.llm_timeout,
+                    retries=self._config.llm_retries,
+                )
                 groups = await segmenter.segment(messages)
             else:
                 groups = [{"messages": messages, "topic": "conversation"}]
 
             # Generate episodes for each group
-            for group in groups:
+            total_groups = len(groups)
+            for group_number, group in enumerate(groups, 1):
                 group_msgs = group["messages"]
                 if len(group_msgs) < self._config.episode_min_messages:
                     continue
+
+                logger.info(
+                    "Memory construction progress: episode %d/%d, %d messages, "
+                    "topic=%s",
+                    group_number,
+                    total_groups,
+                    len(group_msgs),
+                    str(group.get("topic", "conversation"))[:120],
+                )
 
                 episode = await self._episode_gen.generate(
                     user_id, self._agent_id, group_msgs, group.get("topic", "conversation")
@@ -155,6 +236,12 @@ class MemorySystem:
                 if self._enable_semantic:
                     await self._on_episode_created(user_id=user_id, episode=episode)
 
+                logger.info(
+                    "Memory construction progress: completed episode %d/%d",
+                    group_number,
+                    total_groups,
+                )
+
             # Mark processed messages as done (deletes them)
             if buffer_ids:
                 await self._buffer_store.mark_processed(user_id, self._agent_id, buffer_ids)
@@ -164,14 +251,19 @@ class MemorySystem:
     async def _on_episode_created(self, user_id: str, episode: Episode) -> None:
         """Handle episode_created event by generating semantic memories."""
         try:
-            # Retrieve semantically relevant existing memories via Qdrant
+            # Native context evocation: threshold-filtered top-Ks semantic search.
             existing_sem: list[SemanticMemory] = []
             if self._qdrant and episode.embedding:
                 hits = self._qdrant.search_semantic(
                     user_id, self._agent_id, episode.embedding,
-                    top_k=self._config.search_top_k_semantic,
+                    top_k=self._config.semantic_context_top_k,
                 )
-                ids = [h["id"] for h in hits]
+                ids = [
+                    hit["id"]
+                    for hit in hits
+                    if float(hit.get("score", 0))
+                    > self._config.semantic_context_similarity_threshold
+                ]
                 if ids:
                     existing_sem = await self._semantic_store.get_batch(ids, user_id, self._agent_id)
 
@@ -179,17 +271,68 @@ class MemorySystem:
                 user_id, self._agent_id, episode, existing_sem
             )
             if memories:
-                await self._semantic_store.save_batch(memories)
-                # Upsert semantic vectors to Qdrant
-                if self._qdrant:
-                    for mem in memories:
-                        if mem.embedding:
-                            self._qdrant.upsert_semantic(
-                                mem.id, user_id, self._agent_id, mem.embedding
+                decisions: dict[str, int] = {
+                    "NEW": 0,
+                    "MERGE": 0,
+                    "CONFLICT_DELETE": 0,
+                }
+                for memory in memories:
+                    candidates: list[SemanticMemory] = []
+                    if (
+                        self._config.enable_semantic_consolidation
+                        and self._qdrant
+                        and memory.embedding
+                    ):
+                        candidate_hits = self._qdrant.search_semantic(
+                            user_id,
+                            self._agent_id,
+                            memory.embedding,
+                            top_k=self._config.semantic_consolidation_top_k,
+                        )
+                        candidate_ids = [hit["id"] for hit in candidate_hits]
+                        if candidate_ids:
+                            candidates = await self._semantic_store.get_batch(
+                                candidate_ids, user_id, self._agent_id
                             )
+
+                    decision = await self._semantic_consolidator.decide(
+                        memory, candidates
+                    )
+                    decisions[decision.decision] += 1
+                    if decision.decision == "MERGE" and decision.new_content:
+                        memory.content = decision.new_content
+                        memory.embedding = await self._embedding.embed(memory.content)
+
+                    memory.metadata = {
+                        **memory.metadata,
+                        "consolidation": {
+                            "decision": decision.decision,
+                            "target_ids": list(decision.target_ids),
+                            "reason": decision.reason,
+                        },
+                    }
+
+                    # Insert the replacement first so a later storage failure
+                    # cannot erase the only durable version of the knowledge.
+                    await self._semantic_store.save(memory)
+                    if self._qdrant and memory.embedding:
+                        self._qdrant.upsert_semantic(
+                            memory.id, user_id, self._agent_id, memory.embedding
+                        )
+                    for target_id in decision.target_ids:
+                        await self._semantic_store.delete(
+                            target_id, user_id, self._agent_id
+                        )
+                        if self._qdrant:
+                            self._qdrant.delete_semantic(target_id)
                 logger.info(
-                    "Generated %d semantic memories for user %s",
-                    len(memories), user_id,
+                    "Generated and consolidated %d semantic memories for user %s "
+                    "(NEW=%d, MERGE=%d, CONFLICT_DELETE=%d)",
+                    len(memories),
+                    user_id,
+                    decisions["NEW"],
+                    decisions["MERGE"],
+                    decisions["CONFLICT_DELETE"],
                 )
         except Exception as e:
             logger.error("Semantic generation failed for user %s: %s", user_id, e)

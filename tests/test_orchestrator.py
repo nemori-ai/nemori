@@ -52,6 +52,61 @@ async def test_execute_retries_on_error(mock_provider):
 
 
 @pytest.mark.asyncio
+async def test_empty_exception_message_includes_exception_type(mock_provider, caplog):
+    mock_provider.complete = AsyncMock(side_effect=TimeoutError())
+    orch = LLMOrchestrator(provider=mock_provider, default_model="gpt-4o-mini")
+    request = LLMRequest(
+        messages=({"role": "user", "content": "hi"},),
+        retries=1,
+    )
+
+    with pytest.raises(LLMError, match=r"failed: TimeoutError$"):
+        await orch.execute(request)
+
+
+@pytest.mark.asyncio
+async def test_request_inherits_orchestrator_timeout(mock_provider):
+    async def slow_complete(messages, **kwargs):
+        await asyncio.sleep(0.02)
+        return "too late"
+
+    mock_provider.complete = slow_complete
+    orch = LLMOrchestrator(
+        provider=mock_provider,
+        default_model="gpt-4o-mini",
+        default_timeout=0.001,
+        default_retries=1,
+    )
+
+    with pytest.raises(LLMError, match="TimeoutError"):
+        await orch.execute(LLMRequest(messages=({"role": "user", "content": "hi"},)))
+
+
+@pytest.mark.asyncio
+async def test_explicit_request_timeout_overrides_orchestrator_default(mock_provider):
+    async def slow_complete(messages, **kwargs):
+        await asyncio.sleep(0.01)
+        return "success"
+
+    mock_provider.complete = slow_complete
+    orch = LLMOrchestrator(
+        provider=mock_provider,
+        default_model="gpt-4o-mini",
+        default_timeout=0.001,
+        default_retries=1,
+    )
+    request = LLMRequest(
+        messages=({"role": "user", "content": "hi"},),
+        timeout=0.1,
+        retries=1,
+    )
+
+    response = await orch.execute(request)
+
+    assert response.content == "success"
+
+
+@pytest.mark.asyncio
 async def test_concurrency_limit():
     active = 0
     max_active = 0
