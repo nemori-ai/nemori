@@ -117,6 +117,33 @@ def test_openai_sdk_base_urls_are_normalized() -> None:
     )
 
 
+def test_dashboard_entrypoint_loads_project_env_before_binding(monkeypatch) -> None:
+    from dashboard import __main__ as dashboard_main
+
+    captured = {}
+
+    def fake_load_dotenv(path, *, override):
+        captured["env_path"] = path
+        captured["override"] = override
+        monkeypatch.setenv("NEMORI_DASHBOARD_HOST", "127.0.0.1")
+        monkeypatch.setenv("NEMORI_DASHBOARD_PORT", "18765")
+
+    def fake_run(app_name, **kwargs):
+        captured["app"] = app_name
+        captured.update(kwargs)
+
+    monkeypatch.setattr(dashboard_main, "load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr(dashboard_main.uvicorn, "run", fake_run)
+
+    dashboard_main.main()
+
+    assert captured["env_path"].name == ".env"
+    assert captured["override"] is False
+    assert captured["app"] == "dashboard.app:app"
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 18765
+
+
 def test_llm_and_agent_connections_are_probed_independently(monkeypatch) -> None:
     captured: list[dict[str, str]] = []
 
