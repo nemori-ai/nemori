@@ -61,6 +61,12 @@ STAGES = ("prepare", "memory", "agent", "harness", "result")
 DEFAULT_POSTGRES_PORT = 15432
 DEFAULT_QDRANT_HTTP_PORT = 16333
 DEFAULT_QDRANT_GRPC_PORT = 16334
+AGENT_UV_DEPENDENCIES = (
+    "mini-swe-agent==2.4.5",
+    # tiktoken 0.12+ dropped manylinux2014 wheels and cannot build on the
+    # supported CentOS 7 host without adding an otherwise unnecessary Rust toolchain.
+    "tiktoken==0.11.0",
+)
 
 
 def _port(env: Mapping[str, str], key: str, default: int) -> int:
@@ -923,31 +929,35 @@ class NemoriSWEManager:
             "run",
             "--python",
             "3.12",
-            "--with",
-            "mini-swe-agent==2.4.5",
-            "--no-project",
-            "python",
-            "-u",
-            "../../../evaluation/swebench/agent_run.py",
-            "--input",
-            input_path.relative_to(run_dir).as_posix(),
-            "--output",
-            output_dir.relative_to(run_dir).as_posix(),
-            "--arm",
-            arm,
-            "--model",
-            model,
-            "--temperature",
-            str(env.get("AGENT_TEMPERATURE") or 0),
-            "--token-budget",
-            str(env.get("NEMORI_SWE_TOKEN_BUDGET") or 120_000),
-            "--time-budget",
-            str(env.get("NEMORI_SWE_TIME_BUDGET") or 1_800),
-            "--max-turns",
-            str(env.get("NEMORI_SWE_MAX_TURNS") or 80),
-            "--max-tool-calls",
-            str(env.get("NEMORI_SWE_MAX_TOOL_CALLS") or 200),
         ]
+        for dependency in AGENT_UV_DEPENDENCIES:
+            args.extend(("--with", dependency))
+        args.extend(
+            [
+                "--no-project",
+                "python",
+                "-u",
+                "../../../evaluation/swebench/agent_run.py",
+                "--input",
+                input_path.relative_to(run_dir).as_posix(),
+                "--output",
+                output_dir.relative_to(run_dir).as_posix(),
+                "--arm",
+                arm,
+                "--model",
+                model,
+                "--temperature",
+                str(env.get("AGENT_TEMPERATURE") or 0),
+                "--token-budget",
+                str(env.get("NEMORI_SWE_TOKEN_BUDGET") or 120_000),
+                "--time-budget",
+                str(env.get("NEMORI_SWE_TIME_BUDGET") or 1_800),
+                "--max-turns",
+                str(env.get("NEMORI_SWE_MAX_TURNS") or 80),
+                "--max-tool-calls",
+                str(env.get("NEMORI_SWE_MAX_TOOL_CALLS") or 200),
+            ]
+        )
         base_url = env.get("AGENT_BASE_URL") or env.get("LLM_BASE_URL")
         provider = env.get("AGENT_PROVIDER")
         if base_url:

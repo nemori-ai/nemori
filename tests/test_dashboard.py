@@ -15,6 +15,7 @@ import dashboard.app as dashboard_app
 from dashboard.app import ConnectionTest, app, connection_test, start_run
 from dashboard.env_store import EnvStore, normalize_openai_base_url
 from dashboard.nemori_swe import (
+    AGENT_UV_DEPENDENCIES,
     SWE_LITE_MAX_TASKS,
     NemoriSWEManager,
     _published_port,
@@ -22,6 +23,13 @@ from dashboard.nemori_swe import (
 )
 from dashboard.run_manager import RunManager, flatten_records
 from evaluation.swebench.download import write_dataset_bundle
+
+
+def test_swe_agent_dependencies_keep_centos_compatible_tiktoken() -> None:
+    assert AGENT_UV_DEPENDENCIES == (
+        "mini-swe-agent==2.4.5",
+        "tiktoken==0.11.0",
+    )
 
 
 def test_environment_store_never_returns_secret_values(
