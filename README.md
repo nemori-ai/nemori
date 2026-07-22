@@ -215,7 +215,7 @@ docker compose up -d
 This brings up loopback-only services by default:
 - **PostgreSQL 16** on `127.0.0.1:15432` (user: `nemori`, password: `nemori`, db: `nemori`)
 - **Qdrant** on `127.0.0.1:16333` (HTTP) and `127.0.0.1:16334` (gRPC)
-- **Ollama** on `127.0.0.1:11434`
+- **Ollama** on `127.0.0.1:21434`
 
 Data is persisted in the `nemori_pg_data`, `nemori_qdrant_data`, and
 `nemori_ollama_data` Docker volumes. See

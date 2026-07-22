@@ -81,7 +81,7 @@ ollama pull qwen3-embedding:4b
 
 ```dotenv
 EMBEDDING_API_KEY=ollama
-EMBEDDING_BASE_URL=http://127.0.0.1:11434/v1
+EMBEDDING_BASE_URL=http://127.0.0.1:21434/v1
 NEMORI_EMBEDDING_MODEL=qwen3-embedding:4b
 ```
 

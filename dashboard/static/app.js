@@ -733,7 +733,7 @@ async function saveEnvironment() {
 
 function applyLocalEmbeddingPreset() {
   const form = $("#environment-form");
-  form.elements.EMBEDDING_BASE_URL.value = "http://127.0.0.1:11434/v1";
+  form.elements.EMBEDDING_BASE_URL.value = "http://127.0.0.1:21434/v1";
   form.elements.EMBEDDING_API_KEY.value = "ollama";
   form.elements.NEMORI_EMBEDDING_MODEL.value = "qwen3-embedding:4b";
   form.elements.NO_PROXY.value = "localhost,127.0.0.1,::1";

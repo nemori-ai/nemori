@@ -9,7 +9,7 @@ to the LAN or Internet.
 - Dashboard: `127.0.0.1:8765`
 - PostgreSQL: `127.0.0.1:15432`
 - Qdrant HTTP / gRPC: `127.0.0.1:16333` / `127.0.0.1:16334`
-- Ollama: `127.0.0.1:11434`
+- Ollama: `127.0.0.1:21434`
 - Docker bridge: `10.231.0.0/24` by default; override with
   `NEMORI_DOCKER_SUBNET` if the server already routes that subnet
 - Python and isolated SWE tools: managed by `uv`

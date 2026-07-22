@@ -587,9 +587,9 @@ async def system_status() -> dict[str, Any]:
     qdrant_host = env.get("QDRANT_URL", "localhost")
     qdrant_port = env.get("QDRANT_PORT", str(ports["qdrant_http"]))
     try:
-        ollama_port = int(env.get("NEMORI_OLLAMA_PORT") or 11434)
+        ollama_port = int(env.get("NEMORI_OLLAMA_PORT") or 21434)
     except (TypeError, ValueError):
-        ollama_port = 11434
+        ollama_port = 21434
 
     async def postgres_check() -> dict[str, Any]:
         start = time.perf_counter()

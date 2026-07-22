@@ -32,7 +32,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_OLLAMA_PORT:-11434}:11434"
+      - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_OLLAMA_PORT:-21434}:11434"
     volumes:
       - nemori_ollama_data:/root/.ollama
     healthcheck:
