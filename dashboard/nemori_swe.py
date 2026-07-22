@@ -16,7 +16,7 @@ from typing import Any, Mapping
 
 import httpx
 
-from dashboard.run_manager import ROOT, RunManager, atomic_json
+from dashboard.run_manager import ROOT, RUNTIME_DIR, RunManager, atomic_json
 from evaluation.swebench.contracts import (
     EvaluatorInstance,
     assert_no_forbidden_fields,
@@ -63,7 +63,7 @@ DEFAULT_QDRANT_HTTP_PORT = 16333
 DEFAULT_QDRANT_GRPC_PORT = 16334
 AGENT_UV_DEPENDENCIES = (
     "mini-swe-agent==2.4.5",
-    "litellm==1.80.10",
+    "litellm==1.90.6",
     # Keep compiled transitive dependencies on their last CentOS 7-compatible
     # manylinux2014 wheels instead of attempting unsupported source builds.
     "tiktoken==0.11.0",
@@ -935,6 +935,10 @@ class NemoriSWEManager:
             "--python",
             "3.12",
         ]
+        if os.name != "nt":
+            wheel_dir = RUNTIME_DIR / "wheels"
+            if wheel_dir.is_dir():
+                args.extend(("--find-links", str(wheel_dir)))
         for dependency in AGENT_UV_DEPENDENCIES:
             args.extend(("--with", dependency))
         args.extend(

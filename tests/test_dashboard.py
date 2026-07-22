@@ -28,7 +28,7 @@ from evaluation.swebench.download import write_dataset_bundle
 def test_swe_agent_dependencies_keep_centos_compatible_tiktoken() -> None:
     assert AGENT_UV_DEPENDENCIES == (
         "mini-swe-agent==2.4.5",
-        "litellm==1.80.10",
+        "litellm==1.90.6",
         "tiktoken==0.11.0",
         "datasets==4.0.0",
         "numpy==1.26.4",
@@ -815,7 +815,10 @@ def test_create_swebench_run_uses_wsl_harness_and_isolated_input(
     command = manager._phase_command(run, "evaluate")
     assert command[:3] == ["wsl.exe", "-d", "Ubuntu"]
     assert "swebench==4.1.0" in " ".join(command)
+    for dependency in run_manager_module.SWE_HARNESS_UV_DEPENDENCIES:
+        assert dependency in " ".join(command)
     assert "../../../evaluation/swebench/run.py" in " ".join(command)
+    assert manager._phase_working_directory(run) == Path(run["paths"]["run_dir"])
     assert run["paper_alignment"]["score_comparable"] is False
     workflow = manager.workflow(run["id"])
     assert workflow["definitions"]["ingest"]["tab_title"] == "环境构建"

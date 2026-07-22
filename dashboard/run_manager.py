@@ -63,6 +63,14 @@ QUALITY_MARKERS = (
 )
 
 DEFAULT_PROCESS_VMS_LIMIT_MB = 12_000
+SWE_HARNESS_UV_DEPENDENCIES = (
+    "libcst==1.7.0",
+    "cbor2==5.7.1",
+    "datasets==4.0.0",
+    "numpy==1.26.4",
+    "pandas==2.2.3",
+    "pyarrow==20.0.0",
+)
 
 
 def _is_windows_host() -> bool:
@@ -928,33 +936,39 @@ class RunManager:
                 "3.12",
                 "--with",
                 f"swebench=={config.get('swebench_version', '4.1.0')}",
-                "--no-project",
-                "python",
-                "-u",
-                "../../../evaluation/swebench/run.py",
-                "--input",
-                Path(paths["input"]).name,
-                "--predictions",
-                settings["swe_predictions_runtime"],
-                "--results",
-                Path(paths["results"]).name,
-                "--report",
-                Path(paths["report"]).name,
-                "--run-id",
-                run["id"],
-                "--dataset-name",
-                str(config.get("dataset_name", "princeton-nlp/SWE-bench_Lite")),
-                "--split",
-                str(config.get("split", "test")),
-                "--max-workers",
-                str(settings["swe_max_workers"]),
-                "--timeout",
-                str(settings["swe_timeout"]),
-                "--cache-level",
-                settings["swe_cache_level"],
-                "--namespace",
-                str(config.get("docker_namespace", "swebench")),
             ]
+            for dependency in SWE_HARNESS_UV_DEPENDENCIES:
+                linux_args.extend(("--with", dependency))
+            linux_args.extend(
+                [
+                    "--no-project",
+                    "python",
+                    "-u",
+                    "../../../evaluation/swebench/run.py",
+                    "--input",
+                    Path(paths["input"]).name,
+                    "--predictions",
+                    settings["swe_predictions_runtime"],
+                    "--results",
+                    Path(paths["results"]).name,
+                    "--report",
+                    Path(paths["report"]).name,
+                    "--run-id",
+                    run["id"],
+                    "--dataset-name",
+                    str(config.get("dataset_name", "princeton-nlp/SWE-bench_Lite")),
+                    "--split",
+                    str(config.get("split", "test")),
+                    "--max-workers",
+                    str(settings["swe_max_workers"]),
+                    "--timeout",
+                    str(settings["swe_timeout"]),
+                    "--cache-level",
+                    settings["swe_cache_level"],
+                    "--namespace",
+                    str(config.get("docker_namespace", "swebench")),
+                ]
+            )
             if settings.get("swe_clean"):
                 linux_args.append("--clean")
             if _is_windows_host():
@@ -1108,6 +1122,12 @@ class RunManager:
             str(settings["judge_concurrency"]),
         ]
 
+    @staticmethod
+    def _phase_working_directory(run: Mapping[str, Any]) -> Path:
+        if run.get("benchmark") == "swebench":
+            return Path(run["paths"]["run_dir"])
+        return ROOT
+
     async def _run_phase(self, run_id: str, phase: dict[str, Any]) -> bool:
         run = self.get_run(run_id)
         phase["status"] = "running"
@@ -1131,7 +1151,7 @@ class RunManager:
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
         process = await asyncio.create_subprocess_exec(
             *command,
-            cwd=str(ROOT),
+            cwd=str(self._phase_working_directory(run)),
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
