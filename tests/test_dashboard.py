@@ -29,6 +29,10 @@ def test_swe_agent_dependencies_keep_centos_compatible_tiktoken() -> None:
     assert AGENT_UV_DEPENDENCIES == (
         "mini-swe-agent==2.4.5",
         "tiktoken==0.11.0",
+        "datasets==4.0.0",
+        "numpy==1.26.4",
+        "pandas==2.2.3",
+        "pyarrow==20.0.0",
     )
 
 

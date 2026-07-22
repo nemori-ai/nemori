@@ -63,9 +63,13 @@ DEFAULT_QDRANT_HTTP_PORT = 16333
 DEFAULT_QDRANT_GRPC_PORT = 16334
 AGENT_UV_DEPENDENCIES = (
     "mini-swe-agent==2.4.5",
-    # tiktoken 0.12+ dropped manylinux2014 wheels and cannot build on the
-    # supported CentOS 7 host without adding an otherwise unnecessary Rust toolchain.
+    # Keep compiled transitive dependencies on their last CentOS 7-compatible
+    # manylinux2014 wheels instead of attempting unsupported source builds.
     "tiktoken==0.11.0",
+    "datasets==4.0.0",
+    "numpy==1.26.4",
+    "pandas==2.2.3",
+    "pyarrow==20.0.0",
 )
 
 
