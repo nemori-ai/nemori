@@ -27,6 +27,9 @@ classifiers = [
 dependencies = [
     "asyncpg>=0.29.0",
     "openai>=1.0.0",
+    # NumPy 2.3 dropped manylinux2014 wheels for Python 3.13. Keeping 2.2
+    # avoids source builds on supported CentOS 7 deployment hosts.
+    "numpy<2.3",
     # 0.12 Linux wheels require glibc 2.28; 0.11 retains manylinux2014
     # wheels so supported CentOS 7 deployment hosts do not need Rust builds.
     "tiktoken>=0.5.0,<0.12",
