@@ -45,7 +45,8 @@ ssh -N -L 18765:127.0.0.1:18765 liangshengyu@192.168.106.20
 On servers where the deployment account has no `sudo` access, run
 `scripts/run-server-dashboard.sh` with `nohup` and register that same command
 as a user `@reboot` crontab entry. Runtime logs are stored in the project and
-the process only binds to `127.0.0.1:18765`.
+the process only binds to `127.0.0.1:18765`. The three Compose services use
+`restart: unless-stopped`, so Docker restores them after a server reboot.
 
 ## Disk-safe SWE defaults
 

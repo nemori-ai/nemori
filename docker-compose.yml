@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-bookworm
+    restart: unless-stopped
     environment:
       POSTGRES_USER: nemori
       POSTGRES_PASSWORD: nemori
@@ -18,6 +19,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    restart: unless-stopped
     ports:
       - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_QDRANT_HTTP_PORT:-16333}:6333"
       - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_QDRANT_GRPC_PORT:-16334}:6334"
@@ -31,6 +33,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    restart: unless-stopped
     ports:
       - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_OLLAMA_PORT:-21434}:11434"
     volumes:

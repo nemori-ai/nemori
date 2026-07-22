@@ -337,8 +337,8 @@
           <div class="timeline">
             <article class="timeline-item panel">
               <span class="timeline-dot"></span><p class="eyebrow">SERVER READY</p><h3>CentOS 7 部署兼容与独立容器网络</h3>
-              <p>服务器改用便携 Python 3.13，并锁定带 manylinux2014 预编译包的 NumPy 与 tiktoken 版本；PostgreSQL 使用与 CentOS 兼容的 Debian Bookworm 镜像；网站、Ollama 和容器网络均独立配置，并通过用户 crontab 开机自启。</p>
-              <div class="tag-row"><span>Python 3.13</span><span>PostgreSQL Bookworm</span><span>网站 18765</span><span>Ollama 21434</span><span>10.231.0.0/24</span><span>用户级自启</span><span>不影响其他网站</span></div>
+              <p>服务器改用便携 Python 3.13，并锁定带 manylinux2014 预编译包的 NumPy 与 tiktoken 版本；PostgreSQL 使用与 CentOS 兼容的 Debian Bookworm 镜像；网站、Ollama 和容器网络均独立配置，网站通过用户 crontab 开机自启，基础容器由 Docker 自动恢复。</p>
+              <div class="tag-row"><span>Python 3.13</span><span>PostgreSQL Bookworm</span><span>网站 18765</span><span>Ollama 21434</span><span>10.231.0.0/24</span><span>用户级自启</span><span>容器自动恢复</span><span>不影响其他网站</span></div>
             </article>
             <article class="timeline-item panel">
               <span class="timeline-dot"></span><p class="eyebrow">RESTORED</p><h3>完整实验控制室重新接回</h3>
