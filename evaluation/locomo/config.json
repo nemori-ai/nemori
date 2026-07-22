@@ -3,10 +3,18 @@
   "embedding_model": "google/gemini-embedding-001",
   "buffer_size_min": 1,
   "buffer_size_max": 20,
+  "observation_window": 20,
+  "llm_timeout": 120,
+  "llm_retries": 3,
   "episode_min_messages": 1,
   "episode_max_messages": 20,
   "enable_semantic_memory": true,
   "enable_prediction_correction": true,
+  "semantic_context_top_k": 10,
+  "semantic_context_similarity_threshold": 0.7,
+  "semantic_consolidation_top_k": 5,
+  "enable_semantic_consolidation": true,
+  "merge_top_k": 5,
   "search_top_k_episodes": 10,
   "search_top_k_semantic": 20
 }

@@ -10,10 +10,18 @@ import dotenv
 dotenv.load_dotenv()
 
 
-client = OpenAI(
-    api_key=os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("LLM_BASE_URL"),
-)
+client = None
+
+
+def get_client():
+    """Create the judge client lazily so non-evaluation CLI commands still work."""
+    global client
+    if client is None:
+        client = OpenAI(
+            api_key=os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
+        )
+    return client
 
 JUDGE_MODEL = os.getenv("LLM_JUDGE_MODEL", "openai/gpt-4.1-mini")
 
@@ -46,7 +54,7 @@ Just return the label CORRECT or WRONG in a json format with the key as "label".
 
 def evaluate_llm_judge(question, gold_answer, generated_answer):
     """Evaluate the generated answer against the gold answer using an LLM judge."""
-    response = client.chat.completions.create(
+    response = get_client().chat.completions.create(
         model=JUDGE_MODEL,
         messages=[
             {

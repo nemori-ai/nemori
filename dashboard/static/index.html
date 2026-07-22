@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Nemori Experiment Lab</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#overview" data-nav="overview" aria-label="Nemori Experiment Lab">
+        <span class="brand-mark">N</span>
+        <span><strong>Nemori</strong><small>Experiment Lab</small></span>
+      </a>
+
+      <nav class="side-nav" aria-label="控制室导航">
+        <button class="nav-item active" data-view="overview"><span class="nav-icon">⌂</span><span>总览</span></button>
+        <button class="nav-item" data-view="swe"><span class="nav-icon">⌘</span><span>SWE 双模式</span></button>
+        <button class="nav-item" data-view="runs"><span class="nav-icon">▷</span><span>运行中心</span><span id="nav-run-count" class="nav-count">0</span></button>
+        <button class="nav-item" data-view="workflow"><span class="nav-icon">◇</span><span>内部工作流</span></button>
+        <button class="nav-item" data-view="environment"><span class="nav-icon">⚙</span><span>环境与连接</span></button>
+        <button class="nav-item" data-view="changes"><span class="nav-icon">≡</span><span>更新记录</span></button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div id="sidebar-health" class="sidebar-health"><span class="health-dot"></span><span>正在连接</span></div>
+        <small>本地控制面板 · 仅限可信网络</small>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-title">
+          <button id="menu-toggle" class="mobile-menu" aria-label="打开导航">☰</button>
+          <div><p id="page-eyebrow" class="eyebrow">CONTROL ROOM</p><h1 id="page-title">实验总览</h1></div>
+        </div>
+        <div class="topbar-actions">
+          <span id="disk-warning" class="top-warning hidden"></span>
+          <button id="global-refresh" class="button subtle" type="button">刷新状态</button>
+          <span id="service-state" class="service-state">连接中</span>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <section id="view-overview" class="view active">
+          <div class="welcome-grid">
+            <article class="welcome-card">
+              <p class="eyebrow">NATIVE MEMORY EVALUATION</p>
+              <h2>把环境、实验和内部记忆流程<br><span>放回同一块看板。</span></h2>
+              <p>统一管理 Nemori SWE、LoCoMo 与 LongMemEval。所有启动、连接检查、运行控制和结果留痕都从这里进入。</p>
+              <div class="action-row">
+                <button class="button primary" data-jump="runs">新建评测</button>
+                <button class="button secondary" data-jump="environment">检查环境</button>
+              </div>
+            </article>
+            <article class="resource-card panel">
+              <div class="section-head compact"><div><p class="eyebrow">HOST</p><h2>本机资源</h2></div><span id="environment-ready" class="status-pill">检查中</span></div>
+              <div class="resource-meter"><div><span>磁盘占用</span><strong id="disk-percent">--</strong></div><div class="meter"><i id="disk-bar"></i></div><small id="disk-copy">正在读取</small></div>
+              <div class="resource-stats">
+                <div><span>剩余空间</span><strong id="disk-free">--</strong></div>
+                <div><span>普通运行</span><strong id="active-runs">0</strong></div>
+                <div><span>SWE 状态</span><strong id="swe-overview-status">--</strong></div>
+              </div>
+            </article>
+          </div>
+
+          <section class="panel">
+            <div class="section-head">
+              <div><p class="eyebrow">SYSTEM</p><h2>启动环境与服务状态</h2></div>
+              <div class="action-row"><button id="start-environment" class="button primary" type="button">启动本地环境</button><button id="refresh-system" class="button subtle" type="button">重新检测</button></div>
+            </div>
+            <div id="system-cards" class="system-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
+            <div id="start-steps" class="step-results hidden"></div>
+          </section>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="section-head"><div><p class="eyebrow">DATASETS</p><h2>评测数据集</h2></div></div>
+              <div id="dataset-cards" class="dataset-grid"><p class="muted">正在读取数据集…</p></div>
+            </section>
+            <section class="panel">
+              <div class="section-head"><div><p class="eyebrow">RECENT</p><h2>最近运行</h2></div><button class="text-button" data-jump="runs">查看全部 →</button></div>
+              <div id="recent-runs" class="run-list"><p class="muted">暂无运行。</p></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-swe" class="view">
+          <div class="swe-hero panel">
+            <div>
+              <p class="eyebrow">REPOSITORY MEMORY / SWE-BENCH LITE</p>
+              <h2 id="swe-mode-title">Nemori + SWE<br><span>原生代码记忆测评。</span></h2>
+              <p id="swe-mode-copy">在精确的 <code>base_commit</code> 工作区构建 Nemori 记忆，检索与问题相关的代码上下文，交给一个 Coding Agent，再由官方 Harness 验证。</p>
+              <div class="swe-mode-switch" role="radiogroup" aria-label="SWE 运行路线">
+                <label><input type="radio" name="swe-arm" value="api"><span><strong>API + SWE</strong><small>纯 Coding Agent 基线，不构建 Nemori 记忆</small></span></label>
+                <label><input type="radio" name="swe-arm" value="nemori" checked><span><strong>Nemori + SWE</strong><small>构建并召回原生仓库代码记忆</small></span></label>
+              </div>
+              <div class="action-row"><button id="run-all" class="button primary">运行完整 Nemori + SWE</button><button id="stop-swe" class="button danger" disabled>停止</button></div>
+            </div>
+            <div class="swe-summary">
+              <div class="section-head compact"><span>当前实验</span><span id="swe-status" class="status-pill">未开始</span></div>
+              <strong id="swe-run-id">--</strong>
+              <p id="swe-activity">可运行完整流程，也可逐阶段执行。</p>
+              <div class="mini-grid">
+                <div><span>任务</span><strong id="swe-tasks">3</strong></div>
+                <div><span>情景记忆</span><strong id="swe-episodes">--</strong></div>
+                <div><span>语义记忆</span><strong id="swe-semantic">--</strong></div>
+                <div><span>命中</span><strong id="swe-hits">--</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="notice warning"><strong>资源提示</strong><span>批量 SWE 会拉取 Docker 镜像并占用大量磁盘和内存。本机空间不足时建议一次只跑 1 个任务，或迁移至服务器。</span></div>
+          <div class="notice"><strong>并行隔离</strong><span>Nemori 使用独立宿主机端口 PostgreSQL 15432、Qdrant 16333/16334，不会与另一套网站的标准端口冲突。</span></div>
+
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">PIPELINE</p><h2>一条实验路径</h2></div><label class="inline-field">SWE Lite 测评条数<input id="task-count" type="number" min="1" max="300" value="3"></label></div>
+            <div id="swe-pipeline" class="pipeline">
+              <article class="stage" data-stage="prepare"><span class="stage-index">01</span><h3>准备任务</h3><p>数据集、官方镜像、精确提交</p><button data-swe-action="prepare" class="stage-button">准备</button></article>
+              <article class="stage" data-stage="memory"><span class="stage-index">02</span><h3 id="memory-stage-title">代码记忆</h3><p id="memory-stage-copy">扫描代码并构建原生 Nemori 记忆</p><button data-swe-action="memory" class="stage-button">构建</button></article>
+              <article class="stage" data-stage="agent"><span class="stage-index">03</span><h3>Agent</h3><p>问题、记忆召回与仓库工具</p><button data-swe-action="agent" class="stage-button">运行</button></article>
+              <article class="stage" data-stage="harness"><span class="stage-index">04</span><h3>Harness</h3><p>官方 Docker 回归测试与判定</p><button data-swe-action="harness" class="stage-button">评测</button></article>
+              <article class="stage" data-stage="result"><span class="stage-index">05</span><h3>结果</h3><p>解决率、成本、命中与补丁</p><button class="stage-button" disabled>自动汇总</button></article>
+            </div>
+          </section>
+
+          <div class="dashboard-grid wide-left">
+            <section class="panel">
+              <div class="section-head"><div><p class="eyebrow">RESULT</p><h2>实验结果</h2></div><button id="refresh-swe" class="button subtle">刷新</button></div>
+              <div class="metric-grid">
+                <div class="metric featured"><span>成功率</span><strong id="swe-rate">--</strong></div>
+                <div class="metric"><span>已解决</span><strong id="swe-resolved">--</strong></div>
+                <div class="metric"><span>失败</span><strong id="swe-failed">--</strong></div>
+                <div class="metric"><span>Agent tokens</span><strong id="swe-tokens">--</strong></div>
+                <div class="metric"><span>Agent 时间</span><strong id="swe-time">--</strong></div>
+                <div class="metric"><span>代码文件</span><strong id="swe-files">--</strong></div>
+              </div>
+              <div class="table-wrap"><table><thead><tr><th>任务</th><th>状态</th><th>Tokens</th><th>时间</th><th>记忆命中</th></tr></thead><tbody id="swe-result-tasks"><tr><td colspan="5" class="empty">完成后显示逐任务结果。</td></tr></tbody></table></div>
+            </section>
+            <section class="panel log-panel">
+              <div class="section-head"><div><p class="eyebrow">LIVE LOG</p><h2>实时日志</h2></div></div>
+              <div id="swe-log" class="terminal"><p class="muted">等待实验启动。</p></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">SWE HISTORY</p><h2>两条路线运行记录</h2></div><button id="refresh-swe-history" class="button subtle">刷新</button></div>
+            <div class="table-wrap"><table><thead><tr><th>时间</th><th>路线</th><th>状态</th><th>测评条数</th><th>已解决</th><th>成功率</th><th>Tokens</th><th>记忆命中</th><th>操作</th></tr></thead><tbody id="swe-history"><tr><td colspan="9" class="empty">暂无 SWE 运行记录。</td></tr></tbody></table></div>
+            <div id="swe-history-detail" class="swe-history-detail hidden"></div>
+          </section>
+        </section>
+
+        <section id="view-runs" class="view">
+          <div class="section-intro">
+            <div><p class="eyebrow">RUN CENTER</p><h2>创建、控制与检查每次评测</h2><p>LoCoMo 与 LongMemEval 共用参数化运行中心；SWE-bench 使用独立 Nemori SWE 流水线。</p></div>
+            <button id="toggle-create-run" class="button primary">新建运行</button>
+          </div>
+
+          <section id="create-run-panel" class="panel create-panel">
+            <div class="section-head"><div><p class="eyebrow">NEW RUN</p><h2>评测配置</h2></div><button id="close-create-run" class="icon-button" aria-label="关闭">×</button></div>
+            <form id="run-form">
+              <div class="form-grid four">
+                <label>数据集<select name="benchmark"><option value="locomo">LoCoMo</option><option value="longmemeval">LongMemEval</option></select></label>
+                <label>运行名称<input name="name" placeholder="例如：LoCoMo Nemori"></label>
+                <label>起始样本<input name="start_index" type="number" min="0" value="0"></label>
+                <label>测评条数<input name="limit" type="number" min="1" value="1"></label>
+                <label>运行模式<select name="run_mode"><option value="nemori">Nemori</option><option value="direct">裸上下文基线（仅 LoCoMo）</option></select></label>
+                <label>LLM 模型<input name="llm_model" placeholder="使用环境默认值"></label>
+                <label>Embedding 模型<input name="embedding_model" placeholder="使用环境默认值"></label>
+                <label>Judge 模型<input name="judge_model" placeholder="使用环境默认值"></label>
+              </div>
+              <details class="advanced-block">
+                <summary>高级参数</summary>
+                <div class="form-grid five">
+                  <label>搜索方式<select name="search_method"><option value="vector">Vector</option><option value="hybrid">Hybrid</option><option value="text">Text</option></select></label>
+                  <label>情景 Top-K<input name="top_k_episodes" type="number" min="1" max="100" value="10"></label>
+                  <label>语义 Top-K<input name="top_k_semantic" type="number" min="1" max="100" value="20"></label>
+                  <label>附带原文数<input name="include_original_messages_top_k" type="number" min="0" max="20" value="2"></label>
+                  <label>观察窗口<input name="observation_window" type="number" min="1" max="100" value="20"></label>
+                  <label>批大小<input name="batch_size" type="number" min="1" max="100" value="1"></label>
+                  <label>写入并发<input name="ingest_concurrency" type="number" min="1" max="50" value="1"></label>
+                  <label>搜索并发<input name="search_concurrency" type="number" min="1" max="100" value="10"></label>
+                  <label>Judge 并发<input name="judge_concurrency" type="number" min="1" max="100" value="10"></label>
+                  <label>检查点间隔<input name="checkpoint_every" type="number" min="1" max="100" value="5"></label>
+                  <label>LLM 超时（秒）<input name="llm_timeout" type="number" min="10" max="600" value="120"></label>
+                  <label>进程内存上限 MB<input name="max_process_vms_mb" type="number" min="1024" max="131072" placeholder="默认 32768"></label>
+                </div>
+              </details>
+              <div class="check-grid">
+                <label class="check"><input name="auto_advance" type="checkbox" checked><span>阶段自动推进</span></label>
+                <label class="check"><input name="paper_profile" type="checkbox" checked><span>论文参数档案</span></label>
+                <label class="check"><input name="strict_quality" type="checkbox" checked><span>严格质量门禁</span></label>
+                <label class="check"><input name="create_direct_pair" type="checkbox"><span>同时创建裸上下文对照</span></label>
+              </div>
+              <label>运行备注<textarea name="notes" rows="2" placeholder="记录目的、假设或改动"></textarea></label>
+              <div class="action-row end"><button class="button secondary" type="submit" data-create-mode="create">仅创建</button><button class="button primary" type="submit" data-create-mode="start">创建并启动</button></div>
+            </form>
+          </section>
+
+          <div class="run-center-grid">
+            <section class="panel run-browser">
+              <div class="section-head"><div><p class="eyebrow">RUNS</p><h2>运行列表</h2></div><div class="filter-row"><select id="run-filter"><option value="all">全部</option><option value="locomo">LoCoMo</option><option value="longmemeval">LongMemEval</option><option value="active">运行中</option></select><button id="refresh-runs" class="button subtle">刷新</button></div></div>
+              <div id="run-list" class="run-list selectable"><p class="muted">暂无运行。</p></div>
+            </section>
+
+            <section class="panel run-detail">
+              <div id="run-empty" class="empty-state"><span>▷</span><h3>选择一个运行</h3><p>查看阶段、进程、日志、结果、产物与对比。</p></div>
+              <div id="run-detail-content" class="hidden">
+                <div class="section-head"><div><p id="detail-benchmark" class="eyebrow">RUN</p><h2 id="detail-name">--</h2><small id="detail-id" class="mono muted"></small></div><span id="detail-status" class="status-pill">--</span></div>
+                <div id="run-actions" class="action-row wrap">
+                  <button class="button primary" data-run-action="start">启动</button>
+                  <button class="button secondary" data-run-action="retry">重试</button>
+                  <button class="button secondary" data-run-action="pause">暂停</button>
+                  <button class="button secondary" data-run-action="resume">继续</button>
+                  <button class="button secondary" data-run-action="skip">跳过阶段</button>
+                  <button class="button danger" data-run-action="stop">停止</button>
+                  <button class="button subtle" data-run-action="clone">克隆</button>
+                  <button class="button ghost-danger" data-run-action="delete">删除</button>
+                </div>
+                <div class="metric-grid compact-metrics">
+                  <div class="metric"><span>进度</span><strong id="detail-progress">--</strong></div>
+                  <div class="metric"><span>样本</span><strong id="detail-samples">--</strong></div>
+                  <div class="metric"><span>CPU</span><strong id="detail-cpu">--</strong></div>
+                  <div class="metric"><span>内存</span><strong id="detail-memory">--</strong></div>
+                  <div class="metric"><span>Tokens</span><strong id="detail-tokens">--</strong></div>
+                </div>
+                <div id="phase-list" class="phase-list"></div>
+                <div class="subtabs" role="tablist">
+                  <button class="subtab active" data-detail-tab="summary">概览</button>
+                  <button class="subtab" data-detail-tab="logs">日志</button>
+                  <button class="subtab" data-detail-tab="results">结果</button>
+                  <button class="subtab" data-detail-tab="artifacts">产物</button>
+                  <button class="subtab" data-detail-tab="compare">对比</button>
+                </div>
+                <div id="detail-tab-summary" class="detail-tab active">
+                  <div id="run-summary" class="json-summary"></div>
+                  <label>运行备注<textarea id="run-notes" rows="3"></textarea></label>
+                  <button id="save-run-notes" class="button secondary">保存备注</button>
+                </div>
+                <div id="detail-tab-logs" class="detail-tab"><div class="section-head compact"><span>最近 500 行</span><button id="refresh-run-logs" class="text-button">刷新</button></div><pre id="generic-log" class="terminal pre">尚无日志。</pre></div>
+                <div id="detail-tab-results" class="detail-tab"><div id="generic-results"></div></div>
+                <div id="detail-tab-artifacts" class="detail-tab"><div id="artifact-list" class="artifact-grid"></div></div>
+                <div id="detail-tab-compare" class="detail-tab"><div class="compare-form"><select id="compare-run"></select><button id="run-compare" class="button secondary">开始对比</button></div><div id="compare-result"></div></div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-workflow" class="view">
+          <div class="section-intro">
+            <div><p class="eyebrow">INTERNAL WORKFLOW</p><h2>记忆内部工作流看板</h2><p>跟踪每个节点的定义、运行态、参数和事件。选择运行后可切换构建记忆与检索回答流程。</p></div>
+            <select id="workflow-run" class="wide-select"><option value="">选择运行</option></select>
+          </div>
+          <section class="panel">
+            <div class="section-head"><div><p id="workflow-eyebrow" class="eyebrow">FLOW</p><h2 id="workflow-title">尚未选择运行</h2><p id="workflow-subtitle" class="muted"></p></div><div class="subtabs compact-tabs"><button class="subtab active" data-flow="ingest">构建记忆</button><button class="subtab" data-flow="search">检索回答</button></div></div>
+            <div id="workflow-params" class="parameter-strip"></div>
+            <div id="workflow-canvas" class="workflow-canvas"><div class="empty-state"><span>◇</span><p>从上方选择一次运行。</p></div></div>
+          </section>
+          <div class="dashboard-grid">
+            <section class="panel"><div class="section-head"><div><p class="eyebrow">NODE</p><h2>节点检查器</h2></div></div><div id="node-inspector" class="empty-state small"><p>点击工作流节点查看决策逻辑和运行状态。</p></div></section>
+            <section class="panel"><div class="section-head"><div><p class="eyebrow">EVENTS</p><h2>最近事件</h2></div></div><div id="workflow-events" class="event-list"><p class="muted">暂无事件。</p></div></section>
+          </div>
+        </section>
+
+        <section id="view-environment" class="view">
+          <div class="section-intro">
+            <div><p class="eyebrow">ENVIRONMENT & CONNECTIONS</p><h2>启动环境、模型和基础设施</h2><p>密钥只写入项目 <code>.env</code>；网页不会回显已保存的密钥。测试会优先使用当前表单里尚未保存的值。</p></div>
+            <div class="action-row"><button id="local-embedding-preset" class="button secondary">填入本地 Embedding</button><button id="save-environment" class="button primary">保存配置</button></div>
+          </div>
+
+          <form id="environment-form">
+            <div class="environment-layout">
+              <section class="panel env-group" data-env-group="agent">
+                <div class="section-head"><div><p class="eyebrow">AGENT</p><h2>Coding Agent</h2></div><button type="button" class="test-button" data-test-target="agent">测试</button></div>
+                <div class="form-grid two">
+                  <label>Provider<input name="AGENT_PROVIDER"></label><label>Model<input name="AGENT_MODEL"></label>
+                  <label>Base URL<input name="AGENT_BASE_URL"></label><label>API Key<input name="AGENT_API_KEY" type="password"></label>
+                  <label>Work Dir<input name="AGENT_WORK_DIR"></label><label>Temperature<input name="AGENT_TEMPERATURE"></label>
+                  <label>Web LLM Mode<input name="WEB_LLM_MODE"></label>
+                </div>
+              </section>
+
+              <section class="panel env-group" data-env-group="model">
+                <div class="section-head"><div><p class="eyebrow">GENERATION / JUDGE</p><h2>生成模型与裁判</h2></div><div class="action-row"><button type="button" class="test-button" data-test-target="llm">测试 LLM</button><button type="button" class="test-button" data-test-target="judge">测试 Judge</button></div></div>
+                <div class="form-grid two">
+                  <label>LLM Base URL<input name="LLM_BASE_URL"></label><label>LLM API Key<input name="LLM_API_KEY" type="password"></label>
+                  <label>OpenAI Base URL<input name="OPENAI_BASE_URL"></label><label>OpenAI API Key<input name="OPENAI_API_KEY" type="password"></label>
+                  <label>Nemori LLM<input name="NEMORI_LLM_MODEL"></label><label>Nemori Judge<input name="NEMORI_JUDGE_MODEL"></label>
+                  <label>兼容 Judge 变量<input name="LLM_JUDGE_MODEL"></label>
+                </div>
+              </section>
+
+              <section class="panel env-group" data-env-group="embedding">
+                <div class="section-head"><div><p class="eyebrow">EMBEDDING</p><h2>向量模型</h2></div><button type="button" class="test-button" data-test-target="embedding">测试</button></div>
+                <div class="form-grid two">
+                  <label>Base URL<input name="EMBEDDING_BASE_URL"></label><label>API Key<input name="EMBEDDING_API_KEY" type="password"></label>
+                  <label>Model<input name="NEMORI_EMBEDDING_MODEL"></label>
+                </div>
+              </section>
+
+              <section class="panel env-group" data-env-group="infrastructure">
+                <div class="section-head"><div><p class="eyebrow">INFRASTRUCTURE</p><h2>数据库与隔离端口</h2></div><button type="button" class="test-button" data-test-target="infrastructure">测试</button></div>
+                <div class="form-grid two">
+                  <label>Database URL<input name="DATABASE_URL" type="password"></label><label>兼容 DSN<input name="DSN" type="password"></label>
+                  <label>Qdrant Host<input name="QDRANT_URL"></label><label>Qdrant API Key<input name="QDRANT_API_KEY" type="password"></label>
+                  <label>Qdrant Port<input name="QDRANT_PORT"></label><label>PostgreSQL Host Port<input name="NEMORI_POSTGRES_PORT"></label>
+                  <label>Qdrant HTTP Port<input name="NEMORI_QDRANT_HTTP_PORT"></label><label>Qdrant gRPC Port<input name="NEMORI_QDRANT_GRPC_PORT"></label>
+                  <label>Ollama Host Port<input name="NEMORI_OLLAMA_PORT"></label><label>服务绑定地址<input name="NEMORI_BIND_ADDRESS"></label>
+                  <label>网站监听地址<input name="NEMORI_DASHBOARD_HOST"></label><label>网站远端端口<input name="NEMORI_DASHBOARD_PORT"></label>
+                  <label class="span-two">Docker 独立子网<input name="NEMORI_DOCKER_SUBNET" placeholder="10.231.0.0/24"></label>
+                  <label class="span-two">NO_PROXY<input name="NO_PROXY"></label>
+                </div>
+              </section>
+
+              <section class="panel env-group" data-env-group="swe">
+                <div class="section-head"><div><p class="eyebrow">SWE RUNTIME</p><h2>Agent 与 Harness 预算</h2></div><span class="status-pill ready">保存后下次运行生效</span></div>
+                <div class="form-grid two">
+                  <label>Token 预算<input name="NEMORI_SWE_TOKEN_BUDGET" type="number" min="1000"></label><label>单任务时间预算（秒）<input name="NEMORI_SWE_TIME_BUDGET" type="number" min="60"></label>
+                  <label>最大 Agent 轮数<input name="NEMORI_SWE_MAX_TURNS" type="number" min="1"></label><label>最大工具调用<input name="NEMORI_SWE_MAX_TOOL_CALLS" type="number" min="1"></label>
+                  <label>记忆 LLM 超时（秒）<input name="NEMORI_SWE_MEMORY_TIMEOUT" type="number" min="10"></label><label>Harness 并发<input name="NEMORI_SWE_MAX_WORKERS" type="number" min="1" max="24"></label>
+                  <label>Harness 超时（秒）<input name="NEMORI_SWE_HARNESS_TIMEOUT" type="number" min="60"></label><label>Docker 缓存<select name="NEMORI_SWE_CACHE_LEVEL"><option value="none">none · 最省常驻空间</option><option value="base">base · 仅基础镜像</option><option value="env">env · 推荐</option><option value="instance">instance · 占用极大</option></select></label>
+                  <label class="check"><input name="NEMORI_SWE_CLEAN" type="checkbox" value="true"><span>Harness 完成后清理实例资源</span></label>
+                </div>
+              </section>
+            </div>
+          </form>
+
+          <section class="panel connection-panel">
+            <div class="section-head"><div><p class="eyebrow">PROBE RESULTS</p><h2>连接测试结果</h2></div><button id="test-all-connections" class="button secondary">全部测试</button></div>
+            <div id="connection-results" class="connection-results"><p class="muted">点击各分组“测试”或“全部测试”。</p></div>
+          </section>
+        </section>
+
+        <section id="view-changes" class="view">
+          <div class="section-intro"><div><p class="eyebrow">CHANGE LOG</p><h2>网站改动记录</h2><p>影响运行方式、可靠性、结果解释和控制面的改动都记录在这里。</p></div><span class="status-pill ok">2026-07-22</span></div>
+          <div class="timeline">
+            <article class="timeline-item panel">
+              <span class="timeline-dot"></span><p class="eyebrow">SERVER READY</p><h3>CentOS 7 部署兼容与独立容器网络</h3>
+              <p>服务器改用便携 Python 3.13，并锁定带 manylinux2014 预编译包的 NumPy 与 tiktoken 版本；PostgreSQL 使用与 CentOS 兼容的 Debian Bookworm 镜像；网站、Ollama 和容器网络均独立配置，网站通过用户 crontab 开机自启，基础容器由 Docker 自动恢复。</p>
+              <div class="tag-row"><span>Python 3.13</span><span>PostgreSQL Bookworm</span><span>网站 18765</span><span>Ollama 21434</span><span>10.231.0.0/24</span><span>用户级自启</span><span>容器自动恢复</span><span>不影响其他网站</span></div>
+            </article>
+            <article class="timeline-item panel">
+              <span class="timeline-dot"></span><p class="eyebrow">RESTORED</p><h3>完整实验控制室重新接回</h3>
+              <p>恢复总览、环境启动、连接检测、LoCoMo / LongMemEval 参数化运行、运行控制、工作流、日志、结果、产物与对比入口。Nemori SWE 单流水线继续保留。</p>
+              <div class="tag-row"><span>37 个后端路由</span><span>6 个主视图</span><span>实时轮询</span></div>
+            </article>
+            <article class="timeline-item panel">
+              <span class="timeline-dot"></span><p class="eyebrow">DEPLOYMENT</p><h3>API + SWE / Nemori + SWE 双模式与 Linux 服务器</h3>
+              <p>新增严格无记忆的 API 基线和原生 Nemori 代码记忆路线；Agent 与 Harness 可在 Windows WSL 或 Linux 原生运行。服务器控制面仅监听本机，通过 SSH 隧道访问。</p>
+              <div class="tag-row"><span>双模式</span><span>Linux native</span><span>SSH tunnel</span><span>预算与缓存可配置</span></div>
+            </article>
+            <article class="timeline-item panel">
+              <span class="timeline-dot"></span><p class="eyebrow">FIXED</p><h3>本地 Qdrant 502 与代理隔离</h3>
+              <p>本地 Qdrant 客户端禁用系统代理，避免 Windows 代理把 <code>localhost</code> 请求转发后返回空内容 502；远程 Qdrant 仍保留代理能力。</p>
+              <div class="tag-row"><span>trust_env=False</span><span>本地地址限定</span><span>自动化测试</span></div>
+            </article>
+            <article class="timeline-item panel">
+              <span class="timeline-dot"></span><p class="eyebrow">ISOLATED</p><h3>Nemori 与另一套测评网站端口隔离</h3>
+              <p>Nemori 改用 PostgreSQL <strong>15432</strong>、Qdrant HTTP <strong>16333</strong>、gRPC <strong>16334</strong>，避免和另一套网站的 5432 / 6333 / 6334 冲突。</p>
+              <div class="tag-row"><span>容器归属校验</span><span>真实健康检查</span><span>运行日志留痕</span></div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="loading-overlay" class="loading-overlay hidden"><div class="spinner"></div><strong id="loading-copy">处理中…</strong></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

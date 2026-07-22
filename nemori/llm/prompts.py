@@ -237,6 +237,53 @@ Return ONLY high-value knowledge in JSON format:
 Quality over quantity - extract only knowledge that truly helps understand the user long-term.
 """
 
+    # Appendix D.1.7: native semantic-memory management.  This prompt is
+    # intentionally conservative because an incorrect merge or delete loses
+    # information, while an extra NEW entry is recoverable.
+    SEMANTIC_CONSOLIDATION_PROMPT = """
+You are a conservative knowledge base maintainer. Your default action is NEW unless you are ABSOLUTELY CERTAIN about merging or conflict.
+
+## New Item
+Type: {new_type}
+Content: {new_content}
+
+## Existing Similar Items
+{candidates}
+
+## Actions (choose exactly one)
+
+1. **NEW** (DEFAULT): Add the new item. Choose NEW if:
+   - The items describe different facts, events, or entities
+   - The items refer to different times, places, or contexts
+   - You have ANY doubt whether they are truly identical or contradictory
+
+2. **MERGE** (RARE): Choose MERGE only when the new item and every selected
+   existing item express the EXACT SAME fact with different wording. The
+   canonical content must preserve every unique detail.
+
+3. **CONFLICT_DELETE** (VERY RARE): Choose CONFLICT_DELETE only when the new
+   item DIRECTLY CONTRADICTS selected existing item(s) about the SAME specific
+   attribute. The new item will replace the outdated selected item(s).
+
+## Output (valid JSON)
+
+- NEW: {{"decision": "NEW", "reason": "..."}}
+- MERGE: {{"decision": "MERGE", "target_ids": ["id1"], "new_content": "canonical phrasing (100 words or fewer)", "reason": "..."}}
+- CONFLICT_DELETE: {{"decision": "CONFLICT_DELETE", "target_ids": ["id1"], "reason": "..."}}
+
+## Critical Rules
+
+- Default to NEW; when in doubt, always choose NEW
+- Similar topics are not necessarily the same fact
+- "User has a cat" and "User has a dog" are both valid; choose NEW
+- Only MERGE semantically identical facts that are merely rephrased
+- Only CONFLICT_DELETE direct contradictions about the same attribute
+- Preserve information richness; losing a unique detail is worse than keeping a duplicate
+- target_ids may contain only IDs shown in Existing Similar Items
+
+Return only the JSON object, with no additional text.
+"""
+
     # Batch Segmentation Prompt
     BATCH_SEGMENTATION_PROMPT = """
 You are an intelligent conversation segmentation expert. Your task is to analyze a batch of messages and group them into coherent episodes.
@@ -320,6 +367,17 @@ Return only the JSON object, no additional text.
         """Get semantic memory generation prompt"""
         return cls.SEMANTIC_GENERATION_PROMPT.format(
             episodes=episodes
+        )
+
+    @classmethod
+    def get_semantic_consolidation_prompt(
+        cls, new_type: str, new_content: str, candidates: str
+    ) -> str:
+        """Get the native semantic consolidation prompt from Appendix D.1.7."""
+        return cls.SEMANTIC_CONSOLIDATION_PROMPT.format(
+            new_type=new_type,
+            new_content=new_content,
+            candidates=candidates,
         )
 
     @classmethod

@@ -15,13 +15,20 @@ from dotenv import load_dotenv
 from tqdm.asyncio import tqdm
 
 from nemori import NemoriMemory, MemoryConfig
+from evaluation.trace_utils import emit_trace, memory_snapshot, message_preview
 
-load_dotenv()
+def _configure_cli_logging() -> None:
+    """Configure progress output only for the CLI, never on module import."""
 
-# Suppress verbose logging from libraries
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("openai").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
+    for name in ("urllib3", "openai", "httpx"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+    nemori_logger = logging.getLogger("nemori")
+    if not nemori_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        nemori_logger.addHandler(handler)
+    nemori_logger.setLevel(logging.INFO)
+    nemori_logger.propagate = False
 
 
 def load_config(path: Path) -> MemoryConfig:
@@ -147,16 +154,76 @@ async def process_single_conversation(
         result["error"] = "No messages"
         return result
 
+    emit_trace(
+        {
+            "event": "ingest_source",
+            "flow": "ingest",
+            "nodes": ["source", "normalize"],
+            "summary": f"读取 LoCoMo 对话 {idx}：{len(messages)} 条消息",
+            "sample_index": idx,
+            "user_id": user_id,
+            "message_count": len(messages),
+            "message_preview": message_preview(messages),
+        }
+    )
+
     async with semaphore:
         try:
             # Add messages in batches
             for chunk in batched(messages, batch_size):
                 await memory.add_messages(user_id, chunk)
 
+            emit_trace(
+                {
+                    "event": "buffered",
+                    "flow": "ingest",
+                    "nodes": ["buffer", "segment"],
+                    "summary": f"{len(messages)} 条消息按 batch={batch_size} 进入缓冲并触发主题分段",
+                    "sample_index": idx,
+                    "user_id": user_id,
+                    "message_count": len(messages),
+                    "batch_size": batch_size,
+                }
+            )
+
             # Flush to create episodes (also triggers semantic generation)
             episodes = await memory.flush(user_id)
+            snapshot = await memory_snapshot(memory, user_id)
+            source_chars = sum(len(str(message.get("content") or "")) for message in messages)
+            narrative_chars = sum(
+                int(item.get("narrative_chars", 0)) for item in snapshot["episodes"]
+            )
+            emit_trace(
+                {
+                    "event": "ingest_complete",
+                    "flow": "ingest",
+                    "nodes": [
+                        "narrative",
+                        "episode_embed",
+                        "episode_store",
+                        "merge",
+                        "semantic_context",
+                        "semantic_extract",
+                        "semantic_embed",
+                        "semantic_consolidate",
+                        "semantic_store",
+                    ],
+                    "summary": (
+                        f"叙事构建完成：{len(messages)} 条消息 → "
+                        f"{len(snapshot['episodes'])} 个情景 → "
+                        f"{len(snapshot['semantic_memories'])} 条语义事实"
+                    ),
+                    "sample_index": idx,
+                    "user_id": user_id,
+                    "message_count": len(messages),
+                    "source_chars": source_chars,
+                    "narrative_chars": narrative_chars,
+                    "compression_ratio": round(narrative_chars / max(1, source_chars), 3),
+                    **snapshot,
+                }
+            )
             result["success"] = True
-            result["episodes_created"] = len(episodes)
+            result["episodes_created"] = len(snapshot["episodes"]) or len(episodes)
         except Exception as e:
             result["error"] = f"{type(e).__name__}: {e}"
 
@@ -221,6 +288,8 @@ async def process_dataset(
 
 
 def main() -> None:
+    load_dotenv()
+    _configure_cli_logging()
     parser = argparse.ArgumentParser(description="Add LoCoMo dataset into Nemori memory")
     parser.add_argument("--data", default="dataset/locomo10.json", help="Path to LoCoMo JSON dataset")
     parser.add_argument("--config", default="config.json", help="Path to MemoryConfig JSON")

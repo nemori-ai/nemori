@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -17,6 +18,13 @@ from qdrant_client.models import (
 logger = logging.getLogger("nemori")
 
 
+def _is_loopback_url(url: str) -> bool:
+    """Return whether a Qdrant URL points at this machine."""
+
+    parsed = urlparse(url if "://" in url else f"//{url}")
+    return (parsed.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+
+
 class QdrantVectorStore:
     """Manages vector storage and search in Qdrant."""
 
@@ -26,8 +34,20 @@ class QdrantVectorStore:
         port: int = 6333,
         api_key: str | None = None,
         collection_prefix: str = "nemori",
+        client: QdrantClient | None = None,
     ) -> None:
-        self._client = QdrantClient(url=url, port=port, api_key=api_key, check_compatibility=False)
+        client_options: dict[str, Any] = {}
+        if _is_loopback_url(url):
+            # httpx otherwise honors the Windows system proxy and can route a
+            # loopback Qdrant request through it, producing an empty 502.
+            client_options["trust_env"] = False
+        self._client = client or QdrantClient(
+            url=url,
+            port=port,
+            api_key=api_key,
+            check_compatibility=False,
+            **client_options,
+        )
         self._prefix = collection_prefix
         self._episodes_collection = f"{collection_prefix}_episodes"
         self._semantic_collection = f"{collection_prefix}_semantic"

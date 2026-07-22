@@ -1,12 +1,13 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-bookworm
+    restart: unless-stopped
     environment:
       POSTGRES_USER: nemori
       POSTGRES_PASSWORD: nemori
       POSTGRES_DB: nemori
     ports:
-      - "5432:5432"
+      - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_POSTGRES_PORT:-15432}:5432"
     volumes:
       - nemori_pg_data:/var/lib/postgresql/data
       - ./docker/init-extensions.sql:/docker-entrypoint-initdb.d/init-extensions.sql
@@ -18,17 +19,39 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    restart: unless-stopped
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_QDRANT_HTTP_PORT:-16333}:6333"
+      - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_QDRANT_GRPC_PORT:-16334}:6334"
     volumes:
       - nemori_qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/healthz"]
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/6333"]
       interval: 5s
       timeout: 3s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "${NEMORI_BIND_ADDRESS:-127.0.0.1}:${NEMORI_OLLAMA_PORT:-21434}:11434"
+    volumes:
+      - nemori_ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
 volumes:
   nemori_pg_data:
   nemori_qdrant_data:
+  nemori_ollama_data:
+
+networks:
+  default:
+    name: nemori_internal
+    ipam:
+      config:
+        - subnet: "${NEMORI_DOCKER_SUBNET:-10.231.0.0/24}"
