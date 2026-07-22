@@ -1,7 +1,7 @@
 param(
     [string]$Server = "liangshengyu@192.168.106.20",
     [int]$LocalPort = 18765,
-    [int]$RemotePort = 8765
+    [int]$RemotePort = 18765
 )
 
 $ErrorActionPreference = "Stop"

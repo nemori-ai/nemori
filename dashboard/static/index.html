@@ -307,6 +307,7 @@
                   <label>Qdrant Port<input name="QDRANT_PORT"></label><label>PostgreSQL Host Port<input name="NEMORI_POSTGRES_PORT"></label>
                   <label>Qdrant HTTP Port<input name="NEMORI_QDRANT_HTTP_PORT"></label><label>Qdrant gRPC Port<input name="NEMORI_QDRANT_GRPC_PORT"></label>
                   <label>Ollama Host Port<input name="NEMORI_OLLAMA_PORT"></label><label>服务绑定地址<input name="NEMORI_BIND_ADDRESS"></label>
+                  <label>网站监听地址<input name="NEMORI_DASHBOARD_HOST"></label><label>网站远端端口<input name="NEMORI_DASHBOARD_PORT"></label>
                   <label class="span-two">Docker 独立子网<input name="NEMORI_DOCKER_SUBNET" placeholder="10.231.0.0/24"></label>
                   <label class="span-two">NO_PROXY<input name="NO_PROXY"></label>
                 </div>
@@ -336,8 +337,8 @@
           <div class="timeline">
             <article class="timeline-item panel">
               <span class="timeline-dot"></span><p class="eyebrow">SERVER READY</p><h3>CentOS 7 部署兼容与独立容器网络</h3>
-              <p>服务器改用便携 Python 3.13，并锁定带 manylinux2014 预编译包的 NumPy 与 tiktoken 版本；PostgreSQL 使用与 CentOS 兼容的 Debian Bookworm 镜像；Nemori 容器固定使用独立子网，避免和同机其他测评网站冲突。</p>
-              <div class="tag-row"><span>Python 3.13</span><span>glibc 2.17</span><span>PostgreSQL Bookworm</span><span>10.231.0.0/24</span><span>Ollama 21434</span><span>不影响其他网站</span></div>
+              <p>服务器改用便携 Python 3.13，并锁定带 manylinux2014 预编译包的 NumPy 与 tiktoken 版本；PostgreSQL 使用与 CentOS 兼容的 Debian Bookworm 镜像；网站、Ollama 和容器网络均独立配置，并通过用户 crontab 开机自启。</p>
+              <div class="tag-row"><span>Python 3.13</span><span>PostgreSQL Bookworm</span><span>网站 18765</span><span>Ollama 21434</span><span>10.231.0.0/24</span><span>用户级自启</span><span>不影响其他网站</span></div>
             </article>
             <article class="timeline-item panel">
               <span class="timeline-dot"></span><p class="eyebrow">RESTORED</p><h3>完整实验控制室重新接回</h3>

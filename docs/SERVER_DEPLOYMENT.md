@@ -1,12 +1,12 @@
 # Nemori evaluation server deployment
 
 The dashboard is designed to stay private on the server and be opened through
-an SSH tunnel. Do not expose port `8765`, PostgreSQL, Qdrant, or Ollama directly
+an SSH tunnel. Do not expose port `18765`, PostgreSQL, Qdrant, or Ollama directly
 to the LAN or Internet.
 
 ## Server runtime
 
-- Dashboard: `127.0.0.1:8765`
+- Dashboard: `127.0.0.1:18765`
 - PostgreSQL 16 (Debian Bookworm): `127.0.0.1:15432`
 - Qdrant HTTP / gRPC: `127.0.0.1:16333` / `127.0.0.1:16334`
 - Ollama: `127.0.0.1:21434`
@@ -37,8 +37,15 @@ password.
 Equivalent manual command:
 
 ```powershell
-ssh -N -L 18765:127.0.0.1:8765 liangshengyu@192.168.106.20
+ssh -N -L 18765:127.0.0.1:18765 liangshengyu@192.168.106.20
 ```
+
+## User-level persistence
+
+On servers where the deployment account has no `sudo` access, run
+`scripts/run-server-dashboard.sh` with `nohup` and register that same command
+as a user `@reboot` crontab entry. Runtime logs are stored in the project and
+the process only binds to `127.0.0.1:18765`.
 
 ## Disk-safe SWE defaults
 
