@@ -7,7 +7,7 @@ to the LAN or Internet.
 ## Server runtime
 
 - Dashboard: `127.0.0.1:8765`
-- PostgreSQL: `127.0.0.1:15432`
+- PostgreSQL 16 (Debian Bookworm): `127.0.0.1:15432`
 - Qdrant HTTP / gRPC: `127.0.0.1:16333` / `127.0.0.1:16334`
 - Ollama: `127.0.0.1:21434`
 - Docker bridge: `10.231.0.0/24` by default; override with
