@@ -307,6 +307,7 @@
                   <label>Qdrant Port<input name="QDRANT_PORT"></label><label>PostgreSQL Host Port<input name="NEMORI_POSTGRES_PORT"></label>
                   <label>Qdrant HTTP Port<input name="NEMORI_QDRANT_HTTP_PORT"></label><label>Qdrant gRPC Port<input name="NEMORI_QDRANT_GRPC_PORT"></label>
                   <label>Ollama Host Port<input name="NEMORI_OLLAMA_PORT"></label><label>服务绑定地址<input name="NEMORI_BIND_ADDRESS"></label>
+                  <label class="span-two">Docker 独立子网<input name="NEMORI_DOCKER_SUBNET" placeholder="10.231.0.0/24"></label>
                   <label class="span-two">NO_PROXY<input name="NO_PROXY"></label>
                 </div>
               </section>
@@ -331,8 +332,13 @@
         </section>
 
         <section id="view-changes" class="view">
-          <div class="section-intro"><div><p class="eyebrow">CHANGE LOG</p><h2>网站改动记录</h2><p>影响运行方式、可靠性、结果解释和控制面的改动都记录在这里。</p></div><span class="status-pill ok">2026-07-21</span></div>
+          <div class="section-intro"><div><p class="eyebrow">CHANGE LOG</p><h2>网站改动记录</h2><p>影响运行方式、可靠性、结果解释和控制面的改动都记录在这里。</p></div><span class="status-pill ok">2026-07-22</span></div>
           <div class="timeline">
+            <article class="timeline-item panel">
+              <span class="timeline-dot"></span><p class="eyebrow">SERVER READY</p><h3>CentOS 7 部署兼容与独立容器网络</h3>
+              <p>服务器改用便携 Python 3.13，并锁定带 manylinux2014 预编译包的 NumPy 与 tiktoken 版本；Nemori 容器固定使用独立子网，避免和同机其他测评网站的 Docker 网络冲突。</p>
+              <div class="tag-row"><span>Python 3.13</span><span>glibc 2.17</span><span>10.231.0.0/24</span><span>不影响其他网站</span></div>
+            </article>
             <article class="timeline-item panel">
               <span class="timeline-dot"></span><p class="eyebrow">RESTORED</p><h3>完整实验控制室重新接回</h3>
               <p>恢复总览、环境启动、连接检测、LoCoMo / LongMemEval 参数化运行、运行控制、工作流、日志、结果、产物与对比入口。Nemori SWE 单流水线继续保留。</p>

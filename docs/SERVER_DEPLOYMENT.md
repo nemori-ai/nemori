@@ -10,6 +10,8 @@ to the LAN or Internet.
 - PostgreSQL: `127.0.0.1:15432`
 - Qdrant HTTP / gRPC: `127.0.0.1:16333` / `127.0.0.1:16334`
 - Ollama: `127.0.0.1:11434`
+- Docker bridge: `10.231.0.0/24` by default; override with
+  `NEMORI_DOCKER_SUBNET` if the server already routes that subnet
 - Python and isolated SWE tools: managed by `uv`
 - SWE execution: native Docker on Linux; WSL only on Windows
 

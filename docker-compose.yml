@@ -45,3 +45,10 @@ volumes:
   nemori_pg_data:
   nemori_qdrant_data:
   nemori_ollama_data:
+
+networks:
+  default:
+    name: nemori_internal
+    ipam:
+      config:
+        - subnet: "${NEMORI_DOCKER_SUBNET:-10.231.0.0/24}"
