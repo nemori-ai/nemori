@@ -944,7 +944,7 @@ class RunManager:
                     "--no-project",
                     "python",
                     "-u",
-                    "../../../evaluation/swebench/run.py",
+                    "../../evaluation/swebench/run.py",
                     "--input",
                     Path(paths["input"]).name,
                     "--predictions",

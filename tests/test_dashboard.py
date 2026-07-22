@@ -817,7 +817,7 @@ def test_create_swebench_run_uses_wsl_harness_and_isolated_input(
     assert "swebench==4.1.0" in " ".join(command)
     for dependency in run_manager_module.SWE_HARNESS_UV_DEPENDENCIES:
         assert dependency in " ".join(command)
-    assert "../../../evaluation/swebench/run.py" in " ".join(command)
+    assert "../../evaluation/swebench/run.py" in " ".join(command)
     assert manager._phase_working_directory(run) == Path(run["paths"]["run_dir"])
     assert run["paper_alignment"]["score_comparable"] is False
     workflow = manager.workflow(run["id"])
