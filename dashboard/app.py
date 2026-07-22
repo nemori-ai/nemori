@@ -21,7 +21,11 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from dashboard.env_store import ENV_FIELDS, EnvStore, normalize_openai_base_url
-from dashboard.nemori_swe import NemoriSWEManager, service_ports
+from dashboard.nemori_swe import (
+    SWE_LITE_MAX_TASKS,
+    NemoriSWEManager,
+    service_ports,
+)
 from dashboard.run_manager import ROOT, RUNTIME_DIR, RunManager
 from dashboard.swebench_data import load_dataset_rows
 from evaluation.swebench.contracts import sanitize_agent_instance
@@ -114,7 +118,7 @@ class SystemStart(BaseModel):
 
 
 class NemoriSWEStart(BaseModel):
-    task_count: int = Field(default=3, ge=1, le=20)
+    task_count: int = Field(default=3, ge=1, le=SWE_LITE_MAX_TASKS)
     arm: str = Field(default="nemori", pattern="^(api|nemori)$")
 
 
@@ -217,6 +221,23 @@ async def nemori_swe_history(
     limit: int = Query(default=20, ge=1, le=100),
 ) -> dict[str, Any]:
     return {"items": nemori_swe.history(limit)}
+
+
+@app.get("/api/nemori-swe/history/{run_id}")
+async def nemori_swe_history_detail(run_id: str) -> dict[str, Any]:
+    try:
+        return nemori_swe.get_run(run_id)
+    except (KeyError, ValueError, OSError, json.JSONDecodeError) as exc:
+        raise not_found_or_conflict(exc) from exc
+
+
+@app.delete("/api/nemori-swe/history/{run_id}")
+async def delete_nemori_swe_history(run_id: str) -> dict[str, Any]:
+    try:
+        nemori_swe.delete_run(run_id)
+        return {"ok": True, "id": run_id}
+    except (KeyError, ValueError, OSError) as exc:
+        raise not_found_or_conflict(exc) from exc
 
 
 @app.post("/api/nemori-swe/stop", status_code=202)

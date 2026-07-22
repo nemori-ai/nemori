@@ -15,6 +15,7 @@ const appState = {
   selectedNode: null,
   swe: null,
   sweHistory: [],
+  selectedSweHistoryId: null,
   sweArmDraft: null,
   environment: null,
   polling: false,
@@ -251,6 +252,12 @@ function renderDatasets(datasets) {
     const detail = item.id === "locomo" ? `${fmt(item.questions)} 个问题` : item.id === "longmemeval" ? `${fmt(item.sessions)} 个会话` : `${fmt(item.repository_count)} 个仓库`;
     return `<article class="dataset-card"><span class="status-pill ${item.available ? "ok" : "failed"}">${item.available ? "可用" : "缺失"}</span><strong>${escapeHtml(names[item.id] || item.id)}</strong><small>${fmt(item.samples)} 个样本 · ${detail}</small><div class="dataset-meta"><span>${item.bytes ? `${fmt(item.bytes / 1024 / 1024, 1)} MB` : "本地数据"}</span><span>${escapeHtml(item.split || "evaluation")}</span></div></article>`;
   }).join("") : '<p class="muted">未发现数据集。</p>';
+  const sweDataset = datasets.find((item) => item.id === "swebench");
+  const taskCount = $("#task-count");
+  const availableTasks = Number(sweDataset?.samples);
+  if (taskCount && Number.isInteger(availableTasks) && availableTasks > 0) {
+    taskCount.max = String(Math.min(300, availableTasks));
+  }
 }
 
 function filteredRuns() {
@@ -584,13 +591,85 @@ function renderSweHistory(items) {
   if (!target) return;
   target.innerHTML = appState.sweHistory.length ? appState.sweHistory.map((item) => {
     const result = item.result || {};
-    return `<tr><td>${escapeHtml(fmtDate(item.created_at))}</td><td><span class="status-pill ${item.arm === "nemori" ? "ok" : "ready"}">${item.arm === "nemori" ? "Nemori + SWE" : "API + SWE"}</span></td><td>${escapeHtml(statusLabel(item.status))}</td><td>${fmt(item.sample_count)}</td><td>${result.resolved == null ? "--" : fmt(result.resolved)}</td><td>${result.success_rate == null ? "--" : `${(Number(result.success_rate) * 100).toFixed(1)}%`}</td><td>${result.agent_tokens == null ? "--" : fmt(result.agent_tokens)}</td><td>${result.memory_hits == null ? "--" : fmt(result.memory_hits)}</td></tr>`;
-  }).join("") : '<tr><td colspan="8" class="empty">暂无 SWE 运行记录。</td></tr>';
+    const disabled = activeSweStates.has(item.status) ? " disabled" : "";
+    return `<tr><td>${escapeHtml(fmtDate(item.created_at))}</td><td><span class="status-pill ${item.arm === "nemori" ? "ok" : "ready"}">${item.arm === "nemori" ? "Nemori + SWE" : "API + SWE"}</span></td><td><span class="status-pill ${statusClass(item.status)}">${escapeHtml(statusLabel(item.status))}</span></td><td>${fmt(item.sample_count)}</td><td>${result.resolved == null ? "--" : fmt(result.resolved)}</td><td>${result.success_rate == null ? "--" : `${(Number(result.success_rate) * 100).toFixed(1)}%`}</td><td>${result.agent_tokens == null ? "--" : fmt(result.agent_tokens)}</td><td>${result.memory_hits == null ? "--" : fmt(result.memory_hits)}</td><td><div class="record-actions"><button type="button" class="text-button" data-swe-history-view="${escapeHtml(item.id)}">查看详情</button><button type="button" class="text-button danger-text" data-swe-history-delete="${escapeHtml(item.id)}"${disabled}>删除</button></div></td></tr>`;
+  }).join("") : '<tr><td colspan="9" class="empty">暂无 SWE 运行记录。</td></tr>';
+  $$('[data-swe-history-view]', target).forEach((button) => button.addEventListener("click", () => loadSweHistoryDetail(button.dataset.sweHistoryView)));
+  $$('[data-swe-history-delete]', target).forEach((button) => button.addEventListener("click", () => deleteSweHistory(button.dataset.sweHistoryDelete)));
+  if (appState.selectedSweHistoryId && !appState.sweHistory.some((item) => item.id === appState.selectedSweHistoryId)) {
+    appState.selectedSweHistoryId = null;
+    $("#swe-history-detail")?.classList.add("hidden");
+  }
 }
 
 async function refreshSweHistory() {
   const data = await api("/api/nemori-swe/history?limit=20");
   renderSweHistory(data.items || []);
+}
+
+function renderSweHistoryDetail(run) {
+  const target = $("#swe-history-detail");
+  if (!target) return;
+  const result = run.result || {};
+  const selection = run.selection || {};
+  const config = run.config || {};
+  const stepLabels = { prepare: "准备任务", memory: run.arm === "api" ? "冻结输入" : "构建记忆", agent: "Agent", harness: "Harness", result: "汇总结果" };
+  const steps = Object.entries(run.steps || {});
+  const instances = result.instances || [];
+  const logs = run.logs || [];
+  const canDelete = !activeSweStates.has(run.status);
+  const stepMarkup = steps.length ? steps.map(([name, step]) => `<div class="history-stage"><div><strong>${escapeHtml(stepLabels[name] || titleCase(name))}</strong><small>${escapeHtml(step.started_at ? fmtDate(step.started_at) : "未开始")}${step.ended_at ? ` → ${escapeHtml(fmtDate(step.ended_at))}` : ""}</small></div><span class="status-pill ${statusClass(step.status)}">${escapeHtml(statusLabel(step.status))}</span>${step.error ? `<p>${escapeHtml(step.error)}</p>` : ""}</div>`).join("") : '<p class="muted">暂无阶段记录。</p>';
+  const instanceMarkup = instances.length ? `<div class="table-wrap"><table><thead><tr><th>任务</th><th>状态</th><th>Tokens</th><th>时间</th><th>记忆命中</th></tr></thead><tbody>${instances.map((item) => `<tr><td>${escapeHtml(item.instance_id || "--")}</td><td>${item.resolved ? '<span class="status-pill ok">已解决</span>' : '<span class="status-pill failed">失败</span>'}</td><td>${fmt(item.tokens)}</td><td>${item.time_seconds == null ? "--" : `${fmt(item.time_seconds, 1)}s`}</td><td>${fmt(item.memory_hits)}</td></tr>`).join("")}</tbody></table></div>` : '<p class="muted">这次测评尚无逐任务结果。</p>';
+  const logMarkup = logs.length ? logs.slice(-100).map((item) => `<p class="log-line ${escapeHtml(item.level || "")}"><span class="time">${escapeHtml(item.timestamp ? new Date(item.timestamp).toLocaleTimeString("zh-CN") : "")}</span> [${escapeHtml(item.stage || "system")}] ${escapeHtml(item.message || "")}</p>`).join("") : '<p class="muted">暂无日志。</p>';
+  target.innerHTML = `<div class="section-head"><div><p class="eyebrow">SWE RUN DETAIL</p><h2>${escapeHtml(run.name || run.id)}</h2><small class="mono muted">${escapeHtml(run.id)} · ${escapeHtml(fmtDate(run.created_at))} 至 ${escapeHtml(fmtDate(run.updated_at))}</small></div><div class="record-actions"><span class="status-pill ${statusClass(run.status)}">${escapeHtml(statusLabel(run.status))}</span><button type="button" class="button ghost-danger" data-swe-detail-delete${canDelete ? "" : " disabled"}>删除</button><button type="button" class="icon-button" data-swe-detail-close aria-label="关闭">×</button></div></div>
+    <div class="metric-grid swe-history-metrics">
+      <div class="metric"><span>路线</span><strong>${run.arm === "api" ? "API + SWE" : "Nemori + SWE"}</strong></div>
+      <div class="metric"><span>测评条数</span><strong>${fmt(selection.sample_count ?? config.task_count)}</strong></div>
+      <div class="metric"><span>已解决</span><strong>${result.resolved == null ? "--" : fmt(result.resolved)}</strong></div>
+      <div class="metric"><span>成功率</span><strong>${result.success_rate == null ? "--" : `${(Number(result.success_rate) * 100).toFixed(1)}%`}</strong></div>
+      <div class="metric"><span>Tokens</span><strong>${result.agent_tokens == null ? "--" : fmt(result.agent_tokens)}</strong></div>
+      <div class="metric"><span>记忆命中</span><strong>${result.memory_hits == null ? "--" : fmt(result.memory_hits)}</strong></div>
+    </div>
+    <div class="swe-history-detail-grid"><div><h3>阶段详情</h3><div class="history-stage-grid">${stepMarkup}</div><h3>逐任务结果</h3>${instanceMarkup}</div><div><h3>运行信息</h3><div class="json-summary history-config"><div class="summary-card"><span>配置条数</span><strong>${fmt(config.task_count)}</strong></div><div class="summary-card"><span>数据集</span><strong>${escapeHtml(selection.dataset || "SWE-bench Lite")}</strong></div><div class="summary-card"><span>当前活动</span><strong>${escapeHtml(run.current_activity || "--")}</strong></div></div><h3>运行日志</h3><div class="terminal swe-history-log">${logMarkup}</div></div></div>`;
+  target.classList.remove("hidden");
+  target.querySelector("[data-swe-detail-close]").addEventListener("click", () => {
+    appState.selectedSweHistoryId = null;
+    target.classList.add("hidden");
+  });
+  target.querySelector("[data-swe-detail-delete]").addEventListener("click", () => deleteSweHistory(run.id));
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function loadSweHistoryDetail(runId) {
+  try {
+    const run = await withLoading("正在读取 SWE 测评详情…", () => api(`/api/nemori-swe/history/${encodeURIComponent(runId)}`));
+    appState.selectedSweHistoryId = runId;
+    renderSweHistoryDetail(run);
+  } catch (error) { reportError(error); }
+}
+
+async function deleteSweHistory(runId) {
+  if (!runId || !window.confirm(`确认删除 SWE 测评记录 ${runId}？运行目录和所有产物会一并删除。`)) return;
+  try {
+    await withLoading("正在删除 SWE 测评记录…", () => api(`/api/nemori-swe/history/${encodeURIComponent(runId)}`, { method: "DELETE" }));
+    if (appState.selectedSweHistoryId === runId) {
+      appState.selectedSweHistoryId = null;
+      $("#swe-history-detail")?.classList.add("hidden");
+    }
+    await Promise.all([refreshSwe(), refreshSweHistory()]);
+    toast("SWE 测评记录已删除");
+  } catch (error) { reportError(error); }
+}
+
+function selectedSweTaskCount() {
+  const input = $("#task-count");
+  const value = Number(input?.value);
+  const maximum = Number(input?.max || 300);
+  if (!Number.isInteger(value) || value < 1 || value > maximum) {
+    input?.focus();
+    throw new Error(`SWE Lite 测评条数必须是 1 到 ${maximum} 的整数`);
+  }
+  return value;
 }
 
 function renderSwe(current) {
@@ -657,7 +736,7 @@ async function refreshSwe() {
 
 async function sweAction(action) {
   try {
-    const payload = action === "prepare" ? { task_count: Number($("#task-count").value || 3), arm: selectedSweArm() } : undefined;
+    const payload = action === "prepare" ? { task_count: selectedSweTaskCount(), arm: selectedSweArm() } : undefined;
     const result = await api(`/api/nemori-swe/${action}`, { method: "POST", ...(payload ? { body: JSON.stringify(payload) } : {}) });
     renderSwe(result);
     toast("阶段已提交");
@@ -667,7 +746,7 @@ async function sweAction(action) {
 async function runAllSwe() {
   try {
     const arm = selectedSweArm();
-    const result = await api("/api/nemori-swe/run-all", { method: "POST", body: JSON.stringify({ task_count: Number($("#task-count").value || 3), arm }) });
+    const result = await api("/api/nemori-swe/run-all", { method: "POST", body: JSON.stringify({ task_count: selectedSweTaskCount(), arm }) });
     renderSwe(result);
     await refreshSweHistory();
     toast(`完整 ${arm === "api" ? "API + SWE" : "Nemori + SWE"} 实验已启动`);

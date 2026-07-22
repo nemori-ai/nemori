@@ -46,8 +46,16 @@ EXPERIMENT_PURPOSES = {
 }
 ARMS = frozenset(EXPERIMENT_NAMES)
 RUN_ROOT = ROOT / "runs" / "nemori-swe"
+SWE_LITE_MAX_TASKS = 300
 ACTIVE = frozenset(
-    {"preparing", "building_memory", "running_agent", "running_harness", "running_all"}
+    {
+        "preparing",
+        "building_memory",
+        "running_agent",
+        "running_harness",
+        "finalizing",
+        "running_all",
+    }
 )
 STAGES = ("prepare", "memory", "agent", "harness", "result")
 DEFAULT_POSTGRES_PORT = 15432
@@ -139,6 +147,7 @@ class NemoriSWEManager:
         self._load_latest()
 
     def _load_latest(self) -> None:
+        self.state = None
         for path in sorted(self.root.glob("*/experiment.json"), reverse=True):
             try:
                 state = _load_json(path)
@@ -157,6 +166,12 @@ class NemoriSWEManager:
                 return
             except (OSError, ValueError, json.JSONDecodeError):
                 continue
+
+    def _run_dir(self, run_id: str) -> Path:
+        path = (self.root / str(run_id)).resolve()
+        if path.parent != self.root:
+            raise KeyError(f"Nemori SWE run not found: {run_id}")
+        return path
 
     def _dir(self) -> Path:
         if not self.state:
@@ -204,6 +219,39 @@ class NemoriSWEManager:
             }
         return json.loads(json.dumps(self.state, ensure_ascii=False))
 
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        """Return one persisted SWE experiment by id."""
+
+        path = self._run_dir(run_id) / "experiment.json"
+        if not path.is_file():
+            raise KeyError(f"Nemori SWE run not found: {run_id}")
+        try:
+            state = _load_json(path)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Nemori SWE run is unreadable: {run_id}") from exc
+        return json.loads(json.dumps(state, ensure_ascii=False))
+
+    def delete_run(self, run_id: str) -> None:
+        """Delete an inactive SWE experiment and all of its artifacts."""
+
+        state = self.get_run(run_id)
+        is_current = bool(self.state and self.state.get("id") == run_id)
+        if state.get("status") in ACTIVE:
+            raise ValueError("Cannot delete an active Nemori SWE run")
+        if is_current and self.task and not self.task.done():
+            raise ValueError("Cannot delete an active Nemori SWE run")
+        if is_current and self.process and self.process.returncode is None:
+            raise ValueError("Cannot delete an active Nemori SWE process")
+        harness_run_id = (state.get("harness") or {}).get("run_id")
+        if harness_run_id:
+            try:
+                self.run_manager.delete_run(str(harness_run_id))
+            except KeyError:
+                pass
+        shutil.rmtree(self._run_dir(run_id))
+        if is_current:
+            self._load_latest()
+
     def history(self, limit: int = 20) -> list[dict[str, Any]]:
         """Return persisted SWE experiments without exposing protected inputs."""
 
@@ -226,21 +274,24 @@ class NemoriSWEManager:
                     "updated_at": state.get("updated_at"),
                     "sample_count": (state.get("selection") or {}).get(
                         "sample_count"
+                    )
+                    or (state.get("config") or {}).get("task_count"),
+                    "result": (
+                        {
+                            key: result.get(key)
+                            for key in (
+                                "total",
+                                "resolved",
+                                "failed",
+                                "success_rate",
+                                "agent_tokens",
+                                "agent_time_seconds",
+                                "memory_hits",
+                            )
+                        }
+                        if result
+                        else None
                     ),
-                    "result": {
-                        key: result.get(key)
-                        for key in (
-                            "total",
-                            "resolved",
-                            "failed",
-                            "success_rate",
-                            "agent_tokens",
-                            "agent_time_seconds",
-                            "memory_hits",
-                        )
-                    }
-                    if result
-                    else None,
                 }
             )
             if len(items) >= max(1, min(int(limit), 100)):
@@ -255,6 +306,9 @@ class NemoriSWEManager:
         arm = str(arm or "nemori").strip().lower()
         if arm not in ARMS:
             raise ValueError("arm must be api or nemori")
+        task_count = int(task_count)
+        if not 1 <= task_count <= SWE_LITE_MAX_TASKS:
+            raise ValueError(f"task_count must be between 1 and {SWE_LITE_MAX_TASKS}")
         run_id = (
             datetime.now().strftime("%Y%m%d-%H%M%S")
             + f"-{arm}-swe-"
@@ -271,7 +325,7 @@ class NemoriSWEManager:
             "updated_at": _now(),
             "current_activity": "Ready",
             "config": {
-                "task_count": max(1, min(20, int(task_count))),
+                "task_count": task_count,
                 "arm": arm,
                 "max_code_files": 32,
                 "max_code_chunks": 60,

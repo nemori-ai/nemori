@@ -116,7 +116,7 @@
           <div class="notice"><strong>并行隔离</strong><span>Nemori 使用独立宿主机端口 PostgreSQL 15432、Qdrant 16333/16334，不会与另一套网站的标准端口冲突。</span></div>
 
           <section class="panel">
-            <div class="section-head"><div><p class="eyebrow">PIPELINE</p><h2>一条实验路径</h2></div><label class="inline-field">任务数<input id="task-count" type="number" min="1" max="20" value="3"></label></div>
+            <div class="section-head"><div><p class="eyebrow">PIPELINE</p><h2>一条实验路径</h2></div><label class="inline-field">SWE Lite 测评条数<input id="task-count" type="number" min="1" max="300" value="3"></label></div>
             <div id="swe-pipeline" class="pipeline">
               <article class="stage" data-stage="prepare"><span class="stage-index">01</span><h3>准备任务</h3><p>数据集、官方镜像、精确提交</p><button data-swe-action="prepare" class="stage-button">准备</button></article>
               <article class="stage" data-stage="memory"><span class="stage-index">02</span><h3 id="memory-stage-title">代码记忆</h3><p id="memory-stage-copy">扫描代码并构建原生 Nemori 记忆</p><button data-swe-action="memory" class="stage-button">构建</button></article>
@@ -147,7 +147,8 @@
 
           <section class="panel">
             <div class="section-head"><div><p class="eyebrow">SWE HISTORY</p><h2>两条路线运行记录</h2></div><button id="refresh-swe-history" class="button subtle">刷新</button></div>
-            <div class="table-wrap"><table><thead><tr><th>时间</th><th>路线</th><th>状态</th><th>任务</th><th>已解决</th><th>成功率</th><th>Tokens</th><th>记忆命中</th></tr></thead><tbody id="swe-history"><tr><td colspan="8" class="empty">暂无 SWE 运行记录。</td></tr></tbody></table></div>
+            <div class="table-wrap"><table><thead><tr><th>时间</th><th>路线</th><th>状态</th><th>测评条数</th><th>已解决</th><th>成功率</th><th>Tokens</th><th>记忆命中</th><th>操作</th></tr></thead><tbody id="swe-history"><tr><td colspan="9" class="empty">暂无 SWE 运行记录。</td></tr></tbody></table></div>
+            <div id="swe-history-detail" class="swe-history-detail hidden"></div>
           </section>
         </section>
 
@@ -164,7 +165,7 @@
                 <label>数据集<select name="benchmark"><option value="locomo">LoCoMo</option><option value="longmemeval">LongMemEval</option></select></label>
                 <label>运行名称<input name="name" placeholder="例如：LoCoMo Nemori"></label>
                 <label>起始样本<input name="start_index" type="number" min="0" value="0"></label>
-                <label>样本数<input name="limit" type="number" min="1" value="1"></label>
+                <label>测评条数<input name="limit" type="number" min="1" value="1"></label>
                 <label>运行模式<select name="run_mode"><option value="nemori">Nemori</option><option value="direct">裸上下文基线（仅 LoCoMo）</option></select></label>
                 <label>LLM 模型<input name="llm_model" placeholder="使用环境默认值"></label>
                 <label>Embedding 模型<input name="embedding_model" placeholder="使用环境默认值"></label>

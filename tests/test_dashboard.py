@@ -14,7 +14,12 @@ import dashboard.run_manager as run_manager_module
 import dashboard.app as dashboard_app
 from dashboard.app import ConnectionTest, app, connection_test, start_run
 from dashboard.env_store import EnvStore, normalize_openai_base_url
-from dashboard.nemori_swe import NemoriSWEManager, _published_port, service_ports
+from dashboard.nemori_swe import (
+    SWE_LITE_MAX_TASKS,
+    NemoriSWEManager,
+    _published_port,
+    service_ports,
+)
 from dashboard.run_manager import RunManager, flatten_records
 from evaluation.swebench.download import write_dataset_bundle
 
@@ -301,7 +306,8 @@ def test_swe_public_path_accepts_api_and_nemori_arms(monkeypatch) -> None:
     monkeypatch.setattr(dashboard_app, "nemori_swe", FakeSWE())
     with TestClient(app) as client:
         prepared = client.post(
-            "/api/nemori-swe/prepare", json={"task_count": 2, "arm": "api"}
+            "/api/nemori-swe/prepare",
+            json={"task_count": SWE_LITE_MAX_TASKS, "arm": "api"},
         )
         started = client.post(
             "/api/nemori-swe/run-all", json={"task_count": 1, "arm": "nemori"}
@@ -309,11 +315,87 @@ def test_swe_public_path_accepts_api_and_nemori_arms(monkeypatch) -> None:
         invalid = client.post(
             "/api/nemori-swe/run-all", json={"task_count": 1, "arm": "other"}
         )
+        too_many = client.post(
+            "/api/nemori-swe/run-all",
+            json={"task_count": SWE_LITE_MAX_TASKS + 1, "arm": "api"},
+        )
 
     assert prepared.json() == {"status": "preparing", "arm": "api"}
     assert started.json() == {"status": "running_all", "arm": "nemori"}
     assert invalid.status_code == 422
-    assert calls == [(2, "api"), (1, "nemori")]
+    assert too_many.status_code == 422
+    assert calls == [(SWE_LITE_MAX_TASKS, "api"), (1, "nemori")]
+
+
+def test_nemori_swe_history_can_be_inspected_and_deleted(tmp_path: Path) -> None:
+    run_manager = RunManager(EnvStore(tmp_path / ".env"))
+    swe = NemoriSWEManager(
+        run_manager,
+        dataset_path=tmp_path / "dataset.json",
+        root=tmp_path / "swe-runs",
+    )
+    swe._new_state(SWE_LITE_MAX_TASKS, "api")
+    assert swe.state is not None
+    run_id = str(swe.state["id"])
+    run_dir = swe._dir()
+
+    detail = swe.get_run(run_id)
+    assert detail["id"] == run_id
+    assert detail["config"]["task_count"] == SWE_LITE_MAX_TASKS
+    assert swe.history()[0]["id"] == run_id
+    assert swe.history()[0]["sample_count"] == SWE_LITE_MAX_TASKS
+
+    swe.delete_run(run_id)
+    assert not run_dir.exists()
+    assert swe.get()["status"] == "not_started"
+    with pytest.raises(KeyError):
+        swe.get_run(run_id)
+
+
+def test_nemori_swe_active_history_cannot_be_deleted(tmp_path: Path) -> None:
+    run_manager = RunManager(EnvStore(tmp_path / ".env"))
+    swe = NemoriSWEManager(
+        run_manager,
+        dataset_path=tmp_path / "dataset.json",
+        root=tmp_path / "swe-runs",
+    )
+    swe._new_state(1, "nemori")
+    assert swe.state is not None
+    run_id = str(swe.state["id"])
+    swe.state["status"] = "running_all"
+    swe._save()
+
+    with pytest.raises(ValueError, match="Cannot delete an active"):
+        swe.delete_run(run_id)
+    assert swe._dir().is_dir()
+
+
+def test_nemori_swe_history_detail_and_delete_routes(monkeypatch) -> None:
+    deleted: list[str] = []
+
+    class FakeSWE:
+        async def shutdown(self) -> None:
+            return None
+
+        def get_run(self, run_id: str) -> dict[str, object]:
+            if run_id == "missing":
+                raise KeyError(run_id)
+            return {"id": run_id, "status": "completed", "config": {"task_count": 8}}
+
+        def delete_run(self, run_id: str) -> None:
+            deleted.append(run_id)
+
+    monkeypatch.setattr(dashboard_app, "nemori_swe", FakeSWE())
+    with TestClient(app) as client:
+        detail = client.get("/api/nemori-swe/history/swe-123")
+        removed = client.delete("/api/nemori-swe/history/swe-123")
+        missing = client.get("/api/nemori-swe/history/missing")
+
+    assert detail.status_code == 200
+    assert detail.json()["config"]["task_count"] == 8
+    assert removed.json() == {"ok": True, "id": "swe-123"}
+    assert deleted == ["swe-123"]
+    assert missing.status_code == 404
 
 
 def test_api_swe_arm_freezes_memoryless_agent_input(tmp_path: Path) -> None:

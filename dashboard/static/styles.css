@@ -225,6 +225,20 @@ table { width: 100%; border-collapse: collapse; font-size: 11px; }
 th, td { padding: 11px 13px; border-bottom: 1px solid var(--line-soft); text-align: left; white-space: nowrap; }
 th { color: var(--muted); font-weight: 600; }
 tr:last-child td { border-bottom: 0; }
+.record-actions { display: flex; align-items: center; gap: 8px; }
+.danger-text { color: var(--red); }
+.swe-history-detail { margin-top: 18px; padding: 20px; border: 1px solid rgba(112,240,176,.18); border-radius: 14px; background: rgba(4,9,7,.28); scroll-margin-top: 100px; }
+.swe-history-metrics { margin-bottom: 20px; }
+.swe-history-detail-grid { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(320px,.75fr); gap: 18px; }
+.swe-history-detail-grid h3 { margin: 18px 0 10px; font-size: 13px; }
+.swe-history-detail-grid h3:first-child { margin-top: 0; }
+.history-stage-grid { display: grid; gap: 7px; }
+.history-stage { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(0,0,0,.1); }
+.history-stage strong, .history-stage small { display: block; }
+.history-stage small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.history-stage p { grid-column: 1 / -1; margin: 0; color: var(--red); font-size: 10px; white-space: normal; }
+.history-config { grid-template-columns: 1fr; }
+.terminal.swe-history-log { min-height: 240px; max-height: 420px; }
 .terminal { min-height: 330px; max-height: 520px; overflow: auto; padding: 14px; border: 1px solid #1c2824; border-radius: 12px; background: #050908; color: #aebfb7; font: 11px/1.65 "SFMono-Regular", Consolas, monospace; }
 .terminal.pre { white-space: pre-wrap; word-break: break-word; }
 .log-line { margin: 0 0 2px; }
@@ -345,7 +359,7 @@ input::placeholder, textarea::placeholder { color: #516159; }
   .nav-item { grid-template-columns: 1fr; justify-items: center; }
   .sidebar-health { justify-content: center; }
   .sidebar-health span:last-child { display: none; }
-  .welcome-grid, .swe-hero, .run-center-grid { grid-template-columns: 1fr; }
+  .welcome-grid, .swe-hero, .run-center-grid, .swe-history-detail-grid { grid-template-columns: 1fr; }
   .run-browser { max-height: none; position: static; }
   .environment-layout { grid-template-columns: 1fr; }
   .form-grid.four { grid-template-columns: repeat(2,1fr); }
