@@ -638,6 +638,7 @@ def test_create_swebench_run_uses_wsl_harness_and_isolated_input(
 
     monkeypatch.setattr(run_manager_module, "EVALUATION_DIR", evaluation)
     monkeypatch.setattr(run_manager_module, "RUNS_DIR", tmp_path / "runtime" / "runs")
+    monkeypatch.setattr(run_manager_module, "_is_windows_host", lambda: True)
     manager = RunManager(EnvStore(tmp_path / ".env"))
 
     run = asyncio.run(

@@ -65,6 +65,10 @@ QUALITY_MARKERS = (
 DEFAULT_PROCESS_VMS_LIMIT_MB = 12_000
 
 
+def _is_windows_host() -> bool:
+    return os.name == "nt"
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -953,7 +957,7 @@ class RunManager:
             ]
             if settings.get("swe_clean"):
                 linux_args.append("--clean")
-            if os.name == "nt":
+            if _is_windows_host():
                 return [
                     "wsl.exe",
                     "-d",
