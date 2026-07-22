@@ -63,6 +63,7 @@ DEFAULT_QDRANT_HTTP_PORT = 16333
 DEFAULT_QDRANT_GRPC_PORT = 16334
 AGENT_UV_DEPENDENCIES = (
     "mini-swe-agent==2.4.5",
+    "litellm==1.80.10",
     # Keep compiled transitive dependencies on their last CentOS 7-compatible
     # manylinux2014 wheels instead of attempting unsupported source builds.
     "tiktoken==0.11.0",

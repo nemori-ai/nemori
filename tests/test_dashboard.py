@@ -28,6 +28,7 @@ from evaluation.swebench.download import write_dataset_bundle
 def test_swe_agent_dependencies_keep_centos_compatible_tiktoken() -> None:
     assert AGENT_UV_DEPENDENCIES == (
         "mini-swe-agent==2.4.5",
+        "litellm==1.80.10",
         "tiktoken==0.11.0",
         "datasets==4.0.0",
         "numpy==1.26.4",
