@@ -37,6 +37,54 @@ def test_swe_agent_dependencies_keep_centos_compatible_tiktoken() -> None:
     )
 
 
+def test_swe_agent_process_runs_from_experiment_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = EnvStore(tmp_path / ".env")
+    store.update(
+        {"AGENT_MODEL": "test/model", "AGENT_API_KEY": "test-secret"}, []
+    )
+    swe = NemoriSWEManager(
+        RunManager(store),
+        dataset_path=tmp_path / "dataset.json",
+        root=tmp_path / "swe-runs",
+    )
+    swe._new_state(1, "api")
+    run_dir = swe._dir()
+    agent_input = run_dir / "agent-input.jsonl"
+    agent_input.write_text("{}\n", encoding="utf-8")
+    assert swe.state is not None
+    swe.state["artifacts"]["agent_input"] = str(agent_input)
+    captured: dict[str, object] = {}
+
+    class EmptyStream:
+        async def readline(self) -> bytes:
+            return b""
+
+    class FailedProcess:
+        stdout = EmptyStream()
+        returncode = 2
+
+        async def wait(self) -> int:
+            return self.returncode
+
+    async def fake_create_subprocess_exec(*args: object, **kwargs: object) -> FailedProcess:
+        captured.update(kwargs)
+        return FailedProcess()
+
+    async def fake_ensure_wsl_uv(distro: str) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+    monkeypatch.setattr(swe, "_ensure_wsl_uv", fake_ensure_wsl_uv)
+    monkeypatch.setattr(swe, "_native_uv", lambda: "/usr/bin/uv")
+
+    with pytest.raises(RuntimeError, match="exited with code 2"):
+        asyncio.run(swe._stage_agent())
+
+    assert captured["cwd"] == run_dir
+
+
 def test_environment_store_never_returns_secret_values(
     tmp_path: Path, monkeypatch
 ) -> None:

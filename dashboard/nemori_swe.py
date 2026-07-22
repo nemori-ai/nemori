@@ -997,6 +997,7 @@ class NemoriSWEManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             env=self._agent_env(),
+            cwd=run_dir,
             creationflags=creationflags,
         )
         log_path = run_dir / "agent.log"
